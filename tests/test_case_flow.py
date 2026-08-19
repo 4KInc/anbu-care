@@ -299,3 +299,20 @@ def test_case_trail_reconstructs_every_decision_in_order(parent_id):
 
 def test_trail_of_an_unknown_case_is_an_error_not_an_empty_success():
     assert provenance_tools.get_case_trail("case-nope")["status"] == "error"
+
+
+def test_store_delete_removes_only_the_named_document(parent_id):
+    """Delete exists for health probes, not for case code — but it still has to
+    be surgical, because it operates on the same table the ledger lives in."""
+    from anbu_care.provenance.store import get_store
+
+    store = get_store()
+    store.put("HEALTHCHECK", "PROBE", {"ok": True})
+    store.put("HEALTHCHECK", "KEEP", {"ok": True})
+
+    store.delete("HEALTHCHECK", "PROBE")
+
+    assert store.get("HEALTHCHECK", "PROBE") is None
+    assert store.get("HEALTHCHECK", "KEEP") is not None
+    # The parent seeded by the fixture must be untouched.
+    assert service.load_profile(parent_id) is not None

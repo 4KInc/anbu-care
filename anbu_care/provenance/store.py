@@ -37,6 +37,7 @@ class Store(Protocol):
     def put(self, pk: str, sk: str, data: dict[str, Any]) -> None: ...
     def get(self, pk: str, sk: str) -> dict[str, Any] | None: ...
     def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]: ...
+    def delete(self, pk: str, sk: str) -> None: ...
 
 
 class MemoryStore:
@@ -57,6 +58,10 @@ class MemoryStore:
         with self._lock:
             rows = [dict(v) for (p, s), v in self._data.items() if p == pk and s.startswith(sk_prefix)]
         return sorted(rows, key=lambda r: r["sk"])
+
+    def delete(self, pk: str, sk: str) -> None:
+        with self._lock:
+            self._data.pop((pk, sk), None)
 
 
 class FirestoreStore:
@@ -93,6 +98,16 @@ class FirestoreStore:
             .order_by("sk")
         )
         return [doc.to_dict() for doc in query.stream()]
+
+    def delete(self, pk: str, sk: str) -> None:
+        """Remove one document.
+
+        Deliberately not surfaced on the service layer: receipts are
+        append-only, and a delete path reachable from case code would undermine
+        the chain. This exists so health probes can clean up after themselves
+        rather than littering the ledger.
+        """
+        self._client.collection(COLLECTION).document(_doc_id(pk, sk)).delete()
 
 
 _store: Store | None = None

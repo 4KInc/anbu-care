@@ -53,7 +53,11 @@ def check_firestore() -> bool:
         if not row or not row.get("ok"):
             return report("Firestore", FAIL, "wrote a probe document but could not read it back")
         rows = store.query_prefix("HEALTHCHECK", "PROBE")
-        return report("Firestore", PASS, f"read/write/range-query ok ({len(rows)} row) in {cfg.project_id}")
+        count = len(rows)
+        # Clean up after ourselves — a health check should not leave a document
+        # behind in the real ledger on every run.
+        store.delete("HEALTHCHECK", "PROBE")
+        return report("Firestore", PASS, f"read/write/range-query/delete ok ({count} row) in {cfg.project_id}")
     except Exception as exc:  # noqa: BLE001
         return report("Firestore", FAIL, _short(exc))
 
