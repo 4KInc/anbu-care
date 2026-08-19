@@ -78,6 +78,12 @@ make chat                     # terminal conversation with the coordinator
 make serve                    # agent API + ADK dev UI on :8080
 ```
 
+Note that `gcloud auth application-default login` resets ADC's quota project to
+your gcloud default every time you run it, which silently bills and meters every
+Vertex and Firestore call against the wrong project. `.env` pins
+`GOOGLE_CLOUD_QUOTA_PROJECT` so that reset cannot take effect — verified by
+pointing ADC at the wrong project and confirming Vertex still resolves correctly.
+
 ---
 
 ## The stack
