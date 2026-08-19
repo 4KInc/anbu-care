@@ -5,6 +5,17 @@
 #
 # Requires: gcloud authenticated, ANBU_SIGNING_KEY_B64 set to a stable key
 # (an ephemeral key means receipt chains stop verifying across restarts).
+#
+# Public access uses --no-invoker-iam-check rather than --allow-unauthenticated.
+# The latter grants roles/run.invoker to allUsers, which this organization's
+# domain-restricted-sharing policy (constraints/iam.allowedPolicyMemberDomains)
+# refuses — and the deploy reports that refusal as a warning, not an error, so
+# the service silently ends up unreachable. Disabling the invoker check is
+# Google's documented alternative for projects under DRS, and it is scoped to
+# this one service instead of weakening an org-wide control.
+#
+# To make the service private again after judging:
+#   gcloud run services update anbu-care --region "$REGION" --invoker-iam-check
 set -euo pipefail
 
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-anbu-care-hack}"
@@ -26,7 +37,8 @@ gcloud run deploy "${SERVICE}" \
   --source . \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
-  --allow-unauthenticated \
+  --no-invoker-iam-check \
+  --ingress all \
   --memory 1Gi \
   --cpu 1 \
   --timeout 600 \

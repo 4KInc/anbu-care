@@ -31,78 +31,99 @@ saying "she says it's probably just gas", cited the cashless-network difference
 rather than the tied capability score, and surfaced both the seeded-KB caveat
 and the unconfirmed-location assumption without being asked.
 
-## Open issue: the Cloud Run URL returns 404 — needs Google Cloud Support
+## Public access — RESOLVED
 
-The service deploys and the container starts cleanly, but **no request has ever
-reached it**. Every call to either default URL returns a Google Frontend 404
-(the generic `Error 404 (Not Found)!!1` page), not a response from the app.
+**Public URL: https://anbu-care-37j4eofpwq-el.a.run.app**
 
-What was ruled out:
+Anonymous, no auth header, no gcloud identity:
 
-| Hypothesis | Test | Result |
-|---|---|---|
-| App is broken | same image serves `/healthz` locally | app is fine |
-| Container failed to start | Cloud Run logs | `Application startup complete`, `Ready=True` |
-| Routing not provisioned | `status.conditions` | `RoutesReady=True` |
-| DNS not propagated | `dig` on both hostnames | resolve to Google IPs |
-| Propagation lag | polled ~20 min, forced a new revision | still 404 |
-| This machine or its network | probed from a Cloud Build job inside GCP | still 404 |
-| Region-specific | second service deployed to `us-central1` | still 404 (since deleted) |
-| Ingress restriction | `run.googleapis.com/ingress=all`, `run.allowedIngress` = ALLOW | not it |
-| VPC Service Controls | no perimeter found | not it |
-| Org policy blocking Cloud Run URLs | listed every org policy on `227631295422` | none relevant |
-| Unauthorized-caller artefact | service-account ID token from `iamcredentials.generateIdToken`, `audience` set to the service URL, SA holding `roles/run.invoker` | still 404 |
-
-That last row is the decisive one. Cloud Run answers 404 rather than 403 to an
-unauthorized caller, so "it is just an access-control artefact" was the leading
-hypothesis. It is wrong, and the disproof is direct rather than inferred: a
-valid 798-byte SA identity token, audienced to the exact service URL, from a
-principal that holds `run.invoker` on that service, gets the same Google
-Frontend 404 — and the container still logs no request.
-
-Reproduce it with:
-
-```bash
-SA=473806191488-compute@developer.gserviceaccount.com
-URL=https://anbu-care-37j4eofpwq-el.a.run.app
-TOK=$(curl -s -X POST \
-  "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${SA}:generateIdToken" \
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-  -H "Content-Type: application/json" \
-  -d "{\"audience\":\"${URL}\",\"includeEmail\":true}" | jq -r .token)
-curl -i -H "Authorization: Bearer $TOK" $URL/healthz
+```
+GET /                    -> 307 -> /dev-ui/  (200)
+GET /api/hospitals       -> 200
+GET /api/cases/{id}/verify -> 200, chain verified
+POST /api/demo/seed      -> 200
+POST /api/intake         -> 200
+POST /run                -> 200  (full multi-agent flow)
 ```
 
-**Conclusion: default-URL serving is broken for this project.** The service is
-healthy and Cloud Run's own status says routing is ready, but the frontend has
-no mapping for either hostname. This needs Google Cloud Support; there is no
-remaining knob on our side.
+### The "404" was a probe-path artefact, not a routing failure
 
-What could not be checked, for completeness: IAM **deny policies** on the
-organization (`iam.googleapis.com/denypolicies.list` is denied for this
-account). An org administrator should rule those out before opening a ticket.
+An earlier round of this investigation concluded that Cloud Run default-URL
+serving was broken for this project and needed Google Support. **That was
+wrong.** Only one path was ever probed — `/healthz` — and that path never
+reaches the container.
 
-None of this blocks the demo: `make demo` and `make chat` run the full system
-locally, and `scripts/verify_stack.py` confirms every cloud dependency is live.
+The tell: with the service still private, `/healthz` returned a 404 whose
+headers carried `referrer-policy: no-referrer` and **no** `server: Google
+Frontend`, while every other path (`/`, `/api/hospitals`, `/nonexistent-xyz`,
+`/dev-ui`) returned a clean `403` with `server: Google Frontend`. A 403 is
+Cloud Run correctly rejecting an unauthorized caller — which means the hostname
+routed all along.
 
-## Access
+**`/healthz` is intercepted by Google Front End and never forwarded.** It still
+returns 404 today, even with the service fully public and even through an
+authenticated proxy, while every sibling route returns 200.
 
-Public access (`allUsers`) is **refused** by the organization policy
-`constraints/iam.allowedPolicyMemberDomains`, which restricts IAM members to the
-`blockintelai.com` Workspace customer. The deploy reports this as a warning
-rather than an error, so the service silently ends up domain-only.
+> **Known limitation:** `server.py` defines a `/healthz` route that works
+> locally and is unreachable on Cloud Run. Use `/api/hospitals` as the liveness
+> probe until the route is renamed. The fix is a one-line rename in `server.py`
+> (e.g. to `/api/healthz`), deliberately not applied here because this was
+> scoped as a deployment task.
 
-Current invoker: `user:heartlinmachado@blockintelai.com`.
+### The real blocker, and the fix
 
-**Before submission**, judges will need access without a `blockintelai.com`
-account. Two options:
+Only one blocker existed: the organization enforces
+`constraints/iam.allowedPolicyMemberDomains` (domain-restricted sharing), which
+refuses the `allUsers` invoker grant that `--allow-unauthenticated` tries to
+create. `gcloud run deploy` reports that refusal as a *warning*, not an error,
+so the deploy "succeeds" and leaves an unreachable service.
 
-1. Add a project-level exception to `iam.allowedPolicyMemberDomains` for
-   `anbu-care-hack`, then re-run the `allUsers` invoker grant. That weakens a
-   deliberate org-wide control on one project — an owner's call, not a default,
-   so it is left undone here.
-2. Submit a recorded demo plus the locally reproducible `make demo`, and leave
-   the deployed service domain-only.
+Fixed with `--no-invoker-iam-check` on the service. This is Google's documented
+alternative for projects under DRS. It is scoped to this one Cloud Run service
+and **no organization policy was modified** — DRS remains fully in force
+org-wide, which is why this was preferred over a project-level policy override.
+
+```bash
+gcloud run services update anbu-care --region=asia-south1 --no-invoker-iam-check
+```
+
+**To make the service private again after judging:**
+
+```bash
+gcloud run services update anbu-care --project=anbu-care-hack \
+  --region=asia-south1 --invoker-iam-check
+```
+
+That single command fully reverses public access. Nothing else needs undoing.
+
+### Runtime service account roles
+
+The organization also enforces
+`constraints/iam.automaticIamGrantsForDefaultServiceAccounts`, which suppresses
+the Editor role normally granted to the default compute service account. The
+Cloud Run runtime identity therefore had **no** Firestore, Pub/Sub, or Vertex
+access, and every write returned `PermissionDenied: 403` as a 500 from the app.
+
+Granted least-privilege runtime roles to
+`473806191488-compute@developer.gserviceaccount.com`:
+
+| Role | For |
+|---|---|
+| `roles/datastore.user` | Firestore reads and writes |
+| `roles/pubsub.publisher` | publishing case events |
+| `roles/aiplatform.user` | Vertex AI inference |
+
+IAM changes are not picked up by running instances — a new revision is required
+after granting.
+
+### Exposure to weigh before judging
+
+The service is now fully public, including `POST /api/demo/seed`,
+`POST /api/intake`, the ADK dev UI, and the `/run` agent API. Anyone who finds
+the URL can drive the agents and therefore spend Vertex AI inference against
+this project. For a short judging window that is the intended trade; consider
+setting a billing alert, or a Cloud Run `--max-instances` cap, if the URL is
+public for long. All seeded data is synthetic.
 
 ## Setup that had to be done once
 

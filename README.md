@@ -269,27 +269,46 @@ for role in roles/storage.objectViewer roles/logging.logWriter \
 done
 ```
 
-### Public access and org policy
+### Public access under domain-restricted sharing
 
 `--allow-unauthenticated` grants `roles/run.invoker` to `allUsers`. If your
-organization enforces `constraints/iam.allowedPolicyMemberDomains`
-(domain-restricted sharing), that grant is refused and the deploy completes with
-a warning rather than an error — the service ends up reachable only by
-principals inside your domain.
+organization enforces `constraints/iam.allowedPolicyMemberDomains`, that grant is
+**refused and the deploy still reports success** — you get a service nobody can
+reach, with only a warning in the output.
 
-Grant a specific user instead:
+`infra/deploy_cloud_run.sh` therefore uses `--no-invoker-iam-check` instead,
+which is Google's documented alternative for projects under DRS. It is scoped to
+the one service and modifies no organization policy.
 
 ```bash
-gcloud run services add-iam-policy-binding anbu-care --region=asia-south1 \
-  --member="user:you@yourdomain.com" --role="roles/run.invoker"
-curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" $URL/healthz
+# make public
+gcloud run services update anbu-care --region=asia-south1 --no-invoker-iam-check
+# make private again
+gcloud run services update anbu-care --region=asia-south1 --invoker-iam-check
 ```
 
-Judges need to reach the service without a Google account in your domain, so
-before submission either add a project-level exception to that org policy or
-publish the demo as a recording plus a locally reproducible `make demo`.
+### `/healthz` does not work on Cloud Run
 
----
+Google Front End reserves `/healthz` and never forwards it to the container, so
+the route defined in `server.py` returns 404 in Cloud Run while working locally.
+Use `/api/hospitals` as the liveness probe. See `infra/DEPLOYED.md`.
+
+### Runtime service account needs explicit roles
+
+If your organization enforces
+`constraints/iam.automaticIamGrantsForDefaultServiceAccounts`, the Cloud Run
+runtime identity gets no Editor role and every Firestore write fails with a 500.
+Grant it explicitly:
+
+```bash
+SA=PROJECT_NUMBER-compute@developer.gserviceaccount.com
+for role in roles/datastore.user roles/pubsub.publisher roles/aiplatform.user; do
+  gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member="serviceAccount:$SA" --role="$role" --condition=None
+done
+```
+
+Then deploy a new revision — running instances do not pick up IAM changes.
 
 ## Disclosure
 
