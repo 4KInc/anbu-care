@@ -31,7 +31,7 @@ saying "she says it's probably just gas", cited the cashless-network difference
 rather than the tied capability score, and surfaced both the seeded-KB caveat
 and the unconfirmed-location assumption without being asked.
 
-## Open issue: the Cloud Run URL returns 404 — UNRESOLVED
+## Open issue: the Cloud Run URL returns 404 — needs Google Cloud Support
 
 The service deploys and the container starts cleanly, but **no request has ever
 reached it**. Every call to either default URL returns a Google Frontend 404
@@ -51,29 +51,22 @@ What was ruled out:
 | Ingress restriction | `run.googleapis.com/ingress=all`, `run.allowedIngress` = ALLOW | not it |
 | VPC Service Controls | no perimeter found | not it |
 | Org policy blocking Cloud Run URLs | listed every org policy on `227631295422` | none relevant |
+| Unauthorized-caller artefact | `gcloud run services proxy` — debug log shows it minting OAuth tokens successfully (`POST /token` → 200), caller holds `roles/run.invoker` | still 404 |
 
-Not yet ruled out: whether the 404 is Cloud Run's answer to an *unauthorized*
-caller. Cloud Run can return 404 rather than 403 to avoid disclosing that a
-service exists. Confirming it needs an identity token whose audience is the
-service URL, which user credentials cannot mint — it requires impersonating a
-service account, and that attempt stalled on IAM propagation.
+That last row is the decisive one. Cloud Run answers 404 rather than 403 to an
+unauthorized caller, so "it is just an access-control artefact" was the leading
+hypothesis. It is wrong: an authenticated caller, holding `run.invoker`, with a
+token the proxy audiences correctly to the service URL, gets the same Google
+Frontend 404 — and the container still logs no request.
 
-**Next step:** mint a properly-audienced token and retry. A 200 means the 404
-was purely an access-control artefact and the fix is the access decision below.
-Still 404 means this is a Google-side problem for Cloud Support.
+**Conclusion: default-URL serving is broken for this project.** The service is
+healthy and Cloud Run's own status says routing is ready, but the frontend has
+no mapping for either hostname. This needs Google Cloud Support; there is no
+remaining knob on our side.
 
-```bash
-SA=473806191488-compute@developer.gserviceaccount.com
-URL=https://anbu-care-37j4eofpwq-el.a.run.app
-gcloud iam service-accounts add-iam-policy-binding $SA \
-  --member="user:YOU@blockintelai.com" --role="roles/iam.serviceAccountTokenCreator"
-gcloud run services add-iam-policy-binding anbu-care --region=asia-south1 \
-  --member="serviceAccount:$SA" --role="roles/run.invoker"
-# wait for IAM to propagate, then:
-TOK=$(gcloud auth print-identity-token --impersonate-service-account=$SA \
-      --audiences=$URL --include-email)
-curl -H "Authorization: Bearer $TOK" $URL/healthz
-```
+What could not be checked, for completeness: IAM **deny policies** on the
+organization (`iam.googleapis.com/denypolicies.list` is denied for this
+account). An org administrator should rule those out before opening a ticket.
 
 None of this blocks the demo: `make demo` and `make chat` run the full system
 locally, and `scripts/verify_stack.py` confirms every cloud dependency is live.
