@@ -197,12 +197,24 @@ Beyond ADK's own agent API:
 |---|---|
 | `GET /healthz` | Liveness, plus whether the signing key is stable and Memory Bank is wired |
 | `GET /api/hospitals` | The seeded KB, served with its provenance attached |
+| `POST /api/demo/seed` | Create the Thoothukudi demo family, returns its `parent_id` |
 | `POST /api/intake` | Direct triage — how an automated intake signal enters the system |
+| `GET /api/parents/{id}` | Baseline record and every ingested document |
 | `GET /api/cases/{id}` | Case metadata and current chain head |
 | `GET /api/cases/{id}/trail` | Every decision on the case, in order, with hash links |
 | `GET /api/cases/{id}/verify` | Independent chain verification — deliberately unauthenticated |
 
-That last one is unauthenticated on purpose. The point of a receipt chain is
+Smoke-testing a fresh deploy is three calls:
+
+```bash
+PARENT=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
+CASE=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
+  -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"neighbour\"}" \
+  | jq -r .case_id)
+curl -s $URL/api/cases/$CASE/verify | jq
+```
+
+The verify route is unauthenticated on purpose. The point of a receipt chain is
 that a family or an insurer can check it without trusting us to run the check
 for them.
 

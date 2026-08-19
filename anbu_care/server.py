@@ -21,7 +21,7 @@ from anbu_care import service
 from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.provenance.signing import load_signer
-from anbu_care.tools import provenance_tools, triage_tools
+from anbu_care.tools import onboarding_tools, provenance_tools, triage_tools
 
 # ADK discovers agents by directory. The repo root holds the `anbu_care`
 # package, whose agent.py exposes `root_agent`.
@@ -93,6 +93,64 @@ def intake(request: IntakeRequest) -> dict[str, Any]:
         lon=request.lon,
         case_id=request.case_id,
     )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.post("/api/demo/seed")
+def demo_seed() -> dict[str, Any]:
+    """Create the Thoothukudi demo family and return its parent_id.
+
+    A freshly deployed service has no parent on record, which makes
+    `/api/intake` unusable until someone completes an onboarding conversation.
+    This is the shortcut the demo and any smoke test need — it uses the same
+    onboarding tools the agent does, so nothing here is a special path.
+    """
+    created = onboarding_tools.create_parent_profile(
+        name="Rajeswari Manickam",
+        age=71,
+        city="Thoothukudi",
+        lat=8.7642,
+        lon=78.1400,
+        chronic_conditions=["Hypertension", "High cholesterol", "Type 2 diabetes"],
+        allergies=["Penicillin"],
+    )
+    parent_id = created["profile"]["parent_id"]
+
+    onboarding_tools.record_medications(parent_id, [
+        {"name": "Telmisartan", "dose": "40 mg", "frequency": "once daily"},
+        {"name": "Atorvastatin", "dose": "20 mg", "frequency": "at night"},
+        {"name": "Metformin", "dose": "500 mg", "frequency": "twice daily"},
+    ])
+    onboarding_tools.record_insurance_policy(
+        parent_id,
+        insurer="Star Health",
+        policy_number="SH-NRI-4471902",
+        sum_insured_inr=500_000,
+        network_hospitals=["Sacred Heart Hospital", "Sundaram Arulrhaj Hospitals"],
+        cashless_eligible=True,
+    )
+    onboarding_tools.record_family_contact(
+        parent_id,
+        name="Karthik Manickam",
+        relationship="son",
+        whatsapp_e164="+14155550142",
+        timezone_name="America/Los_Angeles",
+        is_primary=True,
+        consent_purposes=["admission_alerts", "status_updates", "billing_updates", "claim_updates"],
+    )
+    return {
+        "status": "seeded",
+        "parent_id": parent_id,
+        "next": f"POST /api/intake with parent_id={parent_id}",
+    }
+
+
+@app.get("/api/parents/{parent_id}")
+def parent_detail(parent_id: str) -> dict[str, Any]:
+    """The baseline record and every document ingested for this parent."""
+    result = onboarding_tools.get_parent_profile(parent_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result["error"])
     return result
