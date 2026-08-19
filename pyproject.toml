@@ -1,0 +1,14 @@
+[project]
+name = "anbu-care"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=50.0.0",
+    "fastapi>=0.141.1",
+    "google-adk>=2.7.1",
+    "google-cloud-firestore>=2.28.1",
+    "google-cloud-pubsub>=2.39.1",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.3",
+    "uvicorn[standard]>=0.52.3",
+]

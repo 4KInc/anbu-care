@@ -1,0 +1,87 @@
+{
+  "_meta": {
+    "city": "Thoothukudi",
+    "state": "Tamil Nadu",
+    "country": "India",
+    "seeded_on": "2026-08-19",
+    "status": "SEEDED SNAPSHOT — NOT A LIVE FEED",
+    "warning": "Capability and empanelment values below are seeded for the hackathon demo and must be spot-checked against current hospital and insurer listings before any public writeup or recorded narration. There is no live hospital-capability feed in this build.",
+    "verify_against": [
+      "Hospital's own emergency/cardiology service listing",
+      "Insurer network-hospital list for the specific policy",
+      "IRDAI / TPA empanelment records"
+    ]
+  },
+  "hospitals": [
+    {
+      "hospital_id": "tut-sacred-heart",
+      "name": "Sacred Heart Hospital",
+      "city": "Thoothukudi",
+      "lat": 8.7833,
+      "lon": 78.1345,
+      "specialties": ["cardiology", "cardiac_surgery", "internal_medicine", "emergency"],
+      "has_emergency": true,
+      "cardiac_icu": true,
+      "stroke_unit": false,
+      "open_24x7": true,
+      "empanelled_insurers": ["Star Health", "HDFC ERGO", "Niva Bupa"],
+      "source_note": "Seeded as the dedicated cardiac-capable option (24x7 cardiac care). Verify before demo."
+    },
+    {
+      "hospital_id": "tut-idhayalaya",
+      "name": "Idhayalaya Heart Centre",
+      "city": "Thoothukudi",
+      "lat": 8.7712,
+      "lon": 78.1401,
+      "specialties": ["cardiology", "cardiac_icu", "emergency"],
+      "has_emergency": true,
+      "cardiac_icu": true,
+      "stroke_unit": false,
+      "open_24x7": true,
+      "empanelled_insurers": ["HDFC ERGO"],
+      "source_note": "Seeded as a second cardiac-capable option with narrower empanelment. Verify before demo."
+    },
+    {
+      "hospital_id": "tut-sundaram-arulrhaj",
+      "name": "Sundaram Arulrhaj Hospitals",
+      "city": "Thoothukudi",
+      "lat": 8.7642,
+      "lon": 78.1287,
+      "specialties": ["multi_specialty", "internal_medicine", "orthopaedics", "emergency", "general_surgery"],
+      "has_emergency": true,
+      "cardiac_icu": false,
+      "stroke_unit": false,
+      "open_24x7": true,
+      "empanelled_insurers": ["Star Health", "HDFC ERGO", "Niva Bupa", "ICICI Lombard"],
+      "source_note": "Seeded as the broad multi-specialty option, widest empanelment. Verify before demo."
+    },
+    {
+      "hospital_id": "tut-arputham",
+      "name": "Arputham Hospital",
+      "city": "Thoothukudi",
+      "lat": 8.7695,
+      "lon": 78.1332,
+      "specialties": ["general", "internal_medicine", "emergency"],
+      "has_emergency": true,
+      "cardiac_icu": false,
+      "stroke_unit": false,
+      "open_24x7": true,
+      "empanelled_insurers": ["Star Health"],
+      "source_note": "Seeded as a nearby general option for low-severity cases. Verify before demo."
+    },
+    {
+      "hospital_id": "tut-govt-medical-college",
+      "name": "Government Thoothukudi Medical College Hospital",
+      "city": "Thoothukudi",
+      "lat": 8.8052,
+      "lon": 78.1465,
+      "specialties": ["multi_specialty", "emergency", "neurology", "general_surgery", "internal_medicine"],
+      "has_emergency": true,
+      "cardiac_icu": false,
+      "stroke_unit": true,
+      "open_24x7": true,
+      "empanelled_insurers": [],
+      "source_note": "Seeded as the government tertiary option with a stroke pathway; typically outside private cashless networks. Verify before demo."
+    }
+  ]
+}

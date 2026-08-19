@@ -1,0 +1,134 @@
+"""Persistence for profiles, cases, and receipt chains.
+
+Single-table layout (PK/SK), so one Firestore collection holds every entity and
+a case's whole chain is one range read:
+
+    PK                 SK                 entity
+    PARENT#<pid>       PROFILE            ParentProfile
+    PARENT#<pid>       DOC#<doc_id>       ParsedDocument
+    CASE#<cid>         META               Case
+    CASE#<cid>         RECEIPT#000000     Receipt
+    CASE#<cid>         RECEIPT#000001     Receipt
+
+Two backends behind one interface: Firestore (real / emulator) and in-memory
+(tests, CI, and offline demo runs).
+"""
+
+from __future__ import annotations
+
+import threading
+from typing import Any, Protocol
+
+from anbu_care.config import settings
+from anbu_care.provenance.chain import Receipt
+
+COLLECTION = "anbu"
+
+
+def _doc_id(pk: str, sk: str) -> str:
+    return f"{pk}__{sk}"
+
+
+def receipt_sk(seq: int) -> str:
+    return f"RECEIPT#{seq:06d}"
+
+
+class Store(Protocol):
+    def put(self, pk: str, sk: str, data: dict[str, Any]) -> None: ...
+    def get(self, pk: str, sk: str) -> dict[str, Any] | None: ...
+    def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]: ...
+
+
+class MemoryStore:
+    def __init__(self) -> None:
+        self._data: dict[tuple[str, str], dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def put(self, pk: str, sk: str, data: dict[str, Any]) -> None:
+        with self._lock:
+            self._data[(pk, sk)] = {**data, "pk": pk, "sk": sk}
+
+    def get(self, pk: str, sk: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._data.get((pk, sk))
+            return dict(row) if row else None
+
+    def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = [dict(v) for (p, s), v in self._data.items() if p == pk and s.startswith(sk_prefix)]
+        return sorted(rows, key=lambda r: r["sk"])
+
+
+class FirestoreStore:
+    def __init__(self, project: str | None = None, database: str | None = None) -> None:
+        from google.cloud import firestore  # imported lazily so tests need no GCP deps
+
+        cfg = settings()
+        self._client = firestore.Client(
+            project=project or cfg.project_id,
+            database=database or cfg.firestore_database,
+        )
+
+    def put(self, pk: str, sk: str, data: dict[str, Any]) -> None:
+        self._client.collection(COLLECTION).document(_doc_id(pk, sk)).set(
+            {**data, "pk": pk, "sk": sk}
+        )
+
+    def get(self, pk: str, sk: str) -> dict[str, Any] | None:
+        snap = self._client.collection(COLLECTION).document(_doc_id(pk, sk)).get()
+        return snap.to_dict() if snap.exists else None
+
+    def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]:
+        # Range read on sk within one partition —  is the standard
+        # Firestore high sentinel for a prefix scan.
+        query = (
+            self._client.collection(COLLECTION)
+            .where("pk", "==", pk)
+            .where("sk", ">=", sk_prefix)
+            .where("sk", "<", sk_prefix + "")
+            .order_by("sk")
+        )
+        return [doc.to_dict() for doc in query.stream()]
+
+
+_store: Store | None = None
+_store_lock = threading.Lock()
+
+
+def get_store() -> Store:
+    global _store
+    with _store_lock:
+        if _store is None:
+            _store = MemoryStore() if settings().use_memory_store else FirestoreStore()
+        return _store
+
+
+def set_store(store: Store) -> None:
+    """Override the backend — used by tests and the offline demo script."""
+    global _store
+    with _store_lock:
+        _store = store
+
+
+# --------------------------------------------------------------------------
+# Receipt-chain helpers
+# --------------------------------------------------------------------------
+
+
+def load_receipts(case_id: str, store: Store | None = None) -> list[Receipt]:
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "RECEIPT#")
+    return [Receipt.model_validate(_strip_keys(r)) for r in rows]
+
+
+def save_receipt(receipt: Receipt, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(
+        f"CASE#{receipt.case_id}",
+        receipt_sk(receipt.seq),
+        receipt.model_dump(mode="json"),
+    )
+
+
+def _strip_keys(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in row.items() if k not in {"pk", "sk"}}
