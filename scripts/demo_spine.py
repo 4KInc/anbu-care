@@ -13,7 +13,11 @@ from __future__ import annotations
 import os
 import sys
 
-os.environ.setdefault("ANBU_STORE_BACKEND", "memory")
+# The spine runs standalone: no Firestore, no Pub/Sub, no model. Set before
+# anything imports config, and set outright rather than defaulted, so a .env
+# pointing at a real project cannot turn this into a live run.
+os.environ["ANBU_STORE_BACKEND"] = "memory"
+os.environ["ANBU_PUBSUB_ENABLED"] = "false"
 
 from anbu_care import service
 from anbu_care.tools import (
