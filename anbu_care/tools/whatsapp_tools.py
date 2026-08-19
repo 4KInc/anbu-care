@@ -11,7 +11,7 @@ sandbox and are recorded either way.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from anbu_care import service
@@ -202,7 +202,7 @@ def _record(
         body=body,
         allowed=allowed,
         block_reason=None if allowed else reason,
-        sent_at=datetime.now(timezone.utc) if allowed else None,
+        sent_at=datetime.now(UTC) if allowed else None,
     )
     receipt = service.append_receipt(
         case_id,

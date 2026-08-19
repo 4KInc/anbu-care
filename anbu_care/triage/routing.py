@@ -204,8 +204,10 @@ def _explain(
         return "No hospital in the knowledge base could be scored for this case."
 
     lines = [
-        f"Severity {severity.value}. Recommending {best.hospital.name} "
-        f"({best.distance_km:.1f} km, score {best.total_score:.3f})."
+        (
+            f"Severity {severity.value}. Recommending {best.hospital.name} "
+            f"({best.distance_km:.1f} km, score {best.total_score:.3f})."
+        )
     ]
 
     if nearest is None or nearest.hospital.hospital_id == best.hospital.hospital_id:

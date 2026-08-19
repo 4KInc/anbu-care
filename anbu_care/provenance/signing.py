@@ -37,7 +37,7 @@ def verify(public_key_b64: str, payload: bytes, signature_b64: str) -> bool:
     try:
         pub = ed25519.Ed25519PublicKey.from_public_bytes(base64.b64decode(public_key_b64))
         pub.verify(base64.b64decode(signature_b64), payload)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any failure here means "does not verify"
         return False
     return True
 

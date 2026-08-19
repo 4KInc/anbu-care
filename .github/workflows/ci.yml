@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen --extra dev
+
+      - name: Lint
+        run: uv run ruff check anbu_care tests scripts
+
+      - name: Test
+        # The suite runs entirely on the in-memory store — no GCP credentials,
+        # no model access, no network.
+        env:
+          ANBU_STORE_BACKEND: memory
+        run: uv run pytest -q
+
+      - name: End-to-end spine
+        env:
+          ANBU_STORE_BACKEND: memory
+        run: uv run python scripts/demo_spine.py

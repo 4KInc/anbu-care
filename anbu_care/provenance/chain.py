@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +38,7 @@ def canonical_json(payload: Any) -> bytes:
 
 def _encode_extra(value: Any) -> Any:
     if isinstance(value, datetime):
-        return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+        return value.astimezone(UTC).isoformat(timespec="microseconds")
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, set):
@@ -58,7 +59,7 @@ class Receipt(BaseModel):
     hash: str
     signature: str
     public_key: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def signing_input(self) -> bytes:
         """The exact bytes covered by both the hash and the signature."""
@@ -91,7 +92,7 @@ def build_receipt(
     created_at: datetime | None = None,
 ) -> Receipt:
     signer = signer or load_signer()
-    created = created_at or datetime.now(timezone.utc)
+    created = created_at or datetime.now(UTC)
     receipt_id = f"{case_id}:{seq:06d}"
     draft = Receipt(
         receipt_id=receipt_id,

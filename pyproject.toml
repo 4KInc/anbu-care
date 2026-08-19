@@ -25,7 +25,6 @@ packages = ["anbu_care"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-env = []
 
 [tool.ruff]
 line-length = 110

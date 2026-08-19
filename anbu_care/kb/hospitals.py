@@ -26,7 +26,7 @@ def load_hospitals() -> tuple[Hospital, ...]:
     return tuple(Hospital.model_validate(h) for h in _raw()["hospitals"])
 
 
-def KB_META() -> dict:  # noqa: N802 - reads as a constant at call sites
+def KB_META() -> dict:
     return _raw()["_meta"]
 
 

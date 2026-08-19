@@ -1,0 +1,133 @@
+"""Cloud Run entrypoint.
+
+Serves ADK's agent API (and dev UI) plus the few plain HTTP routes the family
+dashboard and the demo need — health, intake webhook, and chain verification a
+family or insurer can call without going through an agent.
+
+    uv run uvicorn anbu_care.server:app --port 8080
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+
+from fastapi import HTTPException
+from google.adk.cli.fast_api import get_fast_api_app
+from pydantic import BaseModel
+
+from anbu_care import service
+from anbu_care.config import settings
+from anbu_care.kb.hospitals import KB_META, load_hospitals
+from anbu_care.provenance.signing import load_signer
+from anbu_care.tools import provenance_tools, triage_tools
+
+# ADK discovers agents by directory. The repo root holds the `anbu_care`
+# package, whose agent.py exposes `root_agent`.
+AGENTS_DIR = str(Path(__file__).resolve().parent.parent)
+
+# Memory Bank for cross-session context across weeks of a case. Set
+# ANBU_MEMORY_SERVICE_URI to an agentengine:// resource to enable it; without
+# it ADK falls back to in-memory, which is fine locally and wrong in production.
+MEMORY_SERVICE_URI = os.getenv("ANBU_MEMORY_SERVICE_URI") or None
+SESSION_SERVICE_URI = os.getenv("ANBU_SESSION_SERVICE_URI") or None
+
+app = get_fast_api_app(
+    agents_dir=AGENTS_DIR,
+    web=os.getenv("ANBU_SERVE_DEV_UI", "true").lower() == "true",
+    memory_service_uri=MEMORY_SERVICE_URI,
+    session_service_uri=SESSION_SERVICE_URI,
+    allow_origins=["*"],
+    host="0.0.0.0",
+    port=int(os.getenv("PORT", "8080")),
+)
+
+
+class IntakeRequest(BaseModel):
+    parent_id: str
+    symptoms: list[str]
+    free_text: str = ""
+    reported_by: str = "unknown"
+    lat: float = 0.0
+    lon: float = 0.0
+    case_id: str = ""
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, Any]:
+    """Liveness, plus the two things that are easy to get wrong on deploy."""
+    signer = load_signer()
+    return {
+        "status": "ok",
+        "project": settings().project_id,
+        "model": settings().model,
+        "store_backend": settings().store_backend,
+        "tpa_mode": settings().tpa_mode,
+        "whatsapp_mode": settings().whatsapp_mode,
+        "memory_bank": "configured" if MEMORY_SERVICE_URI else "in-memory (not persistent)",
+        "signing_key": "ephemeral — set ANBU_SIGNING_KEY_B64" if signer.ephemeral else "configured",
+    }
+
+
+@app.get("/api/hospitals")
+def hospitals() -> dict[str, Any]:
+    """The seeded knowledge base, served with its provenance attached."""
+    return {"meta": KB_META(), "hospitals": [h.model_dump(mode="json") for h in load_hospitals()]}
+
+
+@app.post("/api/intake")
+def intake(request: IntakeRequest) -> dict[str, Any]:
+    """Direct triage, bypassing the agent loop.
+
+    This is how an automated intake signal — a hospital feed, a wearable alert,
+    a neighbour tapping a button — enters the system, and it is the path the
+    demo uses when it needs the routing decision to be reproducible.
+    """
+    result = triage_tools.run_triage(
+        parent_id=request.parent_id,
+        symptoms=request.symptoms,
+        free_text=request.free_text,
+        reported_by=request.reported_by,
+        lat=request.lat,
+        lon=request.lon,
+        case_id=request.case_id,
+    )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/api/cases/{case_id}/trail")
+def case_trail(case_id: str) -> dict[str, Any]:
+    """Reconstruct every decision on a case, in order, with its hash links."""
+    result = provenance_tools.get_case_trail(case_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/api/cases/{case_id}/verify")
+def case_verify(case_id: str) -> dict[str, Any]:
+    """Independently verify a case's chain.
+
+    Deliberately unauthenticated in this build: the point of the receipt chain
+    is that a family or an insurer can check it without trusting us to run the
+    check for them.
+    """
+    return provenance_tools.verify_case_chain(case_id)
+
+
+@app.get("/api/cases/{case_id}")
+def case_detail(case_id: str) -> dict[str, Any]:
+    """Case metadata and its current chain head."""
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    chain = service.get_chain(case_id)
+    return {
+        "case": case.model_dump(mode="json"),
+        "receipt_count": len(chain.receipts),
+        "head_hash": chain.head_hash,
+        "verified": chain.verify().ok,
+    }

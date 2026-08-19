@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from anbu_care.schemas import MessageClass
 
@@ -124,7 +124,7 @@ def gate_message(
             detected_clinical=[],
         )
 
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     in_window = last_inbound_at is not None and (current - last_inbound_at) <= FREE_FORM_WINDOW
 
     if in_window:

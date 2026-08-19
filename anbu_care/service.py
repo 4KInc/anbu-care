@@ -8,7 +8,7 @@ shape, and lets every tool be tested with no model in the loop.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from anbu_care.config import settings
@@ -34,7 +34,7 @@ def new_id(prefix: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # --------------------------------------------------------------------------
