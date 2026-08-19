@@ -1,0 +1,204 @@
+ANBU CARE — BACKUP TAKE, CURRENT SPINE
+Captured against the deployed service: https://anbu-care-37j4eofpwq-el.a.run.app
+All seven beats green. All data synthetic.
+
+This is the always-submittable fallback transcript. It is NOT the video —
+recording the ~4-min screen take is a manual step (see docs/DEMO_SCRIPT.md).
+Reproduce this transcript at any time with:  ./scripts/demo_run.sh
+
+The two cases below were deliberately LEFT IN PLACE (not --reset) so a judge, or
+a re-take, can verify them live with no login:
+
+  valid    case-003b74a920  -> verified=true,  3 receipts
+  tampered case-eb894e0c0c  -> verified=false, broken_at_seq=1
+
+==============================================================================
+
+Anbu Care demo driver
+target: https://anbu-care-37j4eofpwq-el.a.run.app
+note:   all data synthetic; TPA responses simulated; hospital KB is a seeded snapshot
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 1 — Onboarding: seed a synthetic Thoothukudi family
+────────────────────────────────────────────────────────────────────────────
+  $ curl -sX POST https://anbu-care-37j4eofpwq-el.a.run.app/api/demo/seed
+  parent_id: parent-279e888811
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 2 — Multimodal: Gemini reads a lab report into the living record
+────────────────────────────────────────────────────────────────────────────
+  Two synthetic lab reports, five months apart. Watch LDL.
+
+  ── MARCH baseline (lab_report_mar2026.png)
+  $ uv run python scripts/demo_support.py ingest-doc https://anbu-care-37j4eofpwq-el.a.run.app parent-279e888811 assets/synthetic/lab_report_mar2026.png
+    extracted by Gemini vision:
+      Total Cholesterol: 232 mg/dL  [high]
+      LDL Cholesterol: 165 mg/dL  [high]
+      HDL Cholesterol: 38 mg/dL  [low]
+      Triglycerides: 180 mg/dL  [high]
+      HbA1c: 7.1 %  [high]
+    tool status: ingested
+    living-record delta:
+      · Total Cholesterol=232 mg/dL: first recorded value and flagged abnormal — genuinely new
+      · LDL Cholesterol=165 mg/dL: first recorded value and flagged abnormal — genuinely new
+      · HDL Cholesterol=38 mg/dL: first recorded value and flagged abnormal — genuinely new
+      · Triglycerides=180 mg/dL: first recorded value and flagged abnormal — genuinely new
+      · HbA1c=7.1 %: first recorded value and flagged abnormal — genuinely new
+    GROUND TRUTH — documents actually stored for this parent: 1
+    reported status 'ingested' vs stored count 1: consistent
+
+  ── AUGUST follow-up (lab_report_aug2026.png)
+  $ uv run python scripts/demo_support.py ingest-doc https://anbu-care-37j4eofpwq-el.a.run.app parent-279e888811 assets/synthetic/lab_report_aug2026.png
+    extracted by Gemini vision:
+      Total Cholesterol: 236 mg/dL  [high]
+      LDL Cholesterol: 165 mg/dL  [high]
+      HDL Cholesterol: 37 mg/dL  [low]
+      Triglycerides: 186 mg/dL  [high]
+      HbA1c: 8.4 %  [high]
+    tool status: ingested
+    living-record delta:
+      · Total Cholesterol=236: changed from 232 and flagged abnormal — new and abnormal
+      · LDL Cholesterol=165: unchanged from a previous reading — consistent with baseline
+      · HDL Cholesterol=37: changed from 38 and flagged abnormal — new and abnormal
+      · Triglycerides=186: changed from 180 and flagged abnormal — new and abnormal
+      · HbA1c=8.4: changed from 7.1 and flagged abnormal — new and abnormal
+    GROUND TRUTH — documents actually stored for this parent: 2
+    reported status 'ingested' vs stored count 2: consistent
+
+  The point: LDL is unchanged at 165 and reads as CONSISTENT WITH BASELINE,
+  while HbA1c moved 7.1 -> 8.4 and reads as NEW AND ABNORMAL. Same flag on
+  the page, different meaning against this patient's history.
+
+  Ground truth is read back from the service, not from what the agent said.
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 3 — 'She says it's probably just gas' → severity must still hold HIGH
+────────────────────────────────────────────────────────────────────────────
+  $ curl -sX POST https://anbu-care-37j4eofpwq-el.a.run.app/api/intake -d '{"symptoms":["chest pain","sweating"],"free_text":"she says it's probably just gas"}'
+  case_id: case-003b74a920
+{
+  "severity": "HIGH",
+  "severity_rationale": [
+    "matched 'chest pain': chest pain \u2014 possible acute coronary syndrome",
+    "matched 'chest tightness': chest tightness \u2014 possible cardiac event"
+  ],
+  "matched_specialties": [
+    "cardiology",
+    "emergency"
+  ],
+  "recommended_hospital": "Sacred Heart Hospital",
+  "explanation": "Severity HIGH. Recommending Sacred Heart Hospital (2.2 km, score 0.971). That is 1.4 km farther than the nearest option (Idhayalaya Heart Centre, 0.8 km). The extra distance was accepted because Sacred Heart Hospital is empanelled with Star Health and Idhayalaya Heart Centre is not, so this keeps the admission cashless.",
+  "knowledge_base": "SEEDED SNAPSHOT \u2014 NOT A LIVE FEED"
+}
+
+  ranked:
+    0.971  Sacred Heart Hospital                            2.2 km  cap 1.00  network yes  <-- chosen
+    0.803  Sundaram Arulrhaj Hospitals                      1.2 km  cap 0.70  network yes
+    0.790  Idhayalaya Heart Centre                          0.8 km  cap 1.00  network no
+    0.717  Arputham Hospital                                0.9 km  cap 0.55  network yes
+    0.558  Government Thoothukudi Medical College Hospital   4.6 km  cap 0.70  network no
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 4 — WhatsApp gate: the agent refuses, and the CODE blocks anyway
+────────────────────────────────────────────────────────────────────────────
+  4a. Agent-level — ask the deployed agent to relay a clinical message:
+  $ POST https://anbu-care-37j4eofpwq-el.a.run.app/run  (whatsapp_agent → check_message_allowed)
+    CALL anbu_care -> transfer_to_agent
+    CALL whatsapp_agent -> list_message_templates
+    CALL whatsapp_agent -> check_message_allowed
+    GATE allowed=False
+    REASON Blocked: clinical detail may not be sent over WhatsApp under Meta's healthcare policy and DPDP. It names a lab or diagnostic result, carries a clinical measurement. Deliver this through the secure das
+
+  4b. Code-level — bypass the agent entirely and call the send tool directly.
+      This is the claim that matters: the boundary holds when the model is not
+      the thing enforcing it. The blocked attempt is written to the chain.
+  $ uv run python scripts/demo_support.py block-receipt case-003b74a920 parent-279e888811 +14155550142
+{
+  "allowed": false,
+  "status": "blocked",
+  "reason": "Blocked: clinical detail may not be sent over WhatsApp under Meta's healthcare policy and DPDP. It names a lab or diagnostic result, carries a clinical measurement. Deliver this through the secure dashboard instead.",
+  "receipt_id": "case-003b74a920:000002"
+}
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 5 — Anyone can verify the chain, with no login
+────────────────────────────────────────────────────────────────────────────
+  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-003b74a920/verify
+{
+    "status": "ok",
+    "case_id": "case-003b74a920",
+    "verified": true,
+    "receipt_count": 3,
+    "broken_at_seq": null,
+    "reason": null,
+    "public_key": "v/JLEciPv3U4DrYgvOUl8E0CM601GVFCFolLkFgHMZQ=",
+    "key_warning": null
+}
+
+  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-003b74a920/trail
+    [ 0] case.opened              by intake_agent           00000000000000 -> 370046e4d4a490
+    [ 1] triage.decision          by triage_agent           370046e4d4a490 -> 70f3b280ef53e8
+    [ 2] comms.blocked            by whatsapp_agent         70f3b280ef53e8 -> e21b70ba0e23f5
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 6 — Tamper (throwaway case; the case above stays valid)
+────────────────────────────────────────────────────────────────────────────
+  throwaway case_id: case-eb894e0c0c
+  valid before tamper:
+    verified=True  receipts=2
+
+  $ uv run python scripts/demo_support.py tamper case-eb894e0c0c
+{
+  "tampered_case": "case-eb894e0c0c",
+  "receipt_seq": 1,
+  "field": "payload.severity",
+  "before": "HIGH",
+  "after": "LOW",
+  "note": "hash and signature left untouched, as a silent edit would be"
+}
+
+  the deployed, unauthenticated verify endpoint now reports it:
+  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-eb894e0c0c/verify
+{
+    "status": "ok",
+    "case_id": "case-eb894e0c0c",
+    "verified": false,
+    "receipt_count": 2,
+    "broken_at_seq": 1,
+    "reason": "payload does not hash to the recorded hash \u2014 content was altered",
+    "public_key": "v/JLEciPv3U4DrYgvOUl8E0CM601GVFCFolLkFgHMZQ=",
+    "key_warning": null
+}
+
+  and the case a judge was shown is STILL valid:
+    verified=True  receipts=3
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 7 — Reload from Firestore in a fresh process (not process memory)
+────────────────────────────────────────────────────────────────────────────
+  $ uv run python scripts/demo_support.py reload-verify case-003b74a920
+{
+  "case_id": "case-003b74a920",
+  "receipts_read_from_firestore": 3,
+  "kinds": [
+    "case.opened",
+    "triage.decision",
+    "comms.blocked"
+  ],
+  "verified": true,
+  "broken_at_seq": null,
+  "failure_mode": null
+}
+
+────────────────────────────────────────────────────────────────────────────
+case shown to judges (valid) : case-003b74a920
+throwaway (tampered)         : case-eb894e0c0c
+synthetic parent             : parent-279e888811
+
+Verify yourself, no login:
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-003b74a920/verify
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-eb894e0c0c/verify
+
+Clean up everything this run created:
+  ./scripts/demo_run.sh --reset
+────────────────────────────────────────────────────────────────────────────
