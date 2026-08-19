@@ -13,7 +13,8 @@ Current state of the live hackathon environment. Update this when it changes.
 | Composite index | `anbu` collection: `pk` ASC, `sk` ASC — **READY** |
 | Pub/Sub topics | `anbu-intake-events`, `anbu-case-updates`, `anbu-claim-status` |
 | Model | `gemini-3.5-flash` via Vertex AI, location `global` |
-| Cloud Run service | `anbu-care`, revision `anbu-care-00001-9s7` |
+| Cloud Run service | `anbu-care`, public via disabled invoker IAM check |
+| Scaling cap | `--max-instances=5`, containerConcurrency 80 → up to 400 in-flight requests |
 | Service URL | https://anbu-care-37j4eofpwq-el.a.run.app |
 
 ## Verified live
@@ -121,9 +122,19 @@ after granting.
 The service is now fully public, including `POST /api/demo/seed`,
 `POST /api/intake`, the ADK dev UI, and the `/run` agent API. Anyone who finds
 the URL can drive the agents and therefore spend Vertex AI inference against
-this project. For a short judging window that is the intended trade; consider
-setting a billing alert, or a Cloud Run `--max-instances` cap, if the URL is
-public for long. All seeded data is synthetic.
+this project. For a short judging window that is the intended trade.
+
+Mitigation applied: `--max-instances=5`. With containerConcurrency 80 that still
+allows ~400 in-flight requests — ample for judging, while capping how fast the
+agents can be driven and therefore the rate of Vertex spend. All seeded data is
+synthetic.
+
+To revert public access after judging:
+
+```bash
+gcloud run services update anbu-care --project=anbu-care-hack \
+  --region=asia-south1 --invoker-iam-check
+```
 
 ## Setup that had to be done once
 

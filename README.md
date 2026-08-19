@@ -6,6 +6,23 @@ behalf of their adult children abroad.
 
 Built for the **All Things Agentic Hackathon** (Google / Devpost), Taskmaster track.
 
+### 🟢 Live demo — no login required
+
+**https://anbu-care-37j4eofpwq-el.a.run.app**
+
+```bash
+URL=https://anbu-care-37j4eofpwq-el.a.run.app
+PARENT=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
+CASE=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
+  -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"judge\"}" | jq -r .case_id)
+curl -s $URL/api/cases/$CASE/verify | jq        # verify the signed chain yourself
+```
+
+The agent UI is at [`/dev-ui/`](https://anbu-care-37j4eofpwq-el.a.run.app/dev-ui/).
+Access is open because the receipt chain is meant to be independently checkable —
+see [Public access](#public-access-under-domain-restricted-sharing). All demo data
+is synthetic. Liveness probe is `/api/hospitals`, not `/healthz` (see below).
+
 > *"If something happens to my parent right now, who makes sure the right decisions
 > get made, fast, and that I actually know what's happening?"*
 
@@ -61,6 +78,11 @@ make install          # uv sync --extra dev
 make test             # 73 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
+
+`./scripts/demo_run.sh` drives the **deployed** service through the full demo
+narrative — fresh synthetic cases each run, a separate throwaway case for the
+tamper beat, and `--reset` to clean up. The beat sheet is
+[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 
 `make demo` runs `scripts/demo_spine.py`: onboarding, document ingestion, the
 triage decision, the WhatsApp gate, packet assembly, the STEP_UP gate,
