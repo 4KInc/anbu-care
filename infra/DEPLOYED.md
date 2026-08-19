@@ -51,13 +51,27 @@ What was ruled out:
 | Ingress restriction | `run.googleapis.com/ingress=all`, `run.allowedIngress` = ALLOW | not it |
 | VPC Service Controls | no perimeter found | not it |
 | Org policy blocking Cloud Run URLs | listed every org policy on `227631295422` | none relevant |
-| Unauthorized-caller artefact | `gcloud run services proxy` — debug log shows it minting OAuth tokens successfully (`POST /token` → 200), caller holds `roles/run.invoker` | still 404 |
+| Unauthorized-caller artefact | service-account ID token from `iamcredentials.generateIdToken`, `audience` set to the service URL, SA holding `roles/run.invoker` | still 404 |
 
 That last row is the decisive one. Cloud Run answers 404 rather than 403 to an
 unauthorized caller, so "it is just an access-control artefact" was the leading
-hypothesis. It is wrong: an authenticated caller, holding `run.invoker`, with a
-token the proxy audiences correctly to the service URL, gets the same Google
+hypothesis. It is wrong, and the disproof is direct rather than inferred: a
+valid 798-byte SA identity token, audienced to the exact service URL, from a
+principal that holds `run.invoker` on that service, gets the same Google
 Frontend 404 — and the container still logs no request.
+
+Reproduce it with:
+
+```bash
+SA=473806191488-compute@developer.gserviceaccount.com
+URL=https://anbu-care-37j4eofpwq-el.a.run.app
+TOK=$(curl -s -X POST \
+  "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${SA}:generateIdToken" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" \
+  -d "{\"audience\":\"${URL}\",\"includeEmail\":true}" | jq -r .token)
+curl -i -H "Authorization: Bearer $TOK" $URL/healthz
+```
 
 **Conclusion: default-URL serving is broken for this project.** The service is
 healthy and Cloud Run's own status says routing is ready, but the frontend has
@@ -108,33 +122,14 @@ Billing account `011B69-475206-64389F` ("Default billing") is linked. Running
 costs are Cloud Run (scales to zero), Firestore (tiny), Pub/Sub (tiny), and
 Vertex AI inference per call.
 
-## Cleanup owed
+## Cleanup — done
 
-Two IAM grants were added purely to diagnose the 404 above and should be removed
-— the revert failed when the gcloud CLI session expired mid-cleanup, so verify
-their state before assuming either is gone:
+The two IAM grants added to diagnose the 404 have been removed and the removal
+verified: the default compute service account carries no `tokenCreator` binding,
+and the Cloud Run service lists only `user:heartlinmachado@blockintelai.com` as
+invoker.
 
-```bash
-gcloud auth login   # CLI credentials, separate from application-default
-
-SA=473806191488-compute@developer.gserviceaccount.com
-
-# 1. Impersonation on the default compute service account
-gcloud iam service-accounts get-iam-policy $SA --project=anbu-care-hack
-gcloud iam service-accounts remove-iam-policy-binding $SA --project=anbu-care-hack \
-  --member="user:heartlinmachado@blockintelai.com" \
-  --role="roles/iam.serviceAccountTokenCreator"
-
-# 2. Invoker on the Cloud Run service for that same SA
-gcloud run services get-iam-policy anbu-care --project=anbu-care-hack --region=asia-south1
-gcloud run services remove-iam-policy-binding anbu-care --project=anbu-care-hack \
-  --region=asia-south1 --member="serviceAccount:$SA" --role="roles/run.invoker"
-```
-
-Keep `user:heartlinmachado@blockintelai.com` as `roles/run.invoker` — that one is
-intentional.
-
-The four build roles on the compute service account
-(`storage.objectViewer`, `logging.logWriter`, `artifactregistry.writer`,
-`cloudbuild.builds.builder`) are **not** cleanup — Cloud Build needs them for
-every future `make deploy`.
+The four build roles on that service account (`storage.objectViewer`,
+`logging.logWriter`, `artifactregistry.writer`, `cloudbuild.builds.builder`) are
+**retained deliberately** — Cloud Build needs them for every future
+`make deploy`.
