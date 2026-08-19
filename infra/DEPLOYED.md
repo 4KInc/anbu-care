@@ -107,3 +107,34 @@ Both of these fail in ways that do not name the real cause — see the README's
 Billing account `011B69-475206-64389F` ("Default billing") is linked. Running
 costs are Cloud Run (scales to zero), Firestore (tiny), Pub/Sub (tiny), and
 Vertex AI inference per call.
+
+## Cleanup owed
+
+Two IAM grants were added purely to diagnose the 404 above and should be removed
+— the revert failed when the gcloud CLI session expired mid-cleanup, so verify
+their state before assuming either is gone:
+
+```bash
+gcloud auth login   # CLI credentials, separate from application-default
+
+SA=473806191488-compute@developer.gserviceaccount.com
+
+# 1. Impersonation on the default compute service account
+gcloud iam service-accounts get-iam-policy $SA --project=anbu-care-hack
+gcloud iam service-accounts remove-iam-policy-binding $SA --project=anbu-care-hack \
+  --member="user:heartlinmachado@blockintelai.com" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
+# 2. Invoker on the Cloud Run service for that same SA
+gcloud run services get-iam-policy anbu-care --project=anbu-care-hack --region=asia-south1
+gcloud run services remove-iam-policy-binding anbu-care --project=anbu-care-hack \
+  --region=asia-south1 --member="serviceAccount:$SA" --role="roles/run.invoker"
+```
+
+Keep `user:heartlinmachado@blockintelai.com` as `roles/run.invoker` — that one is
+intentional.
+
+The four build roles on the compute service account
+(`storage.objectViewer`, `logging.logWriter`, `artifactregistry.writer`,
+`cloudbuild.builds.builder`) are **not** cleanup — Cloud Build needs them for
+every future `make deploy`.
