@@ -232,6 +232,57 @@ The deploy script refuses to run without a stable signing key. An ephemeral key
 means each revision signs with a different one, and receipts written before a
 restart stop verifying — which defeats the entire point of the chain.
 
+### First deploy on a fresh project
+
+Two things bite once, and neither is obvious from the error message.
+
+**1. Firestore needs a composite index.** The single-table layout queries
+pk-equality + sk-range + order-by, which Firestore refuses without one — and it
+fails at *query* time, so writes succeed and reads blow up. Create it before the
+first real run:
+
+```bash
+gcloud firestore indexes composite create --collection-group=anbu \
+  --field-config=field-path=pk,order=ascending \
+  --field-config=field-path=sk,order=ascending
+```
+
+The definition is recorded in [`infra/firestore.indexes.json`](infra/firestore.indexes.json).
+
+**2. The default compute service account needs build roles.** A fresh project's
+`PROJECT_NUMBER-compute@developer.gserviceaccount.com` cannot read the source
+bucket Cloud Build uploads to, and the deploy fails with a `storage.objects.get`
+403:
+
+```bash
+SA=PROJECT_NUMBER-compute@developer.gserviceaccount.com
+for role in roles/storage.objectViewer roles/logging.logWriter \
+            roles/artifactregistry.writer roles/cloudbuild.builds.builder; do
+  gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member="serviceAccount:$SA" --role="$role" --condition=None
+done
+```
+
+### Public access and org policy
+
+`--allow-unauthenticated` grants `roles/run.invoker` to `allUsers`. If your
+organization enforces `constraints/iam.allowedPolicyMemberDomains`
+(domain-restricted sharing), that grant is refused and the deploy completes with
+a warning rather than an error — the service ends up reachable only by
+principals inside your domain.
+
+Grant a specific user instead:
+
+```bash
+gcloud run services add-iam-policy-binding anbu-care --region=asia-south1 \
+  --member="user:you@yourdomain.com" --role="roles/run.invoker"
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" $URL/healthz
+```
+
+Judges need to reach the service without a Google account in your domain, so
+before submission either add a project-level exception to that org policy or
+publish the demo as a recording plus a locally reproducible `make demo`.
+
 ---
 
 ## Disclosure
