@@ -79,13 +79,17 @@ class FirestoreStore:
         return snap.to_dict() if snap.exists else None
 
     def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]:
-        # Range read on sk within one partition —  is the standard
-        # Firestore high sentinel for a prefix scan.
+        # Range read on sk within one partition. U+F8FF is the conventional
+        # Firestore high sentinel for a prefix scan, and this pk-equality +
+        # sk-range + order-by combination is what infra/firestore.indexes.json
+        # exists for.
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
         query = (
             self._client.collection(COLLECTION)
-            .where("pk", "==", pk)
-            .where("sk", ">=", sk_prefix)
-            .where("sk", "<", sk_prefix + "")
+            .where(filter=FieldFilter("pk", "==", pk))
+            .where(filter=FieldFilter("sk", ">=", sk_prefix))
+            .where(filter=FieldFilter("sk", "<", sk_prefix + ""))
             .order_by("sk")
         )
         return [doc.to_dict() for doc in query.stream()]
