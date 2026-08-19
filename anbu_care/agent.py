@@ -7,6 +7,8 @@ cannot file a claim and the triage agent cannot send a message.
 """
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.context_cache_config import ContextCacheConfig
+from google.adk.apps import App
 
 from anbu_care.agents import (
     evidence_agent,
@@ -80,3 +82,21 @@ def build_root_agent() -> LlmAgent:
 
 
 root_agent = build_root_agent()
+
+# Every transfer between agents swaps the system instruction and the tool set,
+# which changes the request prefix — so without this the whole prompt is
+# re-sent uncached on each handoff. A five-agent case transfers often, and a
+# coordination system is judged partly on how fast it responds during an
+# emergency, so the caching is worth the configuration.
+app = App(
+    name="anbu_care",
+    root_agent=root_agent,
+    context_cache_config=ContextCacheConfig(
+        # Long enough to cover a whole triage-to-alert exchange, short enough
+        # that a case sitting idle for half an hour is not holding cache.
+        ttl_seconds=1800,
+        cache_intervals=10,
+        # Below this, caching costs more than it saves.
+        min_tokens=2048,
+    ),
+)
