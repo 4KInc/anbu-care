@@ -21,7 +21,7 @@ curl -s $URL/api/cases/$CASE/verify | jq        # verify the signed chain yourse
 The agent UI is at [`/dev-ui/`](https://anbu-care-37j4eofpwq-el.a.run.app/dev-ui/).
 Access is open because the receipt chain is meant to be independently checkable —
 see [Public access](#public-access-under-domain-restricted-sharing). All demo data
-is synthetic. Liveness probe is `/api/hospitals`, not `/healthz` (see below).
+is synthetic. Liveness probe is `/api/healthz`.
 
 > *"If something happens to my parent right now, who makes sure the right decisions
 > get made, fast, and that I actually know what's happening?"*
@@ -223,7 +223,7 @@ Beyond ADK's own agent API:
 
 | Route | Purpose |
 |---|---|
-| `GET /healthz` | Liveness, plus whether the signing key is stable and Memory Bank is wired |
+| `GET /api/healthz` | Liveness, plus whether the signing key is stable and Memory Bank is wired |
 | `GET /api/hospitals` | The seeded KB, served with its provenance attached |
 | `POST /api/demo/seed` | Create the Thoothukudi demo family, returns its `parent_id` |
 | `POST /api/intake` | Direct triage — how an automated intake signal enters the system |
@@ -309,11 +309,12 @@ gcloud run services update anbu-care --region=asia-south1 --no-invoker-iam-check
 gcloud run services update anbu-care --region=asia-south1 --invoker-iam-check
 ```
 
-### `/healthz` does not work on Cloud Run
+### Liveness is `/api/healthz`, not `/healthz`
 
-Google Front End reserves `/healthz` and never forwards it to the container, so
-the route defined in `server.py` returns 404 in Cloud Run while working locally.
-Use `/api/hospitals` as the liveness probe. See `infra/DEPLOYED.md`.
+Google Front End reserves the bare `/healthz` path and never forwards it to the
+container, so a route defined there works locally and returns 404 in Cloud Run —
+with no `server: Google Frontend` header, which is the tell. The liveness route
+is served under `/api/` for that reason. See `infra/DEPLOYED.md`.
 
 ### Runtime service account needs explicit roles
 

@@ -14,7 +14,7 @@ run and never mutates a chain from a previous run.
 gcloud auth application-default login        # ADC expires fast on this org
 make verify-stack                            # all five checks must pass
 ./scripts/demo_run.sh --reset                # clear any prior demo state
-curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/hospitals | head -c 80
+curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/healthz
 ```
 
 - [ ] `verify-stack` green, and **signing key reports stable** — an ephemeral key
@@ -23,8 +23,8 @@ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/hospitals | head -c 80
 - [ ] Terminal font large enough that hashes are legible on playback.
 - [ ] Say the words "synthetic", "simulated TPA", and "seeded snapshot" out loud at
       least once each — the honesty framing is part of the architecture case.
-- [ ] `/healthz` returns 404 on Cloud Run by design (GFE reserves it). Do not
-      show it. Use `/api/hospitals` if you need a liveness beat.
+- [ ] Liveness is `/api/healthz`. The bare `/healthz` path is reserved by
+      Google Front End and 404s in Cloud Run — do not use it on camera.
 
 **Backup take:** record a second pass immediately after the first, before
 changing anything. If the live agent call in Beat 3a is slow or the model
@@ -37,20 +37,53 @@ every run — you can cut to the backup without re-seeding.
 
 | Time | Beat | Command | Point at |
 |---|---|---|---|
-| 0:00–0:25 | **The question** | — | "If something happens to my parent right now, who makes sure the right decisions get made?" Name the competitors: all human-coordinator models. |
-| 0:25–0:45 | **Onboarding** | `curl -sX POST $URL/api/demo/seed` | A synthetic Thoothukudi parent with history, policy, and per-purpose consent. Say "synthetic". |
-| 0:45–1:35 | **Explainable routing** ⭐ | `curl -sX POST $URL/api/intake …` | **The strongest 40 s of the demo.** See below. |
-| 1:35–2:20 | **The WhatsApp boundary** ⭐ | agent `/run`, then `demo_support.py block-receipt` | Agent refuses; then bypass the agent and watch the *code* block it anyway. |
-| 2:20–2:50 | **Anyone can verify** | `curl -s $URL/api/cases/$CASE/verify` | Unauthenticated. No login. Judges can run it themselves. |
-| 2:50–3:30 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | Silent edit → chain names the exact failure mode and the sequence number. |
-| 3:30–3:50 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore, still verifies. |
-| 3:50–4:00 | **Close** | — | What is real, what is simulated. Say both. |
+| 0:00–0:20 | **The question** | — | "If something happens to my parent right now, who makes sure the right decisions get made?" Competitors are all human-coordinator models. |
+| 0:20–0:35 | **Onboarding** | `curl -sX POST $URL/api/demo/seed` | A synthetic Thoothukudi parent with history, policy, per-purpose consent. Say "synthetic". |
+| 0:35–1:20 | **Multimodal living record** ⭐ | `demo_support.py ingest-doc … lab_report_mar2026.png` then `…aug2026.png` | Gemini reads two lab reports; LDL unchanged reads as baseline, HbA1c 7.1→8.4 reads as new and abnormal. Then the **ground-truth document count**. |
+| 1:20–2:05 | **Explainable routing** ⭐ | `curl -sX POST $URL/api/intake …` | Holds HIGH against "probably just gas"; cites only the term that differed. |
+| 2:05–2:45 | **The WhatsApp boundary** ⭐ | agent `/run`, then `demo_support.py block-receipt` | Agent refuses; then bypass the agent and watch the *code* block it anyway. |
+| 2:45–3:05 | **Anyone can verify** | `curl -s $URL/api/cases/$CASE/verify` | Unauthenticated. Judges can run it themselves. |
+| 3:05–3:40 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | Silent edit → names the exact failure mode and sequence number. |
+| 3:40–3:55 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore, still verifies. |
+| 3:55–4:00 | **Close** | — | What is real, what is simulated. Say both. |
 
 ---
 
-## The three beats that carry the score
+## The four beats that carry the score
 
-### Beat 2 (0:45–1:35) — routing that explains itself
+### Beat 2 (0:35–1:20) — multimodal into a *living* record
+
+Two synthetic lab reports five months apart. Gemini vision extracts every
+analyte with its unit and flag — say out loud that nothing is typed in by hand.
+
+The line to land is not "it read the image". It is what the record does with the
+second reading:
+
+```
+LDL Cholesterol=165 : unchanged from a previous reading — consistent with baseline
+HbA1c=8.4           : changed from 7.1 and flagged abnormal — new and abnormal
+```
+
+Both are flagged "high" on the page. Only one of them is news. That distinction
+is what makes it a health *record* rather than a pile of parsed documents, and
+it is the Best Multimodal UX argument.
+
+**Then point at the ground-truth line:**
+
+```
+GROUND TRUTH — documents actually stored for this parent: 2
+reported status 'ingested' vs stored count 2: consistent
+```
+
+That count is read back from the service, not from what the agent said. An
+earlier build had an agent announce "successfully ingested into her health
+record" while storing nothing — this line is what makes such a claim visibly
+false on camera, and it is why the agents are now instructed never to report an
+ingest without a `status: "ingested"` tool result.
+
+
+
+### Beat 3 (1:20–2:05) — routing that explains itself
 
 The caller says **"she says it's probably just gas."** Severity still returns
 `HIGH`, because the rule that escalates a red flag is Python, not a prompt.
@@ -69,14 +102,14 @@ that lists a tie as a reason has stopped being an explanation.
 Also on screen: `"knowledge_base": "SEEDED SNAPSHOT — NOT A LIVE FEED"`. Say it
 out loud. It is returned on every triage call, not added for the demo.
 
-### Beat 3 (1:35–2:20) — the guardrail is code, not a prompt
+### Beat 4 (2:05–2:45) — the guardrail is code, not a prompt
 
 Two halves, and the second is the one that matters.
 
-**3a.** Ask the deployed agent to relay `"troponin I is 0.94 ng/mL"` framed as
+**4a.** Ask the deployed agent to relay `"troponin I is 0.94 ng/mL"` framed as
 "just logistics". The agent calls `check_message_allowed` and refuses.
 
-**3b.** Now bypass the agent entirely and call the send tool directly. It is
+**4b.** Now bypass the agent entirely and call the send tool directly. It is
 still blocked — the gate classifies the *content*, not the caller's claim about
 it — and the blocked attempt is written to the receipt chain as
 `comms.blocked`.
@@ -84,7 +117,7 @@ it — and the blocked attempt is written to the receipt chain as
 > Line to say: *"An agent that is merely told not to leak a lab value is not a
 > control. This holds when the model is not the thing enforcing it."*
 
-### Beat 5 (2:50–3:30) — tamper
+### Beat 6 (3:05–3:40) — tamper
 
 Uses a **separate throwaway case**, so the case you just showed a judge stays
 valid on `/verify` — check both on screen.

@@ -118,6 +118,85 @@ def reload_verify(case_id: str) -> None:
     }, indent=2))
 
 
+def ingest_doc(url: str, parent_id: str, image_path: str, session_id: str = "") -> None:
+    """Send a synthetic document to the DEPLOYED agent and report what it did.
+
+    Prints the extracted observations, the tool's own status, and then the
+    stored-document count read back from the service — the ground truth. If the
+    agent ever claims an ingest it did not perform, the count contradicts it on
+    screen.
+    """
+    import base64
+    import subprocess
+    import tempfile
+
+    b64 = base64.b64encode(Path(image_path).read_bytes()).decode()
+
+    def post(path: str, payload: dict):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump(payload, fh)
+            body = fh.name
+        out = subprocess.run(
+            ["curl", "-s", "--max-time", "300", "-X", "POST", f"{url}{path}",
+             "-H", "content-type: application/json", "--data-binary", f"@{body}"],
+            capture_output=True, text=True, check=False).stdout
+        try:
+            return json.loads(out)
+        except Exception:  # noqa: BLE001 - any malformed reply means "no events"
+            print(f"    (agent call failed: {out[:120]})")
+            return None
+
+    if not session_id:
+        created = post("/apps/anbu_care/users/demo/sessions", {})
+        session_id = created["id"] if created else ""
+
+    events = post("/run", {
+        "app_name": "anbu_care", "user_id": "demo", "session_id": session_id,
+        "new_message": {"role": "user", "parts": [
+            {"text": f"Attached is a lab report for parent_id {parent_id}. "
+                     f"Read it and ingest it into her record."},
+            {"inlineData": {"mimeType": "image/png", "data": b64}},
+        ]},
+    })
+
+    reported = None
+    for event in events or []:
+        for part in (event.get("content") or {}).get("parts") or []:
+            call = part.get("functionCall")
+            if call and call["name"] == "ingest_document":
+                observations = call["args"].get("observations", [])
+                print("    extracted by Gemini vision:")
+                for o in observations:
+                    unit = f" {o.get('unit')}" if o.get("unit") else ""
+                    flag = f"  [{o.get('flag')}]" if o.get("flag") else ""
+                    print(f"      {o.get('name')}: {o.get('value')}{unit}{flag}")
+            response = part.get("functionResponse")
+            if response and response["name"] == "ingest_document":
+                body = response["response"]
+                reported = body.get("status")
+                print(f"    tool status: {reported}")
+                if body.get("delta_vs_baseline"):
+                    print("    living-record delta:")
+                    for note in str(body["delta_vs_baseline"]).split("; "):
+                        print(f"      · {note}")
+
+    docs_count(url, parent_id, reported or "<no ingest_document call>")
+
+
+def docs_count(url: str, parent_id: str, claimed: str = "") -> None:
+    """Read the stored-document count back from the service — ground truth."""
+    import subprocess
+
+    out = subprocess.run(["curl", "-s", f"{url}/api/parents/{parent_id}"],
+                         capture_output=True, text=True, check=False).stdout
+    stored = len(json.loads(out)["documents"])
+    print(f"    GROUND TRUTH — documents actually stored for this parent: {stored}")
+    if claimed:
+        agrees = (claimed == "ingested" and stored > 0) or (claimed != "ingested" and stored == 0)
+        verdict = "consistent" if agrees else "CONTRADICTED — the agent claimed more than it did"
+        print(f"    reported status '{claimed}' vs stored count {stored}: {verdict}")
+
+
 def reset() -> None:
     """Delete everything this driver created. Leaves no half-seeded state."""
     from anbu_care.provenance.store import get_store
@@ -152,6 +231,8 @@ def reset() -> None:
 
 COMMANDS = {
     "track": track,
+    "ingest-doc": ingest_doc,
+    "docs-count": docs_count,
     "block-receipt": block_receipt,
     "tamper": tamper,
     "reload-verify": reload_verify,

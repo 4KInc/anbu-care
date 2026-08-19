@@ -36,7 +36,24 @@ echo "  parent_id: $PARENT"
 uv run python scripts/demo_support.py track "" "$PARENT" >/dev/null
 
 # ---------------------------------------------------------------------------
-beat "BEAT 2 — 'She says it's probably just gas' → severity must still hold HIGH"
+beat "BEAT 2 — Multimodal: Gemini reads a lab report into the living record"
+echo "  Two synthetic lab reports, five months apart. Watch LDL."
+for pair in "MARCH baseline:lab_report_mar2026.png" "AUGUST follow-up:lab_report_aug2026.png"; do
+  label="${pair%%:*}"; file="${pair##*:}"
+  echo
+  echo "  ── $label ($file)"
+  cmd "uv run python scripts/demo_support.py ingest-doc $URL $PARENT assets/synthetic/$file"
+  uv run python scripts/demo_support.py ingest-doc "$URL" "$PARENT" "assets/synthetic/$file"
+done
+echo
+echo "  The point: LDL is unchanged at 165 and reads as CONSISTENT WITH BASELINE,"
+echo "  while HbA1c moved 7.1 -> 8.4 and reads as NEW AND ABNORMAL. Same flag on"
+echo "  the page, different meaning against this patient's history."
+echo
+echo "  Ground truth is read back from the service, not from what the agent said."
+
+# ---------------------------------------------------------------------------
+beat "BEAT 3 — 'She says it's probably just gas' → severity must still hold HIGH"
 cmd "curl -sX POST $URL/api/intake -d '{\"symptoms\":[\"chest pain\",\"sweating\"],\"free_text\":\"she says it's probably just gas\"}'"
 INTAKE=$(curl -s -X POST "$URL/api/intake" -H 'content-type: application/json' \
   -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\",\"sweating\"],\"free_text\":\"Neighbour called. Chest tightness ~20 min, radiating to left arm, sweating. She says it's probably just gas.\",\"reported_by\":\"neighbour\"}")
@@ -62,8 +79,8 @@ for h in d['ranked_hospitals']:
 "
 
 # ---------------------------------------------------------------------------
-beat "BEAT 3 — WhatsApp gate: the agent refuses, and the CODE blocks anyway"
-echo "  3a. Agent-level — ask the deployed agent to relay a clinical message:"
+beat "BEAT 4 — WhatsApp gate: the agent refuses, and the CODE blocks anyway"
+echo "  4a. Agent-level — ask the deployed agent to relay a clinical message:"
 SESSION=$(curl -s -X POST "$URL/apps/anbu_care/users/demo/sessions" -H 'content-type: application/json' -d '{}' | JQ "d['id']")
 cmd "POST $URL/run  (whatsapp_agent → check_message_allowed)"
 python3 - "$URL" "$SESSION" "$CASE" "$PARENT" <<'PY'
@@ -89,14 +106,14 @@ for e in evs:
 PY
 
 echo
-echo "  3b. Code-level — bypass the agent entirely and call the send tool directly."
+echo "  4b. Code-level — bypass the agent entirely and call the send tool directly."
 echo "      This is the claim that matters: the boundary holds when the model is not"
 echo "      the thing enforcing it. The blocked attempt is written to the chain."
 cmd "uv run python scripts/demo_support.py block-receipt $CASE $PARENT +14155550142"
 uv run python scripts/demo_support.py block-receipt "$CASE" "$PARENT" "+14155550142"
 
 # ---------------------------------------------------------------------------
-beat "BEAT 4 — Anyone can verify the chain, with no login"
+beat "BEAT 5 — Anyone can verify the chain, with no login"
 cmd "curl -s $URL/api/cases/$CASE/verify"
 curl -s "$URL/api/cases/$CASE/verify" | python3 -m json.tool
 echo
@@ -108,7 +125,7 @@ for r in d['receipts']:
 "
 
 # ---------------------------------------------------------------------------
-beat "BEAT 5 — Tamper (throwaway case; the case above stays valid)"
+beat "BEAT 6 — Tamper (throwaway case; the case above stays valid)"
 THROW=$(curl -s -X POST "$URL/api/intake" -H 'content-type: application/json' \
   -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"tamper-demo\"}" | JQ "d['case_id']")
 uv run python scripts/demo_support.py track "$THROW" "" >/dev/null
@@ -127,7 +144,7 @@ echo "  and the case a judge was shown is STILL valid:"
 curl -s "$URL/api/cases/$CASE/verify" | JQ "'    verified=' + str(d['verified']) + '  receipts=' + str(d['receipt_count'])"
 
 # ---------------------------------------------------------------------------
-beat "BEAT 6 — Reload from Firestore in a fresh process (not process memory)"
+beat "BEAT 7 — Reload from Firestore in a fresh process (not process memory)"
 cmd "uv run python scripts/demo_support.py reload-verify $CASE"
 uv run python scripts/demo_support.py reload-verify "$CASE"
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError
+
 from anbu_care import service
 from anbu_care.schemas import (
     DocumentKind,
@@ -190,13 +192,35 @@ def ingest_document(
     except ValueError:
         doc_kind = DocumentKind.OTHER
 
+    try:
+        parsed = [Observation.model_validate(o) for o in observations]
+    except ValidationError as exc:
+        # A malformed observation is the model's mistake, not a server fault.
+        # Returning it as a tool result lets the agent correct itself; raising
+        # would 500 the whole request and lose the rest of the conversation.
+        #
+        # NOTE: exc.errors() echoes the offending input value. That is safe for
+        # the synthetic documents this build ships with, but on a real medical
+        # document it would put patient data into logs and into the model's
+        # context. Redact input_value here before this ever sees real records.
+        return {
+            "status": "error",
+            "error": "could not parse observations",
+            "expected_keys": ["name", "value", "unit", "reference_range", "flag", "observed_on"],
+            "detail": [
+                {"field": ".".join(str(p) for p in e.get("loc", ())), "problem": e.get("msg")}
+                for e in exc.errors()[:5]
+            ],
+            "hint": "every observation needs at least 'name' and 'value'; values may be numbers or text",
+        }
+
     doc = ParsedDocument(
         document_id=service.new_id("doc"),
         parent_id=parent_id,
         kind=doc_kind,
         source_filename=source_filename,
         summary=summary,
-        observations=[Observation.model_validate(o) for o in observations],
+        observations=parsed,
     )
     doc.delta_vs_baseline = _delta_vs_baseline(parent_id, doc)
     service.save_document(doc)
@@ -205,6 +229,32 @@ def ingest_document(
         "document": doc.model_dump(mode="json"),
         "delta_vs_baseline": doc.delta_vs_baseline,
     }
+
+
+def _as_number(value: str) -> float | None:
+    """Parse a reading as a number, or None if it is not one."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _same_reading(value: str, seen: list[str]) -> bool:
+    """Has this reading been recorded before?
+
+    Compared numerically where both sides are numeric, so "165", "165.0" and
+    165 are one reading rather than three. Falls back to case-insensitive text
+    for results that are not numbers ("Positive", "Trace").
+    """
+    current = _as_number(value)
+    for previous in seen:
+        if current is not None:
+            other = _as_number(previous)
+            if other is not None and current == other:
+                return True
+        elif previous.strip().lower() == value.strip().lower():
+            return True
+    return False
 
 
 def _delta_vs_baseline(parent_id: str, doc: ParsedDocument) -> str:
@@ -228,7 +278,7 @@ def _delta_vs_baseline(parent_id: str, doc: ParsedDocument) -> str:
                 f"{obs.name}={obs.value}{' ' + obs.unit if obs.unit else ''}: first recorded value"
                 + (" and flagged abnormal — genuinely new" if abnormal else "")
             )
-        elif obs.value in seen:
+        elif _same_reading(obs.value, seen):
             notes.append(f"{obs.name}={obs.value}: unchanged from a previous reading — consistent with baseline")
         else:
             notes.append(

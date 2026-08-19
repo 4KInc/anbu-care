@@ -29,3 +29,8 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+
+[dependency-groups]
+dev = [
+    "pillow>=12.3.0",
+]

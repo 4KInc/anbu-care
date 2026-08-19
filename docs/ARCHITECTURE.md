@@ -95,7 +95,7 @@ input for the same logical payload, or verification means nothing.
 
 **The signing key must be stable.** An ephemeral key means receipts written
 before a restart stop verifying. `load_signer` mints an ephemeral dev key when
-`ANBU_SIGNING_KEY_B64` is unset and flags it in `/healthz`, in
+`ANBU_SIGNING_KEY_B64` is unset and flags it in `/api/healthz`, in
 `verify_case_chain`, and in the demo output. `infra/deploy_cloud_run.sh` refuses
 to deploy without one.
 

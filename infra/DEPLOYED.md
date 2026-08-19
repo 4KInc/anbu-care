@@ -65,11 +65,9 @@ routed all along.
 returns 404 today, even with the service fully public and even through an
 authenticated proxy, while every sibling route returns 200.
 
-> **Known limitation:** `server.py` defines a `/healthz` route that works
-> locally and is unreachable on Cloud Run. Use `/api/hospitals` as the liveness
-> probe until the route is renamed. The fix is a one-line rename in `server.py`
-> (e.g. to `/api/healthz`), deliberately not applied here because this was
-> scoped as a deployment task.
+> **Resolved:** the liveness route was moved to **`/api/healthz`**. The bare
+> `/healthz` path stays unusable on Cloud Run — that is Google Front End's
+> behaviour, not something the app can change — so nothing should probe it.
 
 ### The real blocker, and the fix
 

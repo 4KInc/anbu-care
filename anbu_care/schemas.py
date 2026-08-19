@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def utcnow() -> datetime:
@@ -85,6 +85,26 @@ class Observation(BaseModel):
 
     name: str
     value: str
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _coerce_value(cls, value: object) -> object:
+        """Accept a number where a reading is expected.
+
+        A vision model reading "232" off a lab report emits the JSON number
+        232, not the string "232" — they are the same reading, and rejecting
+        one of them fails the whole ingest. Stored as text because plenty of
+        real results are not numeric ("Positive", "<0.01", "Trace").
+        """
+        if isinstance(value, bool):          # bool is an int subclass; not a reading
+            return value
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            # 8.4 must not become "8.400000000000001", and 165.0 must not
+            # become "165.0" when the same reading arrived as 165 last time.
+            return f"{value:g}"
+        return value
     unit: str | None = None
     reference_range: str | None = None
     flag: str | None = None  # "high" | "low" | "normal" | "abnormal"

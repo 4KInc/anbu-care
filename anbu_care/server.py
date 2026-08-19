@@ -54,9 +54,14 @@ class IntakeRequest(BaseModel):
     case_id: str = ""
 
 
-@app.get("/healthz")
+@app.get("/api/healthz")
 def healthz() -> dict[str, Any]:
-    """Liveness, plus the two things that are easy to get wrong on deploy."""
+    """Liveness, plus the two things that are easy to get wrong on deploy.
+
+    Served under /api/ because Google Front End reserves the bare /healthz path
+    and never forwards it to the container — a route defined there works
+    locally and returns 404 in Cloud Run.
+    """
     signer = load_signer()
     return {
         "status": "ok",
