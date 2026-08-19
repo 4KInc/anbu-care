@@ -49,6 +49,25 @@ receipt schema built around agent decisions (`triage.decision`, `evidence.assess
 `claim.submitted`, `comms.blocked`), and a verifier that distinguishes an altered
 payload from a dropped receipt from a bad signature.
 
+## The simulated adjudicator's rules are our construction
+
+`anbu_care/tpa/adjudicator.py` decides PASS / PARTIAL / QUERY / DENY using
+deterministic local rules. Those rules are **our own construction from published
+convention**, not any insurer's or TPA's actual adjudication logic, and no
+insurer was consulted.
+
+Specifically, the per-day sub-limit percentages (room rent 1% of sum insured per
+day, ICU 2% per day) are the conventional caps widely used across Indian health
+policies. They are applied here as a plausible stand-in so the claim path
+produces defensible arithmetic. **No real policy schedule was copied**, and the
+demo seeds no bespoke sub-limit values — the caps derive from the convention
+applied to the sum insured already on the synthetic policy, so the numbers land
+wherever the arithmetic puts them.
+
+A richer adjudicator looks more like a real integration than the earlier stub
+did, so the label works harder: every adjudication payload, receipt, and agent
+report carries `SIMULATED — deterministic local rules, not an insurer`.
+
 ## Third-party dependencies
 
 Standard open-source libraries, unmodified, declared in `pyproject.toml`:

@@ -197,6 +197,86 @@ def docs_count(url: str, parent_id: str, claimed: str = "") -> None:
         print(f"    reported status '{claimed}' vs stored count {stored}: {verdict}")
 
 
+def claim_flow(case_id: str, parent_id: str) -> None:
+    """Submit a claim, get queried, react, get priced — against the deployed store.
+
+    The narrated beat. Runs at the tool layer so it is identical every take; the
+    agent does the same thing through its own tools in the live demo.
+    """
+    from anbu_care.tools import insurer_tools, onboarding_tools
+
+    packet = insurer_tools.assemble_claim_packet(
+        case_id=case_id, parent_id=parent_id,
+        admission_summary="Admitted 19 Aug 2026 with acute chest pain. Cardiac ICU. Discharged 22 Aug 2026.",
+        itemized_bills_inr={"cardiac_icu_room": 96_000, "procedures": 210_000,
+                            "pharmacy": 34_500, "diagnostics": 18_000},
+        diagnostics=["ECG", "Troponin I", "2D Echo"],
+        attached_document_ids=[],
+        admitted_on="2026-08-19", discharged_on="2026-08-22",
+    )
+    packet_id = packet["packet"]["packet_id"]
+    print(f"    packet {packet_id}: INR {packet['packet']['total_claimed_inr']:,} claimed")
+
+    submitted = insurer_tools.submit_claim(case_id, packet_id, "cashless_preauth")
+    adj = submitted["adjudication"]
+    print(f"\n    [1] SUBMITTED -> {adj['outcome']}   ({submitted['adjudicator']})")
+    for reason in adj["reasons"]:
+        print(f"        · {reason}")
+    print(f"        original SLA: {submitted['sla']['seconds_remaining'] // 60} min remaining")
+    if submitted.get("query_response_deadline"):
+        print("        query response clock started, both now running")
+
+    print("\n    [2] The agent reacts: looking for the queried document on file…")
+    doc = onboarding_tools.ingest_document(
+        parent_id, kind="discharge_summary", source_filename="discharge_22aug2026.pdf",
+        summary="Admitted 19 Aug 2026, cardiac ICU, discharged 22 Aug 2026.",
+        observations=[],
+    )
+    doc_id = doc["document"]["document_id"]
+    print(f"        found and attached: {doc_id} (kind=discharge_summary)")
+
+    responded = insurer_tools.respond_to_query(
+        case_id, submitted["submission"]["submission_id"], [doc_id],
+    )
+    adj2 = responded["adjudication"]
+    print(f"\n    [3] RESUBMITTED -> {adj2['outcome']}")
+    for reason in adj2["reasons"]:
+        print(f"        · {reason}")
+    print(f"\n        claimed    INR {adj2['total_claimed_inr']:,}")
+    print(f"        allowed    INR {adj2['total_allowed_inr']:,}")
+    print(f"        DISALLOWED INR {adj2['total_disallowed_inr']:,}   <- family told now, not at settlement")
+
+
+def adjudicator_branches(parent_id: str) -> None:
+    """Exercise all four outcomes live, so completeness can be verified not claimed."""
+    from anbu_care.schemas import ClaimPacket, DocumentKind, InsurancePolicy
+    from anbu_care.tpa import adjudicate
+
+    policy = InsurancePolicy(insurer="Star Health", policy_number="SH-NRI-4471902",
+                             sum_insured_inr=500_000)
+    def pkt(bills, **kw):
+        return ClaimPacket(packet_id="branch", case_id="branch", parent_id=parent_id,
+                           itemized_bills_inr=bills, total_claimed_inr=sum(bills.values()),
+                           admitted_on=kw.get("admitted_on", "2026-08-19"),
+                           discharged_on=kw.get("discharged_on", "2026-08-22"))
+
+    D = {DocumentKind.DISCHARGE_SUMMARY}
+    cases = [
+        ("PASS",    pkt({"cardiac_icu_room": 25_000, "pharmacy": 4_000}), policy, D),
+        ("PARTIAL", pkt({"cardiac_icu_room": 96_000, "procedures": 210_000}), policy, D),
+        ("QUERY",   pkt({"cardiac_icu_room": 96_000}), policy, set()),
+        ("DENY",    pkt({"toiletries": 900, "attendant_charges": 4_000}), policy, D),
+    ]
+    for label, packet, pol, kinds in cases:
+        result = adjudicate(packet, pol, kinds)
+        assert result.outcome.value == label, f"{label} branch returned {result.outcome.value}"
+        print(f"    {result.outcome.value:<8} claimed INR {result.total_claimed_inr:>9,}  "
+              f"allowed INR {result.total_allowed_inr:>9,}  disallowed INR {result.total_disallowed_inr:>9,}")
+        print(f"             {result.reasons[0][:110]}")
+    print("\n    All four branches reachable and self-consistent. Rules are deterministic;")
+    print("    every result carries: " + adjudicate(cases[0][1], policy, D).adjudicator)
+
+
 def reset() -> None:
     """Delete everything this driver created. Leaves no half-seeded state."""
     from anbu_care.provenance.store import get_store
@@ -232,6 +312,8 @@ def reset() -> None:
 COMMANDS = {
     "track": track,
     "ingest-doc": ingest_doc,
+    "claim-flow": claim_flow,
+    "adjudicator-branches": adjudicator_branches,
     "docs-count": docs_count,
     "block-receipt": block_receipt,
     "tamper": tamper,

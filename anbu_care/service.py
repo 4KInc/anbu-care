@@ -15,6 +15,7 @@ from anbu_care.config import settings
 from anbu_care.provenance.chain import Receipt, ReceiptChain, VerificationResult
 from anbu_care.provenance.store import Store, get_store, load_receipts, save_receipt
 from anbu_care.schemas import (
+    Adjudication,
     Case,
     ClaimPacket,
     ClaimStage,
@@ -153,6 +154,17 @@ def load_submission(case_id: str, submission_id: str, store: Store | None = None
     store = store or get_store()
     row = store.get(f"CASE#{case_id}", f"SUBMISSION#{submission_id}")
     return ClaimSubmission.model_validate(_clean(row)) if row else None
+
+
+def save_adjudication(adj: Adjudication, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{adj.case_id}", f"ADJUDICATION#{adj.adjudication_id}", adj.model_dump(mode="json"))
+
+
+def list_adjudications(case_id: str, store: Store | None = None) -> list[Adjudication]:
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "ADJUDICATION#")
+    return [Adjudication.model_validate(_clean(r)) for r in rows]
 
 
 def sla_deadline(kind: str, start: datetime | None = None) -> datetime:

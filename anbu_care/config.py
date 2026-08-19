@@ -25,7 +25,6 @@ class Settings:
     project_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLOUD_PROJECT", "anbu-care-hack"))
     location: str = field(default_factory=lambda: os.getenv("GOOGLE_CLOUD_LOCATION", "global"))
     model: str = field(default_factory=lambda: os.getenv("ANBU_MODEL", "gemini-3.5-flash"))
-    model_light: str = field(default_factory=lambda: os.getenv("ANBU_MODEL_LIGHT", "gemini-3.5-flash-lite"))
 
     # Storage
     store_backend: str = field(default_factory=lambda: os.getenv("ANBU_STORE_BACKEND", "firestore"))

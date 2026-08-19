@@ -156,6 +156,7 @@ def packet(parent_id):
         admission_summary="Admitted with chest pain.",
         itemized_bills_inr={"room": 96_000, "procedures": 210_000},
         diagnostics=[], attached_document_ids=[],
+        admitted_on="2026-08-19", discharged_on="2026-08-22",
     )
     return case.case_id, result["packet"]["packet_id"]
 
@@ -186,6 +187,7 @@ def test_an_empty_packet_is_blocked_rather_than_stepped_up(parent_id):
     result = insurer_tools.assemble_claim_packet(
         case_id=case.case_id, parent_id=parent_id, admission_summary="",
         itemized_bills_inr={}, diagnostics=[], attached_document_ids=[],
+        admitted_on="", discharged_on="",
     )
     assessment = evidence_tools.assess_claim_packet(
         case.case_id, result["packet"]["packet_id"]
@@ -200,6 +202,7 @@ def test_claim_over_sum_insured_is_warned_before_submission(parent_id):
         admission_summary="Long ICU stay.",
         itemized_bills_inr={"icu": 700_000},
         diagnostics=["ECG"], attached_document_ids=["doc-1"],
+        admitted_on="2026-08-19", discharged_on="2026-08-22",
     )
     warnings = result["coverage_check"]["warnings"]
     assert any("exceeds sum insured" in w for w in warnings)
@@ -273,6 +276,7 @@ def test_whole_case_chain_verifies_and_survives_reload(parent_id):
         case_id=case_id, parent_id=parent_id, admission_summary="x",
         itemized_bills_inr={"room": 1000}, diagnostics=["ECG"],
         attached_document_ids=["doc-1"],
+        admitted_on="2026-08-19", discharged_on="2026-08-22",
     )
     insurer_tools.submit_claim(case_id, packet["packet"]["packet_id"], sla_kind="cashless_preauth")
 

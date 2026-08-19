@@ -13,10 +13,21 @@ set -euo pipefail
 
 URL="${ANBU_URL:-https://anbu-care-37j4eofpwq-el.a.run.app}"
 JQ() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
+# gRPC's fork handler chatters on stderr when Pub/Sub publishes from a short-lived
+# process. Harmless, and unreadable on camera.
+export GRPC_VERBOSITY=NONE GLOG_minloglevel=3
+quiet() { "$@" 2> >(grep -v "ev_poll_posix\|FD from fork parent" >&2); }
 BAR="────────────────────────────────────────────────────────────────────────────"
 
 beat() { printf '\n%s\n▶ %s\n%s\n' "$BAR" "$1" "$BAR"; }
 cmd()  { printf '  $ %s\n' "$1"; }
+
+if [[ "${1:-}" == "--branches" ]]; then
+  echo "All four simulated-adjudicator outcomes, live (not unit tests):"
+  echo
+  uv run python scripts/demo_support.py adjudicator-branches demo-parent
+  exit 0
+fi
 
 if [[ "${1:-}" == "--reset" ]]; then
   echo "Resetting demo state (deleting every case and parent this driver created)…"
@@ -113,7 +124,16 @@ cmd "uv run python scripts/demo_support.py block-receipt $CASE $PARENT +14155550
 uv run python scripts/demo_support.py block-receipt "$CASE" "$PARENT" "+14155550142"
 
 # ---------------------------------------------------------------------------
-beat "BEAT 5 — Anyone can verify the chain, with no login"
+beat "BEAT 5 — The claim comes back QUERIED, and the agent reacts"
+echo "  The counterparty is SIMULATED. What is real: the packet, the policy math,"
+echo "  the SLA clocks, and the receipts."
+cmd "uv run python scripts/demo_support.py claim-flow $CASE $PARENT"
+quiet uv run python scripts/demo_support.py claim-flow "$CASE" "$PARENT"
+echo
+echo "  All four outcomes are reachable — see: ./scripts/demo_run.sh --branches"
+
+# ---------------------------------------------------------------------------
+beat "BEAT 6 — Anyone can verify the chain, with no login"
 cmd "curl -s $URL/api/cases/$CASE/verify"
 curl -s "$URL/api/cases/$CASE/verify" | python3 -m json.tool
 echo
@@ -125,7 +145,7 @@ for r in d['receipts']:
 "
 
 # ---------------------------------------------------------------------------
-beat "BEAT 6 — Tamper (throwaway case; the case above stays valid)"
+beat "BEAT 7 — Tamper (throwaway case; the case above stays valid)"
 THROW=$(curl -s -X POST "$URL/api/intake" -H 'content-type: application/json' \
   -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"tamper-demo\"}" | JQ "d['case_id']")
 uv run python scripts/demo_support.py track "$THROW" "" >/dev/null
@@ -144,7 +164,7 @@ echo "  and the case a judge was shown is STILL valid:"
 curl -s "$URL/api/cases/$CASE/verify" | JQ "'    verified=' + str(d['verified']) + '  receipts=' + str(d['receipt_count'])"
 
 # ---------------------------------------------------------------------------
-beat "BEAT 7 — Reload from Firestore in a fresh process (not process memory)"
+beat "BEAT 8 — Reload from Firestore in a fresh process (not process memory)"
 cmd "uv run python scripts/demo_support.py reload-verify $CASE"
 uv run python scripts/demo_support.py reload-verify "$CASE"
 

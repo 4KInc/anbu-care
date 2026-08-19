@@ -195,6 +195,12 @@ class ClaimPacket(BaseModel):
     parent_id: str
     policy_number: str | None = None
     admission_summary: str = ""
+    # Per-day sub-limits cannot be applied without these. Kept as explicit
+    # fields rather than parsed out of admission_summary prose, because a
+    # payable figure that depends on regex over free text is not a figure
+    # anyone should defend.
+    admitted_on: str | None = None
+    discharged_on: str | None = None
     itemized_bills_inr: dict[str, int] = Field(default_factory=dict)
     diagnostics: list[str] = Field(default_factory=list)
     attached_document_ids: list[str] = Field(default_factory=list)
@@ -229,9 +235,59 @@ class ClaimStage(str, Enum):
     ASSEMBLED = "assembled"
     SUBMITTED = "submitted"
     UNDER_REVIEW = "under_review"
+    QUERIED = "queried"
+    PARTIALLY_APPROVED = "partially_approved"
     APPROVED = "approved"
     DENIED = "denied"
     PAID = "paid"
+
+
+class AdjudicationOutcome(str, Enum):
+    """What the simulated TPA came back with.
+
+    QUERY is evaluated before PARTIAL on purpose: a payable figure cannot be
+    computed while a required document is missing, so a real adjudicator asks
+    first and prices second.
+    """
+
+    PASS = "PASS"
+    PARTIAL = "PARTIAL"
+    QUERY = "QUERY"
+    DENY = "DENY"
+
+
+class LineAssessment(BaseModel):
+    """One claimed line, priced against the policy."""
+
+    item: str
+    claimed_inr: int
+    allowed_inr: int
+    disallowed_inr: int
+    rule: str
+
+
+class Adjudication(BaseModel):
+    """A simulated adjudication result.
+
+    Everything here is produced by deterministic local rules. No insurer or TPA
+    is contacted, and the payload says so in every response.
+    """
+
+    adjudication_id: str
+    submission_id: str
+    packet_id: str
+    case_id: str
+    outcome: AdjudicationOutcome
+    reasons: list[str] = Field(default_factory=list)
+    lines: list[LineAssessment] = Field(default_factory=list)
+    total_claimed_inr: int = 0
+    total_allowed_inr: int = 0
+    total_disallowed_inr: int = 0
+    missing_documents: list[str] = Field(default_factory=list)
+    attempt: int = 1
+    simulated: bool = True
+    adjudicator: str = "SIMULATED — deterministic local rules, not an insurer"
+    adjudicated_at: datetime = Field(default_factory=utcnow)
 
 
 class ClaimSubmission(BaseModel):
@@ -243,6 +299,12 @@ class ClaimSubmission(BaseModel):
     # under the IRDAI 2024 Master Circular. We track both against real wall time.
     sla_kind: str = "cashless_preauth"
     sla_deadline: datetime | None = None
+    # A raised query starts its own response window. The original SLA deadline
+    # above keeps running and is still reported — this is an additional clock,
+    # not a replacement.
+    query_raised_at: datetime | None = None
+    query_response_deadline: datetime | None = None
+    adjudication_attempts: int = 0
     simulated: bool = True
     counterparty_note: str = "SIMULATED TPA — no production insurer API integrated."
     submitted_at: datetime = Field(default_factory=utcnow)

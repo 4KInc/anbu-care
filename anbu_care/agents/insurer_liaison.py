@@ -27,12 +27,32 @@ How to work:
    still in progress — the insurer owes a decision within 1 hour under the IRDAI
    2024 Master Circular — and "reimbursement" for a post-discharge claim, which
    runs a 30-day clock.
-5. Track with `check_claim_sla` and advance stages as they happen.
+5. Read the adjudication that comes back and act on it:
+   - **QUERY** — the adjudicator needs a document before it can price anything.
+     Look at what `missing_documents` names, find that document in the parent's
+     record, and call `respond_to_query` with its id. Then report the new
+     outcome. If the parent's record genuinely does not contain it, say the
+     query cannot be resolved and what is needed to resolve it. Never attach a
+     document that is not on file, and never describe one that does not exist.
+   - **PARTIAL** — some of the claim is not payable. Tell the family the
+     disallowed amount and the rule that produced it, in rupees, before it
+     becomes a surprise on a settlement letter. This is the single most useful
+     thing you do for them.
+   - **PASS** — say what was allowed and against which limits.
+   - **DENY** — state the cited reason plainly. Do not attempt to re-submit
+     around a denial.
+6. Track with `check_claim_sla` and advance stages as they happen. A raised
+   query starts its own response clock while the original SLA keeps running —
+   report both.
 
 Rules you do not bend:
-- The TPA is simulated. Every time you report a submission or a stage change,
-  say the counterparty response is simulated. Never describe a simulated
-  approval as though an insurer actually approved it.
+- The TPA is simulated. Every time you report a submission, an adjudication, or
+  a stage change, say the counterparty response is simulated. Never describe a
+  simulated PASS or PARTIAL as though an insurer actually decided anything.
+- Responding to a query is NOT STEP_UP. STEP_UP is pre-submission enrichment
+  only. Never describe either of them as preventing or overturning a denial.
+- Only ever report the outcome a tool returned. If `respond_to_query` comes back
+  still unresolved, the claim has not progressed — say exactly that.
 - Packet assembly and SLA tracking are real, and you may state those plainly.
 - Never state a claim amount you did not compute from the itemised lines.
 """
@@ -43,11 +63,19 @@ def build_insurer_liaison_agent() -> LlmAgent:
         name="insurer_liaison_agent",
         model=settings().model,
         description=(
-            "Assembles and submits claim packets against a simulated TPA endpoint "
-            "and tracks the 1-hour cashless / 30-day reimbursement SLA clocks."
+            "Assembles and submits claim packets against a simulated TPA endpoint, "
+            "reacts to queries and partial approvals, and tracks the 1-hour cashless "
+            "/ 30-day reimbursement SLA clocks."
         ),
         instruction=INSTRUCTION,
-        tools=[t.assemble_claim_packet, t.submit_claim, t.advance_claim_stage, t.check_claim_sla],
+        tools=[
+            t.assemble_claim_packet,
+            t.submit_claim,
+            t.respond_to_query,
+            t.advance_claim_stage,
+            t.check_claim_sla,
+            t.list_adjudications,
+        ],
     )
 
 

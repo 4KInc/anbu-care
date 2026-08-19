@@ -333,6 +333,18 @@ done
 
 Then deploy a new revision — running instances do not pick up IAM changes.
 
+## Future work
+
+- **Ingestion provenance receipts.** Documents are ground-truthed by a stored
+  count today; a `document.ingested` receipt with a content hash would also make
+  *stored-then-altered* detectable. The topology audit in
+  [`docs/proposals/ingestion-provenance.md`](docs/proposals/ingestion-provenance.md)
+  found the chain core is **already subject-agnostic** — `verify_chain`,
+  sequence and `prev_hash` logic carry no case knowledge, so this is a new PK
+  prefix rather than a refactor. Deliberately deferred, not unexamined: the
+  case-chain tamper beat already carries the verifiability story, so the hour
+  went to the adjudicator instead.
+
 ## Disclosure
 
 Anbu Care reimplements two patterns from our own prior work, written fresh

@@ -42,10 +42,11 @@ every run — you can cut to the backup without re-seeding.
 | 0:35–1:20 | **Multimodal living record** ⭐ | `demo_support.py ingest-doc … lab_report_mar2026.png` then `…aug2026.png` | Gemini reads two lab reports; LDL unchanged reads as baseline, HbA1c 7.1→8.4 reads as new and abnormal. Then the **ground-truth document count**. |
 | 1:20–2:05 | **Explainable routing** ⭐ | `curl -sX POST $URL/api/intake …` | Holds HIGH against "probably just gas"; cites only the term that differed. |
 | 2:05–2:45 | **The WhatsApp boundary** ⭐ | agent `/run`, then `demo_support.py block-receipt` | Agent refuses; then bypass the agent and watch the *code* block it anyway. |
-| 2:45–3:05 | **Anyone can verify** | `curl -s $URL/api/cases/$CASE/verify` | Unauthenticated. Judges can run it themselves. |
-| 3:05–3:40 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | Silent edit → names the exact failure mode and sequence number. |
-| 3:40–3:55 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore, still verifies. |
-| 3:55–4:00 | **Close** | — | What is real, what is simulated. Say both. |
+| 2:45–3:20 | **Claim queried → agent reacts** ⭐ | `demo_support.py claim-flow $CASE $PARENT` | The one beat where the system *reacts* rather than proceeds. See below. |
+| 3:20–3:35 | **Anyone can verify** | `curl -s $URL/api/cases/$CASE/verify` | Unauthenticated. Judges can run it themselves. |
+| 3:35–4:05 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | Silent edit → names the exact failure mode and sequence number. |
+| 4:05–4:15 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore, still verifies. |
+| 4:15–4:25 | **Close** | — | What is real, what is simulated. Say both. |
 
 ---
 
@@ -117,7 +118,46 @@ it — and the blocked attempt is written to the receipt chain as
 > Line to say: *"An agent that is merely told not to leak a lab value is not a
 > control. This holds when the model is not the thing enforcing it."*
 
-### Beat 6 (3:05–3:40) — tamper
+### Beat 5 (2:45–3:20) — the claim comes back queried, and the agent reacts
+
+Everything before this is the system *proceeding*. This is the only beat where
+something comes back that the agent has to think about.
+
+```
+[1] SUBMITTED   -> QUERY    (SIMULATED — deterministic local rules, not an insurer)
+    · required document not attached: discharge summary
+    original SLA: 59 min remaining; query response clock started, both now running
+[2] The agent reacts: looking for the queried document on file…
+    found and attached: doc-33f3678e8b (kind=discharge_summary)
+[3] RESUBMITTED -> PARTIAL
+    · cardiac_icu_room: claimed INR 96,000, allowed INR 30,000, disallowed INR 66,000
+      (sub-limit: 2% of sum insured per day = INR 10,000/day x 3 day(s) = INR 30,000)
+
+    DISALLOWED INR 66,000   <- family told now, not at settlement
+```
+
+**Say the arithmetic out loud and invite the check.** Sum insured ₹5,00,000; the
+conventional ICU cap is 2% per day = ₹10,000/day; the stay is 19–22 Aug = 3 days;
+so ₹30,000 of a ₹96,000 ICU bill is payable and **₹66,000 is not**. Nothing is
+seeded to produce that number — it falls out of the convention applied to the
+policy on screen. A judge can do it in their head, and it ties out.
+
+**The product line:** the family hears about ₹66,000 of exposure from their own
+coordinator, now — not from a settlement letter later.
+
+**Say SIMULATED.** The counterparty is not real and the payload says so on every
+line. What *is* real: the packet, the policy arithmetic, the SLA clocks, and the
+receipts.
+
+Two things worth pointing at if a judge is engaged:
+
+- `./scripts/demo_run.sh --branches` shows **all four outcomes live** — PASS,
+  PARTIAL, QUERY, DENY — not three plus a unit test.
+- The agent will not invent the missing document. If the discharge summary is
+  genuinely not on file, it says the query cannot be resolved. That is the same
+  guarantee as the ingestion ground-truth count, on a different path.
+
+### Beat 7 (3:35–4:05) — tamper
 
 Uses a **separate throwaway case**, so the case you just showed a judge stays
 valid on `/verify` — check both on screen.
