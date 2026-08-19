@@ -31,30 +31,70 @@ saying "she says it's probably just gas", cited the cashless-network difference
 rather than the tied capability score, and surfaced both the seeded-KB caveat
 and the unconfirmed-location assumption without being asked.
 
+## Open issue: the Cloud Run URL returns 404 — UNRESOLVED
+
+The service deploys and the container starts cleanly, but **no request has ever
+reached it**. Every call to either default URL returns a Google Frontend 404
+(the generic `Error 404 (Not Found)!!1` page), not a response from the app.
+
+What was ruled out:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| App is broken | same image serves `/healthz` locally | app is fine |
+| Container failed to start | Cloud Run logs | `Application startup complete`, `Ready=True` |
+| Routing not provisioned | `status.conditions` | `RoutesReady=True` |
+| DNS not propagated | `dig` on both hostnames | resolve to Google IPs |
+| Propagation lag | polled ~20 min, forced a new revision | still 404 |
+| This machine or its network | probed from a Cloud Build job inside GCP | still 404 |
+| Region-specific | second service deployed to `us-central1` | still 404 (since deleted) |
+| Ingress restriction | `run.googleapis.com/ingress=all`, `run.allowedIngress` = ALLOW | not it |
+| VPC Service Controls | no perimeter found | not it |
+| Org policy blocking Cloud Run URLs | listed every org policy on `227631295422` | none relevant |
+
+Not yet ruled out: whether the 404 is Cloud Run's answer to an *unauthorized*
+caller. Cloud Run can return 404 rather than 403 to avoid disclosing that a
+service exists. Confirming it needs an identity token whose audience is the
+service URL, which user credentials cannot mint — it requires impersonating a
+service account, and that attempt stalled on IAM propagation.
+
+**Next step:** mint a properly-audienced token and retry. A 200 means the 404
+was purely an access-control artefact and the fix is the access decision below.
+Still 404 means this is a Google-side problem for Cloud Support.
+
+```bash
+SA=473806191488-compute@developer.gserviceaccount.com
+URL=https://anbu-care-37j4eofpwq-el.a.run.app
+gcloud iam service-accounts add-iam-policy-binding $SA \
+  --member="user:YOU@blockintelai.com" --role="roles/iam.serviceAccountTokenCreator"
+gcloud run services add-iam-policy-binding anbu-care --region=asia-south1 \
+  --member="serviceAccount:$SA" --role="roles/run.invoker"
+# wait for IAM to propagate, then:
+TOK=$(gcloud auth print-identity-token --impersonate-service-account=$SA \
+      --audiences=$URL --include-email)
+curl -H "Authorization: Bearer $TOK" $URL/healthz
+```
+
+None of this blocks the demo: `make demo` and `make chat` run the full system
+locally, and `scripts/verify_stack.py` confirms every cloud dependency is live.
+
 ## Access
 
 Public access (`allUsers`) is **refused** by the organization policy
 `constraints/iam.allowedPolicyMemberDomains`, which restricts IAM members to the
-`blockintelai.com` Workspace customer. The deploy reports this as a warning, not
-an error, so the service silently ends up reachable only from inside the domain.
+`blockintelai.com` Workspace customer. The deploy reports this as a warning
+rather than an error, so the service silently ends up domain-only.
 
 Current invoker: `user:heartlinmachado@blockintelai.com`.
-
-To reach it:
-
-```bash
-gcloud run services proxy anbu-care --region=asia-south1 --port=8080
-curl localhost:8080/healthz
-```
 
 **Before submission**, judges will need access without a `blockintelai.com`
 account. Two options:
 
 1. Add a project-level exception to `iam.allowedPolicyMemberDomains` for
-   `anbu-care-hack`, then re-run the `allUsers` invoker grant. This weakens a
-   deliberate org-wide control on one project — an owner's decision, not a
-   default.
-2. Submit a recorded demo plus the locally reproducible `make demo`, and keep
+   `anbu-care-hack`, then re-run the `allUsers` invoker grant. That weakens a
+   deliberate org-wide control on one project — an owner's call, not a default,
+   so it is left undone here.
+2. Submit a recorded demo plus the locally reproducible `make demo`, and leave
    the deployed service domain-only.
 
 ## Setup that had to be done once
