@@ -61,6 +61,7 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .card.edge-teal{border-left:4px solid var(--teal)}
 .card.edge-amber{border-left:4px solid var(--amber)}
 .card > h2{font-size:19px;font-weight:800;letter-spacing:-.01em;color:var(--ink);
+           overflow-wrap:anywhere;
            margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line-soft)}
 .card > h2.mini{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
                 color:var(--ink-mute);border-bottom:0;padding-bottom:0;margin-bottom:12px}
@@ -97,6 +98,11 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .row .v{text-align:right;font-weight:700;font-size:15px;flex:1;min-width:0;
         overflow-wrap:anywhere}
 .row .v.long{font-weight:400;font-size:14.5px;text-align:left;line-height:1.55}
+/* A value longer than a few words gets its own line, left aligned and at normal
+   weight. Right-aligned bold prose in a phone-width column cannot be read. */
+.row.stack{display:block}
+.row.stack .k{max-width:none;margin-bottom:5px}
+.row.stack .v{text-align:left;font-weight:400;font-size:14.5px;line-height:1.6}
 .num{font-variant-numeric:tabular-nums}
 .unk{color:var(--ink-mute);font-weight:400;font-style:italic}
 .why2{display:block;font-size:12.5px;color:var(--ink-mute);font-style:normal;
@@ -138,8 +144,8 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 
 /* ---- code / cta ------------------------------------------------------- */
 pre{background:#10202e;border:0;border-radius:var(--r);color:#d6e6f2;
-    padding:13px 14px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:12.5px;line-height:1.6}
+    padding:13px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .btn{min-height:46px;border:0;border-radius:var(--r);padding:12px 18px;font-family:inherit;
      font-size:14.5px;font-weight:800;cursor:pointer;background:var(--teal);color:#fff}
 .btn.ghost{background:var(--card);color:var(--teal-ink);border:2px solid var(--teal-bg)}
@@ -292,7 +298,9 @@ function vBrief(){
   if(!S.brief) return vOpen();
   if(S.brief.__denied) return denied(S.brief.detail,"The arrival brief");
   const b=S.brief.brief;
-  const f=x=>row(x.label, x.known?esc(x.value):unknown(x.source?.note));
+  // Prose gets a stacked row; short facts keep the label/value pairing.
+  const f=x=>row(x.label, x.known?esc(x.value):unknown(x.source?.note),
+                 (x.value||"").length>60 ? "stack" : "");
   return `${SYNTH}
   ${title("Arrival brief","What is waiting when you land, and what is not yet known.")}
   <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
