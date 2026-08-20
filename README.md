@@ -369,6 +369,15 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   case-chain tamper beat already carries the verifiability story, so the hour
   went to the adjudicator instead.
 
+## Writeup material
+
+- [`docs/content/build-log-post.md`](docs/content/build-log-post.md) — build-log post draft
+- [`docs/content/social-post.md`](docs/content/social-post.md) — social drafts
+- [`DISCLOSURE.md`](DISCLOSURE.md) — prior-work and simulated-adjudicator disclosure
+- [`docs/CITATIONS.md`](docs/CITATIONS.md) — every market figure, and its verification status
+- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — the beat sheet
+- [`infra/DEPLOYED.md`](infra/DEPLOYED.md) — the live environment
+
 ## Disclosure
 
 Anbu Care reimplements two patterns from our own prior work, written fresh
