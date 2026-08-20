@@ -366,6 +366,14 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   useful has to reach the arrival brief and the dashboard, which means touching
   the brief composer and the credentialed surface for a feature that adds no
   guarantee. Not worth reopening working code for.
+- **Per-analyte reference change values.** A repeat lab reading drifts for
+  reasons that are not clinical, so changes inside a flat 10% band are narrated
+  as "within normal variation" rather than "new and abnormal" — which is what
+  stops a 1.7% cholesterol drift burying an HbA1c move from 7.1 to 8.4. A flat
+  percentage is the crude version: real practice derives a reference change
+  value per analyte from assay and biological variation. The band is narrative
+  only — the high/low flag against the reference range is untouched, and no
+  triage or adjudication decision reads it.
 - **Ingestion provenance receipts.** Documents are ground-truthed by a stored
   count today; a `document.ingested` receipt with a content hash would also make
   *stored-then-altered* detectable. The topology audit in

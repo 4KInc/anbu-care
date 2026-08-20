@@ -59,6 +59,15 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/whatever/verify # expect
       cases a judge might verify from the video afterwards.
 - [ ] Note the two case ids it prints at the end — the valid one and the tampered
       one. Read them out or show them; they stay live-verifiable.
+- [ ] The canonical case already staged for this take is **case-5b0ba856ea** (tampered
+      twin **case-9c628c4f58**). The screenshots in docs/design/mobile and the curls in
+      docs/takes/backup-take-spine.txt all use that same id. If you re-seed,
+      update those three together or they will disagree on camera.
+- [ ] On the Claim tab, the line between QUERY and PARTIAL should read
+      "discharge summary added to the record at HH:MM, then resubmitted as
+      attempt 2". That is what stops Record and Claim looking contradictory.
+- [ ] On the Record tab, only **HbA1c** should read "new and abnormal". The
+      other analytes moved inside the 10% band and read as variation.
 
 ### 5. Walk the dashboard by hand
 

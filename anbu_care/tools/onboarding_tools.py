@@ -231,6 +231,35 @@ def ingest_document(
     }
 
 
+# A repeat reading moves a little for reasons that are not clinical: assay
+# imprecision, time of day, hydration. Reporting a 1.7% drift as "new and
+# abnormal" buries the reading that actually moved, which on this record is
+# HbA1c 7.1 -> 8.4. So changes inside this band are narrated as variation.
+#
+# This is a NARRATIVE band and nothing else. The high/low flag against the
+# reference range is untouched, and no triage or adjudication decision reads
+# this text — it is display only.
+#
+# A flat percentage is the crude version. Real practice uses a per-analyte
+# reference change value derived from assay and biological variation; that is
+# future work, noted in the README.
+MATERIAL_CHANGE_FRACTION = 0.10
+
+
+def _is_material(previous: str, current: str) -> bool:
+    """Did this reading move enough to be worth calling a change?
+
+    Non-numeric readings ("Positive" -> "Negative") are always material: there
+    is no such thing as a small change between them.
+    """
+    before, after = _as_number(previous), _as_number(current)
+    if before is None or after is None:
+        return True
+    if before == 0:
+        return after != 0
+    return abs(after - before) / abs(before) >= MATERIAL_CHANGE_FRACTION
+
+
 def _as_number(value: str) -> float | None:
     """Parse a reading as a number, or None if it is not one."""
     try:
@@ -280,6 +309,12 @@ def _delta_vs_baseline(parent_id: str, doc: ParsedDocument) -> str:
             )
         elif _same_reading(obs.value, seen):
             notes.append(f"{obs.name}={obs.value}: unchanged from a previous reading — consistent with baseline")
+        elif not _is_material(seen[-1], obs.value):
+            notes.append(
+                f"{obs.name}={obs.value}: changed from {seen[-1]}, "
+                f"inside the {MATERIAL_CHANGE_FRACTION:.0%} band — within normal variation"
+                + (" (still flagged abnormal against the reference range)" if abnormal else "")
+            )
         else:
             notes.append(
                 f"{obs.name}={obs.value}: changed from {seen[-1]}"

@@ -32,6 +32,14 @@
 html{-webkit-text-size-adjust:100%}
 body{background:var(--surface);color:var(--ink);font-family:var(--font);
      font-size:16px;line-height:1.5;padding-bottom:84px;-webkit-font-smoothing:antialiased}
+/* Atkinson Hyperlegible slashes its zero on purpose, to separate 0 from O for
+   low-vision readers. That is the reason the typeface was chosen — but on a
+   recorded screen the slash reads as a rendering glitch, and it lands on every
+   rupee figure in the demo. Turn the feature off rather than give up the
+   typeface: the letterform disambiguation that matters most here is in the
+   whole alphabet, not the zero alone. */
+body, input, button, pre, code{font-feature-settings:"zero" 0, "ss01" 0;
+                               font-variant-numeric:normal}
 
 /* ---- app bar ---------------------------------------------------------- */
 .bar{position:sticky;top:0;z-index:30;background:var(--card);
@@ -250,6 +258,20 @@ function describe(r){
   }
 }
 const inr = n => "₹" + Number(n).toLocaleString("en-IN");
+// Find when a document of the named kind was stored, so the claim timeline can
+// say when the gap was filled rather than leaving the two tabs to contradict.
+function resolvedAt(kind){
+  if(!kind || !S.record?.documents) return null;
+  const hit=S.record.documents.filter(d=>d.kind===kind)
+              .sort((a,b)=>a.parsed_at<b.parsed_at?-1:1)[0];
+  return hit ? new Date(hit.parsed_at).toLocaleTimeString() : null;
+}
+// A document stored after the case opened arrived mid-episode. Saying so is
+// what stops the Record tab reading as though it had been there all along.
+function arrivedMidEpisode(doc){
+  const opened=(S.trail?.receipts||[])[0]?.created_at;
+  return opened && doc.parsed_at > opened;
+}
 
 /* ===================== views ===================== */
 
@@ -371,6 +393,9 @@ function vRecord(){
     const base=/consistent with baseline/.test(txt) && !/new and abnormal/.test(txt);
     return `<div class="card ${base?"edge-teal":"edge-amber"}">
       <h2>${esc(d.kind)} · ${esc(d.source_filename||"—")}</h2>
+      ${arrivedMidEpisode(d)?`<div class="pills" style="margin:-6px 0 12px">
+        <span class="pill p-slate">added during this episode · ${esc(new Date(d.parsed_at).toLocaleTimeString())}</span>
+      </div>`:""}
       ${(d.observations||[]).length===0?`<p>${unknown("this document carries no structured observations")}</p>`
         :d.observations.map(o=>`<div class="obs">
             <div class="n">${esc(o.name)}</div>
@@ -406,10 +431,23 @@ function vClaim(){
   </div>
   <div class="sec">Adjudication history</div>
   <div class="tl">
-    ${adjs.map(r=>{const p=r.payload;const q=p.outcome==="QUERY";
-      return `<div class="ev ${q?"alert":"on"}">
+    ${adjs.map((r,i)=>{
+      const p=r.payload, q=p.outcome==="QUERY";
+      // What the previous attempt was waiting on, that this one no longer is.
+      // Read off two receipt fields; nothing is recomputed here.
+      const prev = i>0 ? (adjs[i-1].payload.missing_documents||[]) : [];
+      const resolved = prev.filter(x=>!(p.missing_documents||[]).includes(x));
+      const when = resolvedAt(resolved[0]);
+      return `${resolved.length?`<div class="ev on">
+          <div class="d"><b>${esc(resolved.map(x=>x.replace(/_/g," ")).join(", "))}</b>
+          added to the record${when?` at ${esc(when)}`:""}, then resubmitted as attempt ${p.attempt}.</div>
+          <div class="a">This is why the document appears on the Record tab but was
+            missing when the claim was first assessed.</div>
+        </div>`:""}
+      <div class="ev ${q?"alert":"on"}">
         <div class="pills"><span class="pill ${q?"p-amber":"p-teal"}">${esc(p.outcome)}</span>
-          <span class="pill p-slate">attempt ${p.attempt}</span></div>
+          <span class="pill p-slate">attempt ${p.attempt}</span>
+          <span class="pill p-slate">${esc(new Date(r.created_at).toLocaleTimeString())}</span></div>
         ${(p.reasons||[]).map(x=>`<div class="d" style="margin-top:7px">${esc(x)}</div>`).join("")}
       </div>`;}).join("")}
   </div>
