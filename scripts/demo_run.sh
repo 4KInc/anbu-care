@@ -135,7 +135,7 @@ cmd "uv run python scripts/demo_support.py block-receipt $CASE $PARENT +14155550
 uv run python scripts/demo_support.py block-receipt "$CASE" "$PARENT" "+14155550142"
 
 # ---------------------------------------------------------------------------
-beat "BEAT 5 — The claim comes back QUERIED, and the agent reacts"
+beat "BEAT 5 — The claim comes back QUERIED, and the query gets resolved"
 echo "  The counterparty is SIMULATED. What is real: the packet, the policy math,"
 echo "  the SLA clocks, and the receipts."
 cmd "uv run python scripts/demo_support.py claim-flow $CASE $PARENT"

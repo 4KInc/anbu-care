@@ -359,6 +359,13 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   Model Garden to a dedicated GPU-backed endpoint, billed per hour rather than
   per token. Deferred as infra cost out of proportion to a component that by
   design cannot change any decision.
+- **Wellbeing check-in.** A daily self-reported or caregiver-logged pain/mood
+  entry, timestamped and labelled "self-reported", surfaced to the family — never
+  inferred and never shown as a measured vital, with an absent entry reading "no
+  check-in yet". Scoped and deliberately deferred: the version that is actually
+  useful has to reach the arrival brief and the dashboard, which means touching
+  the brief composer and the credentialed surface for a feature that adds no
+  guarantee. Not worth reopening working code for.
 - **Ingestion provenance receipts.** Documents are ground-truthed by a stored
   count today; a `document.ingested` receipt with a content hash would also make
   *stored-then-altered* detectable. The topology audit in

@@ -12,6 +12,7 @@ logic. Nothing here is imported by the service.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -183,13 +184,31 @@ def ingest_doc(url: str, parent_id: str, image_path: str, session_id: str = "") 
     docs_count(url, parent_id, reported or "<no ingest_document call>")
 
 
+DEMO_TOKEN = os.getenv("ANBU_DEMO_TOKEN", "anbu-demo-family-token")
+
+
 def docs_count(url: str, parent_id: str, claimed: str = "") -> None:
-    """Read the stored-document count back from the service — ground truth."""
+    """Read the stored-document count back from the service — ground truth.
+
+    The record is credentialed, so this presents the published demo token. The
+    ground-truth check is only meaningful if it reads the *same* protected
+    endpoint the dashboard reads, rather than some unguarded side door.
+    """
     import subprocess
 
-    out = subprocess.run(["curl", "-s", f"{url}/api/parents/{parent_id}"],
-                         capture_output=True, text=True, check=False).stdout
-    stored = len(json.loads(out)["documents"])
+    out = subprocess.run(
+        ["curl", "-s", "-H", f"Authorization: Bearer {DEMO_TOKEN}",
+         f"{url}/api/parents/{parent_id}"],
+        capture_output=True, text=True, check=False).stdout
+    try:
+        payload = json.loads(out)
+    except json.JSONDecodeError:
+        print(f"    GROUND TRUTH — could not read the record back: {out[:100]}")
+        return
+    if "documents" not in payload:
+        print(f"    GROUND TRUTH — record refused the read: {payload.get('detail', payload)}")
+        return
+    stored = len(payload["documents"])
     print(f"    GROUND TRUTH — documents actually stored for this parent: {stored}")
     if claimed:
         agrees = (claimed == "ingested" and stored > 0) or (claimed != "ingested" and stored == 0)
@@ -198,10 +217,12 @@ def docs_count(url: str, parent_id: str, claimed: str = "") -> None:
 
 
 def claim_flow(case_id: str, parent_id: str) -> None:
-    """Submit a claim, get queried, react, get priced — against the deployed store.
+    """Submit a claim, get queried, resolve it, get priced — against the deployed store.
 
-    The narrated beat. Runs at the tool layer so it is identical every take; the
-    agent does the same thing through its own tools in the live demo.
+    Runs at the tool layer so every take is byte-identical. The insurer-liaison
+    agent makes exactly these calls itself when driven through /run; this is a
+    deterministic replay of that path, not a re-implementation of it, and the
+    narration must not claim an agent is reacting here when a script is.
     """
     from anbu_care.tools import insurer_tools, onboarding_tools
 
@@ -226,7 +247,10 @@ def claim_flow(case_id: str, parent_id: str) -> None:
     if submitted.get("query_response_deadline"):
         print("        query response clock started, both now running")
 
-    print("\n    [2] The agent reacts: looking for the queried document on file…")
+    print("\n    [2] Resolving the query — the document is located on the record and attached.")
+    print("        (Replayed here at the tool layer so every take is identical. The")
+    print("         insurer-liaison agent performs exactly these calls itself — see")
+    print("         docs/DEMO_SCRIPT.md for the live agent-driven trace.)")
     doc = onboarding_tools.ingest_document(
         parent_id, kind="discharge_summary", source_filename="discharge_22aug2026.pdf",
         summary="Admitted 19 Aug 2026, cardiac ICU, discharged 22 Aug 2026.",

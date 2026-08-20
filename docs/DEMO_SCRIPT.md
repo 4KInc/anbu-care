@@ -8,28 +8,94 @@ run and never mutates a chain from a previous run.
 
 ---
 
-## Pre-flight (do this before recording)
+## Pre-flight — run this on the actual recording machine
+
+Do the whole thing as a human dry-run, not a skim. Every bug that has bitten this
+project late was found by someone actually clicking, not by a test.
+
+### 1. Credentials (they expire fast on this org)
 
 ```bash
-gcloud auth application-default login        # ADC expires fast on this org
-make verify-stack                            # all five checks must pass
-./scripts/demo_run.sh --reset                # clear any prior demo state
-curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/healthz
+gcloud auth login
+gcloud auth application-default login
+make verify-stack          # all five checks must be green
 ```
 
-- [ ] `verify-stack` green, and **signing key reports stable** — an ephemeral key
-      makes the verify beat meaningless.
-- [ ] Cloud Run logs open in a second tab, filtered to `anbu-care`.
-- [ ] Terminal font large enough that hashes are legible on playback.
-- [ ] Say the words "synthetic", "simulated TPA", and "seeded snapshot" out loud at
-      least once each — the honesty framing is part of the architecture case.
-- [ ] Liveness is `/api/healthz`. The bare `/healthz` path is reserved by
-      Google Front End and 404s in Cloud Run — do not use it on camera.
+`.env` pins `GOOGLE_CLOUD_QUOTA_PROJECT`, so an ADC re-login resetting the quota
+project to your personal default no longer breaks anything. Verify anyway.
 
-**Backup take:** record a second pass immediately after the first, before
-changing anything. If the live agent call in Beat 3a is slow or the model
-phrases something oddly, the deterministic beats (2, 3b, 4, 5, 6) are identical
-every run — you can cut to the backup without re-seeding.
+- [ ] `verify-stack` green, and **signing key reports stable** — an ephemeral key
+      makes the whole verify beat meaningless.
+
+### 2. The service is up and public
+
+```bash
+URL=https://anbu-care-37j4eofpwq-el.a.run.app
+curl -s $URL/api/healthz                     # 200, model gemini-3.5-flash
+curl -s -o /dev/null -w '%{http_code}\n' $URL/app   # 200
+```
+
+- [ ] Liveness is **`/api/healthz`**. The bare `/healthz` is reserved by Google
+      Front End and 404s in Cloud Run — **do not put it on camera.**
+
+### 3. Both auth proofs, from the terminal you will actually use
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/parents/whatever    # expect 401
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/whatever/verify # expect 200
+```
+
+- [ ] 401 and 200. If either is wrong, **stop** — beat 8 is the phase's centrepiece.
+
+### 4. Fresh state, seeded before you record
+
+```bash
+./scripts/demo_run.sh --reset      # clear anything a previous run left
+./scripts/demo_run.sh              # full 8 beats; must exit 0
+```
+
+- [ ] Exit code 0 and all eight beats printed.
+- [ ] **Do NOT run `--reset` again before or during the take.** It deletes the
+      cases a judge might verify from the video afterwards.
+- [ ] Note the two case ids it prints at the end — the valid one and the tampered
+      one. Read them out or show them; they stay live-verifiable.
+
+### 5. Walk the dashboard by hand
+
+Open `$URL/app` in the browser you will record, at the window size you will
+record.
+
+- [ ] "Seed a synthetic episode" works.
+- [ ] Before signing in, a content tab shows **401 THE CASE TRAIL IS CREDENTIALED**.
+- [ ] Sign in; Now / Arrival / Routing / Record / Claim / Audit all render.
+- [ ] **Scroll a long tab (Record) and confirm the nav is still reachable** — a
+      sticky-positioning bug lived exactly there.
+- [ ] Audit tab → **"Prove the gate"** prints `401 / 200`.
+- [ ] `SYNTHETIC — DEMO DATA` visible on every clinical view.
+- [ ] Ingest both lab reports if you want the Record tab populated:
+      `uv run python scripts/demo_support.py ingest-doc $URL <parent_id> assets/synthetic/lab_report_mar2026.png`
+      (and `…aug2026.png`) — then confirm LDL reads *consistent with baseline*.
+
+### 6. Recording hygiene
+
+- [ ] Terminal font large enough that hashes and HTTP codes are legible on playback.
+- [ ] Say **"synthetic"**, **"simulated"** and **"seeded snapshot"** out loud at
+      least once each. The honesty framing is part of the architecture case, not a
+      disclaimer to rush.
+- [ ] Say **"received"**, never "detected", when the intake signal arrives.
+- [ ] Never say STEP_UP "prevents denials" — it is pre-submission enrichment.
+- [ ] Nothing about Gemma or a second model. It is not running.
+
+### 7. Backup take
+
+Record a **second pass immediately after the first**, before changing anything.
+
+Beats 3, 5, 7, 8, 9 and 10 are deterministic and identical every run — only the
+beat-6 agent call goes through a model and can phrase things differently or run
+slow. If that beat misbehaves, cut to the backup rather than re-seeding.
+
+`docs/takes/backup-take-spine.txt` is the always-submittable transcript fallback
+if recording fails entirely.
 
 ---
 
@@ -37,22 +103,23 @@ every run — you can cut to the backup without re-seeding.
 
 | Time | Beat | Command | Point at |
 |---|---|---|---|
-| 0:00–0:20 | **The question** | — | "If something happens to my parent right now, who makes sure the right decisions get made?" Competitors are all human-coordinator models. |
-| 0:20–0:35 | **Onboarding** | `curl -sX POST $URL/api/demo/seed` | A synthetic Thoothukudi parent with history, policy, per-purpose consent. Say "synthetic". |
-| 0:35–1:20 | **Multimodal living record** ⭐ | `demo_support.py ingest-doc … lab_report_mar2026.png` then `…aug2026.png` | Gemini reads two lab reports; LDL unchanged reads as baseline, HbA1c 7.1→8.4 reads as new and abnormal. Then the **ground-truth document count**. |
-| 1:20–2:05 | **Explainable routing** ⭐ | `curl -sX POST $URL/api/intake …` | Holds HIGH against "probably just gas"; cites only the term that differed. |
-| 2:05–2:45 | **The WhatsApp boundary** ⭐ | agent `/run`, then `demo_support.py block-receipt` | Agent refuses; then bypass the agent and watch the *code* block it anyway. |
-| 2:45–3:20 | **Claim queried → agent reacts** ⭐ | `demo_support.py claim-flow $CASE $PARENT` | The one beat where the system *reacts* rather than proceeds. See below. |
-| 3:20–3:35 | **Anyone can verify** | `curl -s $URL/api/cases/$CASE/verify` | Unauthenticated. Judges can run it themselves. |
-| 3:35–4:05 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | Silent edit → names the exact failure mode and sequence number. |
-| 4:05–4:15 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore, still verifies. |
-| 4:15–4:25 | **Close** | — | What is real, what is simulated. Say both. |
+| 0:00–0:20 | **The question** | — | "If something happens to my parent right now, who makes sure the right decisions get made?" Every incumbent answers with a human coordinator. |
+| 0:20–0:35 | **Onboarding** | `curl -sX POST $URL/api/demo/seed` | A synthetic Thoothukudi parent. Say **"synthetic"**. |
+| 0:35–1:15 | **Multimodal living record** ⭐ | `demo_support.py ingest-doc … mar2026.png` then `…aug2026.png` | LDL unchanged → *consistent with baseline*; HbA1c 7.1→8.4 → *new and abnormal*. Then the **ground-truth stored count**. |
+| 1:15–1:35 | **A signal ARRIVES** | `curl -sX POST $URL/api/intake-signal` | `SIMULATED INTAKE SIGNAL — received from an external channel, not detected by Anbu Care`. Say **received**, never *detected*. |
+| 1:35–2:15 | **HIGH holds vs "just gas"** ⭐ | (same response) | Severity HIGH; 2.2 km Sacred Heart over 0.8 km Idhayalaya, cited on **cashless network**. `SEEDED SNAPSHOT — NOT A LIVE FEED` on screen. |
+| 2:15–2:50 | **WhatsApp boundary** ⭐ | agent `/run`, then `demo_support.py block-receipt` | Agent refuses; then bypass the agent and the **code** blocks it anyway. |
+| 2:50–3:25 | **Claim QUERY → resolved → PARTIAL** ⭐ | `demo_support.py claim-flow $CASE $PARENT` | **₹66,000** told now, not at settlement. Say **SIMULATED**. |
+| 3:25–3:50 | **Public where it proves, private where it reveals** ⭐ | the two curls | `/api/parents/{id}` → **401** · `/api/cases/{id}/verify` → **200**. |
+| 3:50–4:20 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | `verified: false, broken_at_seq: 1`; the judge-facing case stays true. |
+| 4:20–4:30 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore. |
+| 4:30–4:40 | **Close** | — | What is real, what is simulated. Say both. |
 
 ---
 
-## The four beats that carry the score
+## The beats that carry the score
 
-### Beat 2 (0:35–1:20) — multimodal into a *living* record
+### Beat 3 (0:35–1:15) — multimodal into a *living* record
 
 Two synthetic lab reports five months apart. Gemini vision extracts every
 analyte with its unit and flag — say out loud that nothing is typed in by hand.
@@ -84,7 +151,7 @@ ingest without a `status: "ingested"` tool result.
 
 
 
-### Beat 3 (1:20–2:05) — routing that explains itself
+### Beat 5 (1:35–2:15) — routing that explains itself
 
 The caller says **"she says it's probably just gas."** Severity still returns
 `HIGH`, because the rule that escalates a red flag is Python, not a prompt.
@@ -103,7 +170,7 @@ that lists a tie as a reason has stopped being an explanation.
 Also on screen: `"knowledge_base": "SEEDED SNAPSHOT — NOT A LIVE FEED"`. Say it
 out loud. It is returned on every triage call, not added for the demo.
 
-### Beat 4 (2:05–2:45) — the guardrail is code, not a prompt
+### Beat 6 (2:15–2:50) — the guardrail is code, not a prompt
 
 Two halves, and the second is the one that matters.
 
@@ -118,7 +185,7 @@ it — and the blocked attempt is written to the receipt chain as
 > Line to say: *"An agent that is merely told not to leak a lab value is not a
 > control. This holds when the model is not the thing enforcing it."*
 
-### Beat 5 (2:45–3:20) — the claim comes back queried, and the agent reacts
+### Beat 7 (2:50–3:25) — the claim comes back queried, and the query gets resolved
 
 Everything before this is the system *proceeding*. This is the only beat where
 something comes back that the agent has to think about.
@@ -149,6 +216,19 @@ coordinator, now — not from a settlement letter later.
 line. What *is* real: the packet, the policy arithmetic, the SLA clocks, and the
 receipts.
 
+**One thing to be precise about on camera.** This beat runs at the tool layer so
+every take is identical. The insurer-liaison agent makes exactly these calls
+itself — say "this is the same sequence the agent performs, replayed so the take
+is reproducible", not "watch the agent react". If a judge wants to see the agent
+do it live:
+
+```bash
+# coordinator → insurer_liaison → evidence → submit(QUERY)
+#   → onboarding (finds the document) → respond_to_query(PARTIAL) → SLA
+curl -s -X POST $URL/apps/anbu_care/users/demo/sessions -H 'content-type: application/json' -d '{}'
+# then POST /run with the discharge instruction — see scripts/ for the shape
+```
+
 Two things worth pointing at if a judge is engaged:
 
 - `./scripts/demo_run.sh --branches` shows **all four outcomes live** — PASS,
@@ -157,7 +237,30 @@ Two things worth pointing at if a judge is engaged:
   genuinely not on file, it says the query cannot be resolved. That is the same
   guarantee as the ingestion ground-truth count, on a different path.
 
-### Beat 7 (3:35–4:05) — tamper
+### Beat 8 (3:25–3:50) — public where it proves, private where it reveals
+
+The line that makes the WhatsApp gate credible. If clinical data "lives somewhere
+protected", that place has to actually refuse people.
+
+```
+/api/parents/{id}        -> HTTP 401   (denied — this is where lab values live)
+/api/cases/{id}/verify   -> HTTP 200   (open by design)
+```
+
+**Say why the second one is open**, because it is the non-obvious half:
+verification proves the record was not altered *without revealing what it says*.
+It returns hashes, a boolean and a failure mode. A receipt chain only means
+something if someone can check it without asking our permission.
+
+The dashboard has a **"Prove the gate"** button on the Audit tab that runs both
+calls in-page and prints `401 / 200`. Use that if you are on screen rather than in
+a terminal.
+
+If a judge asks about the credential: it is published in the README on purpose.
+Secrecy is not the claim — server-side enforcement is. They can lift the token out
+of the page and removing it still produces a 401.
+
+### Beat 9 (3:50–4:20) — tamper
 
 Uses a **separate throwaway case**, so the case you just showed a judge stays
 valid on `/verify` — check both on screen.
