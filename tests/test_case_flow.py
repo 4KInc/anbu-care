@@ -117,7 +117,13 @@ def test_send_without_purpose_consent_is_blocked_and_recorded(parent_id):
     assert any(r.kind == "comms.blocked" for r in chain.receipts)
 
 
-def test_blocked_sends_are_written_to_the_chain_as_evidence_the_gate_held(parent_id):
+def test_permitted_sends_are_written_to_the_chain(parent_id):
+    """A permitted message is recorded — but recorded as what actually happened.
+
+    With no transport configured nothing leaves the platform, so the receipt is
+    comms.not_delivered rather than comms.sent. The gate said yes; the world did
+    not follow, and the trail says so.
+    """
     case = service.open_case(parent_id)
     whatsapp_tools.send_family_update(
         case_id=case.case_id, parent_id=parent_id, to_e164="+14155550142",
@@ -129,7 +135,12 @@ def test_blocked_sends_are_written_to_the_chain_as_evidence_the_gate_held(parent
         message_class="logistics",
     )
     chain = service.get_chain(case.case_id)
-    assert any(r.kind == "comms.sent" for r in chain.receipts)
+    recorded = [r for r in chain.receipts if r.kind.startswith("comms.")]
+    assert len(recorded) == 1
+    assert recorded[0].kind == "comms.not_delivered"
+    assert recorded[0].payload["allowed"] is True
+    assert recorded[0].payload["delivered"] is False
+    assert recorded[0].payload["sent_at"] is None
     assert chain.verify().ok
 
 

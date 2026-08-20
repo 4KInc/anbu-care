@@ -76,9 +76,14 @@ This matters more than any feature list, so it comes first.
   is a dated seeded snapshot, not a live capability feed. Capability and
   empanelment values must be spot-checked against current listings before any
   public writeup or recorded narration.
-- **WhatsApp delivery.** Production template approval takes roughly 10–15
-  business days and will not clear inside the hackathon window, so sends go to
-  the WhatsApp Business API sandbox.
+- **WhatsApp delivery.** Messages the gate permits are carried by the Twilio
+  WhatsApp sandbox, which delivers **real** messages to numbers that have opted
+  in by sending `join <code>` to the sandbox number. That is genuine delivery,
+  not a stub — but it is **not general production reach**: reaching an arbitrary
+  number needs Meta business verification and template approval, roughly 10–15
+  business days, which will not clear inside this window. With no transport
+  configured the system records the gate decision and says plainly that nothing
+  was sent.
 
 Every market figure quoted in the project brief is directional and unverified.
 See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
@@ -329,6 +334,25 @@ Google Front End reserves the bare `/healthz` path and never forwards it to the
 container, so a route defined there works locally and returns 404 in Cloud Run —
 with no `server: Google Frontend` header, which is the tell. The liveness route
 is served under `/api/` for that reason. See `infra/DEPLOYED.md`.
+
+### WhatsApp delivery credentials
+
+Secrets are read from the environment only — never committed, never logged, and
+never baked into an image layer. For local runs put them in `.env` (gitignored);
+for Cloud Run, inject them as secrets rather than plain env vars:
+
+```bash
+printf %s "$TWILIO_ACCOUNT_SID" | gcloud secrets create twilio-account-sid --data-file=-
+printf %s "$TWILIO_AUTH_TOKEN"  | gcloud secrets create twilio-auth-token  --data-file=-
+
+gcloud run services update anbu-care --region=asia-south1 \
+  --update-secrets=TWILIO_ACCOUNT_SID=twilio-account-sid:latest,TWILIO_AUTH_TOKEN=twilio-auth-token:latest \
+  --update-env-vars=ANBU_WHATSAPP_MODE=twilio,TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+```
+
+The runtime service account needs `roles/secretmanager.secretAccessor` for those
+two secrets. Set `ANBU_WHATSAPP_MODE=off` to record gate decisions without
+sending anything.
 
 ### Runtime service account needs explicit roles
 

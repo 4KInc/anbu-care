@@ -142,39 +142,21 @@ def check_message_allowed(body: str, message_class: str) -> dict[str, Any]:
 
 
 def _deliver(to_e164: str, body: str, template_name: str) -> dict[str, Any]:
-    """Hand the message to WhatsApp.
+    """Carry a message the gate has already permitted.
 
-    Sandbox mode records the send without calling Meta, which is what the
-    hackathon window allows. Live mode is wired but unused until a verified
-    number and approved templates exist.
+    This is only ever reached after `gate_message` returned allowed. A blocked
+    message returns earlier and never touches a transport — that ordering is the
+    point, and a test asserts the transport is not called for a blocked send.
+
+    The result reports what actually happened. With no transport configured it
+    says so rather than claiming a delivery, for the same reason the ingest path
+    reports a stored count rather than the agent's word for it.
     """
-    cfg = settings()
-    if cfg.whatsapp_mode != "live" or not (cfg.whatsapp_access_token and cfg.whatsapp_phone_number_id):
-        return {
-            "delivered": True,
-            "channel": "sandbox",
-            "note": "WhatsApp Business API sandbox — no message left the platform.",
-        }
+    from anbu_care.comms.transport import send
 
-    import requests
-
-    response = requests.post(
-        f"https://graph.facebook.com/v21.0/{cfg.whatsapp_phone_number_id}/messages",
-        headers={"Authorization": f"Bearer {cfg.whatsapp_access_token}"},
-        json={
-            "messaging_product": "whatsapp",
-            "to": to_e164,
-            "type": "text",
-            "text": {"body": body},
-        },
-        timeout=20,
-    )
-    return {
-        "delivered": response.ok,
-        "channel": "live",
-        "template": template_name,
-        "http_status": response.status_code,
-    }
+    result = send(to_e164, body).as_dict()
+    result["template"] = template_name
+    return result
 
 
 def _record(
@@ -192,7 +174,14 @@ def _record(
 
     A blocked send is evidence the boundary held, so it belongs in the audit
     trail just as much as a delivered one.
+
+    Permission and delivery are separate facts and are recorded separately. The
+    gate allowing a message does not mean a message arrived: with no transport
+    configured, or a transport that failed, nothing was sent and `sent_at` stays
+    empty. Stamping a send time on a message that never left would be the same
+    lie as an agent reporting an ingest it never made.
     """
+    was_delivered = bool(delivery and delivery.get("delivered"))
     message = OutboundMessage(
         message_id=service.new_id("msg"),
         case_id=case_id,
@@ -202,17 +191,23 @@ def _record(
         body=body,
         allowed=allowed,
         block_reason=None if allowed else reason,
-        sent_at=datetime.now(UTC) if allowed else None,
+        sent_at=datetime.now(UTC) if was_delivered else None,
     )
     receipt = service.append_receipt(
         case_id,
-        kind="comms.sent" if allowed else "comms.blocked",
+        # Three outcomes, named honestly: blocked by the gate, permitted and
+        # delivered, or permitted but not delivered.
+        kind=("comms.blocked" if not allowed
+              else "comms.sent" if was_delivered
+              else "comms.not_delivered"),
         actor="whatsapp_agent",
-        payload={**message.model_dump(mode="json"), "gate_reason": reason, "delivery": delivery},
+        payload={**message.model_dump(mode="json"), "gate_reason": reason,
+                 "delivery": delivery, "delivered": was_delivered},
     )
     return {
-        "status": "ok" if allowed else "blocked",
+        "status": ("blocked" if not allowed else "ok" if was_delivered else "not_delivered"),
         "allowed": allowed,
+        "delivered": was_delivered,
         "reason": reason,
         "message": message.model_dump(mode="json"),
         "delivery": delivery,

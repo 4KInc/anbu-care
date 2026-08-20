@@ -191,6 +191,20 @@ still blocked — the gate classifies the *content*, not the caller's claim abou
 it — and the blocked attempt is written to the receipt chain as
 `comms.blocked`.
 
+**4c — the phone.** With `ANBU_WHATSAPP_MODE=twilio`, send the *logistics*
+message and let it land on your handset on camera. Hold the phone up: the
+permitted message arrives, and the disguised clinical one from 4b never did.
+Real delivery and the boundary, in the same beat.
+
+Say the reach honestly, once: **"this is the Twilio WhatsApp sandbox — real
+delivery to a number that opted in. Reaching any number needs Meta business
+verification and template approval, about ten to fifteen business days."** Do not
+imply production reach.
+
+Pre-flight for this beat: send `join <your-code>` to **+1 415 523 8886** from the
+handset, confirm the reply, and do a throwaway send *before* recording — the
+sandbox opt-in expires and the 24-hour freeform window has to be open.
+
 > Line to say: *"An agent that is merely told not to leak a lab value is not a
 > control. This holds when the model is not the thing enforcing it."*
 

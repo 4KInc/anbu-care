@@ -235,7 +235,9 @@ def _describe(receipt: Receipt) -> str | None:
         case "triage.decision":
             return f"Triage assessed severity {payload.get('severity')}."
         case "comms.sent":
-            return "Family notified over WhatsApp."
+            return "Family notified over WhatsApp (sandbox delivery)."
+        case "comms.not_delivered":
+            return "A message was permitted but not delivered — no transport was configured."
         case "comms.blocked":
             return "A message was blocked before sending (clinical detail is not permitted over WhatsApp)."
         case "claim.packet_assembled":

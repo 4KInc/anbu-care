@@ -255,7 +255,8 @@ function describe(r){
     case "case.opened": return "Case opened.";
     case "intake.signal_received": return "Intake signal received from an external channel.";
     case "triage.decision": return `Triage assessed severity ${p.severity}.`;
-    case "comms.sent": return "Family notified over WhatsApp.";
+    case "comms.sent": return "Family notified over WhatsApp (sandbox — real delivery to opted-in test numbers).";
+    case "comms.not_delivered": return "Message permitted by the gate, but no transport was configured — nothing was sent.";
     case "comms.blocked": return "Message blocked before sending — clinical detail may not go over WhatsApp.";
     case "claim.packet_assembled": return "Claim packet assembled.";
     case "evidence.assessed": return `Evidence assessed: ${p.gate}.`;
