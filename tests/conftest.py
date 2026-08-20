@@ -19,3 +19,27 @@ def fresh_store():
     """Every test gets its own store — receipt sequences must not leak between tests."""
     set_store(MemoryStore())
     yield
+
+
+TRANSPORT_ENV = (
+    "ANBU_WHATSAPP_MODE",
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_API_KEY_SID",
+    "TWILIO_API_KEY_SECRET",
+    "TWILIO_WHATSAPP_FROM",
+    "WHATSAPP_ACCESS_TOKEN",
+    "WHATSAPP_PHONE_NUMBER_ID",
+)
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_transport(monkeypatch):
+    """The suite must never reach a real provider.
+
+    A populated .env is normal on a developer machine, and without this the
+    tests would quietly start spending the account's message quota — and pass
+    or fail depending on whose laptop they ran on.
+    """
+    for var in TRANSPORT_ENV:
+        monkeypatch.delenv(var, raising=False)

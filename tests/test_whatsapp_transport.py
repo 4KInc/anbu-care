@@ -177,7 +177,7 @@ def test_transport_with_no_credentials_reports_not_delivered(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     result = transport.send("+14155550142", "hello", mode="twilio")
     assert result.delivered is False
-    assert "not set" in result.detail
+    assert "nothing was sent" in result.detail
 
 
 def test_off_mode_never_claims_delivery(monkeypatch):
@@ -287,3 +287,27 @@ def test_the_request_matches_twilios_documented_shape(monkeypatch, twilio_env):
     assert set(seen["data"]) == {"From", "To", "Body"}       # exact capitalisation
     assert seen["data"]["To"] == "whatsapp:+919000000000"    # channel prefix
     assert seen["data"]["From"].startswith("whatsapp:")
+
+
+def test_an_explicit_empty_mode_does_not_inherit_the_ambient_environment(monkeypatch):
+    """A populated .env must not turn an explicit "off" into a live send.
+
+    `mode or os.getenv(...)` treated "" as absent and fell through to the
+    environment — so with ANBU_WHATSAPP_MODE=twilio set, code asking for no
+    transport got a real one.
+    """
+    monkeypatch.setenv("ANBU_WHATSAPP_MODE", "twilio")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test-not-a-real-sid")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test-token-not-real")
+
+    import requests
+
+    def explode(*a, **kw):
+        raise AssertionError("an explicit off-mode reached the network")
+
+    monkeypatch.setattr(requests, "post", explode)
+
+    for mode in ("", "off", "none", "false"):
+        result = transport.send("+14155550142", "hello", mode=mode)
+        assert result.channel == "off", f"mode={mode!r} picked a live transport"
+        assert result.delivered is False

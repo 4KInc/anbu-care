@@ -78,15 +78,32 @@ def _env(name: str) -> str | None:
     return value.strip() if value else None
 
 
+def _twilio_auth() -> tuple[str, str] | None:
+    """Prefer an API key: it can be revoked without rotating the account token.
+
+    Either way the URL carries the Account SID — only the HTTP Basic username
+    changes. Returns None when nothing usable is configured.
+    """
+    account = _env("TWILIO_ACCOUNT_SID")
+    if not account:
+        return None
+    key_sid, key_secret = _env("TWILIO_API_KEY_SID"), _env("TWILIO_API_KEY_SECRET")
+    if key_sid and key_secret:
+        return key_sid, key_secret
+    token = _env("TWILIO_AUTH_TOKEN")
+    return (account, token) if token else None
+
+
 def _twilio(to_e164: str, body: str) -> DeliveryResult:
     sid = _env("TWILIO_ACCOUNT_SID")
-    token = _env("TWILIO_AUTH_TOKEN")
+    auth = _twilio_auth()
     sender = _env("TWILIO_WHATSAPP_FROM") or "whatsapp:+14155238886"
 
-    if not (sid and token):
+    if not auth:
         return DeliveryResult(
             delivered=False, channel="twilio",
-            detail="TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are not set; nothing was sent.",
+            detail="No Twilio credentials are set (need TWILIO_ACCOUNT_SID plus either "
+                   "TWILIO_API_KEY_SID/SECRET or TWILIO_AUTH_TOKEN); nothing was sent.",
         )
 
     import requests
@@ -94,7 +111,7 @@ def _twilio(to_e164: str, body: str) -> DeliveryResult:
     try:
         response = requests.post(
             f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-            auth=(sid, token),
+            auth=auth,
             data={
                 "From": sender if sender.startswith("whatsapp:") else f"whatsapp:{sender}",
                 "To": f"whatsapp:{to_e164}",
@@ -185,7 +202,10 @@ TRANSPORTS = {"twilio": _twilio, "meta": _meta, "off": _off}
 
 def send(to_e164: str, body: str, mode: str | None = None) -> DeliveryResult:
     """Carry an already-permitted message. Never called for a blocked one."""
-    chosen = (mode or os.getenv("ANBU_WHATSAPP_MODE", "off")).strip().lower()
+    # `mode is not None`, not `mode or ...`: an explicit "" must mean off, not
+    # silently inherit whatever the ambient environment happens to say.
+    raw = mode if mode is not None else os.getenv("ANBU_WHATSAPP_MODE", "off")
+    chosen = (raw or "off").strip().lower()
     # "sandbox" was the old name for the no-op path; keep it meaning no-op
     # rather than silently starting to send.
     if chosen in {"sandbox", "", "none", "false"}:
