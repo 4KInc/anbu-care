@@ -59,8 +59,8 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/whatever/verify # expect
       cases a judge might verify from the video afterwards.
 - [ ] Note the two case ids it prints at the end — the valid one and the tampered
       one. Read them out or show them; they stay live-verifiable.
-- [ ] The canonical case already staged for this take is **case-5b0ba856ea** (tampered
-      twin **case-9c628c4f58**). The screenshots in docs/design/mobile and the curls in
+- [ ] The canonical case already staged for this take is **case-da1c2cb6db** (tampered
+      twin **case-a7cf9fa613**). The screenshots in docs/design/mobile and the curls in
       docs/takes/backup-take-spine.txt all use that same id. If you re-seed,
       update those three together or they will disagree on camera.
 - [ ] On the Claim tab, the line between QUERY and PARTIAL should read
