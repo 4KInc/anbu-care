@@ -342,6 +342,65 @@ class OutboundMessage(BaseModel):
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# Arrival brief
+# --------------------------------------------------------------------------
+
+
+class FactSource(BaseModel):
+    """Where a line in the brief came from.
+
+    Carried on every fact, including the unknown ones. A brief whose lines
+    cannot be traced is just a summary; a brief whose lines can be is a
+    synthesis someone can audit.
+    """
+
+    kind: str                       # "receipt" | "profile" | "derived" | "unknown"
+    receipt_seq: int | None = None
+    receipt_kind: str | None = None
+    field: str | None = None
+    note: str | None = None         # for unknown: why it is not known
+
+
+class ArrivalFact(BaseModel):
+    """One line of the brief.
+
+    `known=False` means the state does not contain this yet. It is never a
+    guess, and `value` is None rather than a plausible placeholder.
+    """
+
+    label: str
+    value: str | None = None
+    known: bool = False
+    source: FactSource
+
+
+class ArrivalBrief(BaseModel):
+    """What is waiting when the family lands.
+
+    Composed deterministically from the signed receipt chain plus the parent's
+    stored profile. Nothing here is inferred by a model.
+    """
+
+    case_id: str
+    parent_id: str
+    generated_at: datetime = Field(default_factory=utcnow)
+    # Timestamp of the most recent receipt — the real "truth as of".
+    as_of: datetime | None = None
+    chain_receipt_count: int = 0
+    chain_head_hash: str = ""
+    chain_verified: bool = False
+    facts: list[ArrivalFact] = Field(default_factory=list)
+    actions_taken: list[ArrivalFact] = Field(default_factory=list)
+    pending: list[ArrivalFact] = Field(default_factory=list)
+    bring_with_you: list[ArrivalFact] = Field(default_factory=list)
+    contacts: list[ArrivalFact] = Field(default_factory=list)
+
+    @property
+    def unknown_count(self) -> int:
+        return sum(1 for f in self.facts if not f.known)
+
+
 class Case(BaseModel):
     case_id: str
     parent_id: str

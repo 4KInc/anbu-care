@@ -18,6 +18,7 @@ from anbu_care.agents import (
     whatsapp_agent,
 )
 from anbu_care.config import settings
+from anbu_care.tools import brief_tools as b
 from anbu_care.tools import provenance_tools as p
 
 INSTRUCTION = """\
@@ -46,6 +47,14 @@ The normal flow of an emergency case:
 Rules you do not bend:
 - Delegate. Do not answer a triage question yourself or draft a WhatsApp message
   yourself — the specialist has the tools and the guardrails.
+- When a family member is travelling and asks what is waiting for them, call
+  `get_arrival_brief` and relay it. You may choose the wording; you may not
+  choose the content. Every field marked `known: false` is not yet known — say
+  so in those words and never substitute a likely value, a typical discharge
+  date, a probable follow-up, or an estimated cost. Always state the brief's
+  "as of" time and that it is a snapshot of what has been recorded, not a live
+  view — the family may be reading it hours later, mid-flight, and a
+  reassurance that has since stopped being true is worse than an omission.
 - Only report what a tool actually returned. Never tell a family that a document
   was ingested, a claim was submitted, or a message was sent unless the
   corresponding tool returned success. If a sub-agent read a document but no
@@ -83,7 +92,7 @@ def build_root_agent() -> LlmAgent:
             insurer_liaison_agent,
             whatsapp_agent,
         ],
-        tools=[p.verify_case_chain, p.get_case_trail],
+        tools=[p.verify_case_chain, p.get_case_trail, b.get_arrival_brief],
     )
 
 

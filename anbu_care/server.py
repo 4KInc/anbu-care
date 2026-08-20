@@ -21,7 +21,7 @@ from anbu_care import service
 from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.provenance.signing import load_signer
-from anbu_care.tools import onboarding_tools, provenance_tools, triage_tools
+from anbu_care.tools import brief_tools, onboarding_tools, provenance_tools, triage_tools
 
 # ADK discovers agents by directory. The repo root holds the `anbu_care`
 # package, whose agent.py exposes `root_agent`.
@@ -158,6 +158,20 @@ def parent_detail(parent_id: str) -> dict[str, Any]:
     result = onboarding_tools.get_parent_profile(parent_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/api/cases/{case_id}/brief")
+def case_brief(case_id: str) -> dict[str, Any]:
+    """The arrival brief: what is waiting when the family lands.
+
+    Composed from the signed chain. Every line carries its provenance, and
+    anything the recorded state does not contain is returned as unknown with a
+    reason rather than filled in. Read-only.
+    """
+    result = brief_tools.get_arrival_brief(case_id)
+    if result["brief"]["chain_receipt_count"] == 0:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
     return result
 
 
