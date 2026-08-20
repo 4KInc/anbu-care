@@ -40,6 +40,9 @@ SANDBOX_LABEL = (
 # of these terminal states in the same body.
 TERMINAL_FAILURE = {"failed", "undelivered", "canceled"}
 
+# Meta's current Graph version for the /messages endpoint.
+GRAPH_VERSION = "v23.0"
+
 
 @dataclass(frozen=True)
 class DeliveryResult:
@@ -165,15 +168,22 @@ def _meta(to_e164: str, body: str) -> DeliveryResult:
             delivered=False, channel="meta",
             detail="WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID are not set; nothing was sent.",
         )
+    return _meta_post(
+        token, number_id, to_e164,
+        {"messaging_product": "whatsapp", "to": to_e164,
+         "type": "text", "text": {"body": body}},
+    )
 
+
+def _meta_post(token: str, number_id: str, to_e164: str, payload: dict) -> DeliveryResult:
     import requests
 
+    version = _env("WHATSAPP_API_VERSION") or GRAPH_VERSION
     try:
         response = requests.post(
-            f"https://graph.facebook.com/v21.0/{number_id}/messages",
+            f"https://graph.facebook.com/{version}/{number_id}/messages",
             headers={"Authorization": f"Bearer {token}"},
-            json={"messaging_product": "whatsapp", "to": to_e164,
-                  "type": "text", "text": {"body": body}},
+            json=payload,
             timeout=20,
         )
     except Exception as exc:  # noqa: BLE001
@@ -182,10 +192,50 @@ def _meta(to_e164: str, body: str) -> DeliveryResult:
             detail=f"transport error, nothing was sent: {type(exc).__name__}: {exc}"[:200],
         )
 
+    if not response.ok:
+        try:
+            reason = (response.json().get("error") or {}).get("message", response.text)
+        except Exception:  # noqa: BLE001
+            reason = response.text
+        return DeliveryResult(
+            delivered=False, channel="meta", http_status=response.status_code,
+            detail=f"Meta rejected the message, nothing was delivered: {str(reason)[:200]}",
+        )
+
+    data = response.json()
+    messages = data.get("messages") or [{}]
+    status = messages[0].get("message_status")
     return DeliveryResult(
-        delivered=bool(response.ok), channel="meta", http_status=response.status_code,
-        detail=("accepted by Meta for delivery" if response.ok
-                else f"Meta rejected the message, nothing was delivered: {response.text[:200]}"),
+        delivered=True, channel="meta",
+        provider_id=messages[0].get("id"),
+        http_status=response.status_code,
+        provider_status=status,
+        detail=(f"accepted by Meta for delivery to {to_e164}"
+                + (f" (status: {status})" if status else "")
+                + ". Handset confirmation would arrive over a webhook, which this "
+                  "demo does not run — so this is acceptance, not receipt."),
+    )
+
+
+def open_session(to_e164: str, template: str = "hello_world",
+                 language: str = "en_US") -> DeliveryResult:
+    """Send a pre-approved template to open the 24-hour freeform window.
+
+    Operational handshake, NOT a family update: it carries no case content and
+    deliberately does not go through the content gate, because there is nothing
+    to classify. The gated path stays the only way real content leaves.
+    """
+    token = _env("WHATSAPP_ACCESS_TOKEN")
+    number_id = _env("WHATSAPP_PHONE_NUMBER_ID")
+    if not (token and number_id):
+        return DeliveryResult(
+            delivered=False, channel="meta",
+            detail="WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID are not set; nothing was sent.",
+        )
+    return _meta_post(
+        token, number_id, to_e164,
+        {"messaging_product": "whatsapp", "to": to_e164, "type": "template",
+         "template": {"name": template, "language": {"code": language}}},
     )
 
 
