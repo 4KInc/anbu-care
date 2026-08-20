@@ -335,6 +335,16 @@ Then deploy a new revision — running instances do not pick up IAM changes.
 
 ## Future work
 
+- **Gemma as an intake normalizer.** The plan was a small model converting messy
+  free-text intake ("amma fell, chest heavy, sweating, BP 160") into the
+  structured fields the deterministic triage table consumes — advisory input
+  only, never able to set severity or write a receipt. **Not built:** Gemma is
+  not available as a managed endpoint on this project's Vertex AI (absent from
+  the publisher listing; `gemma-3-27b-it`, `gemma-3-12b-it` and `gemma-2-9b-it`
+  all return 404 on `generateContent`). Serving it would mean deploying from
+  Model Garden to a dedicated GPU-backed endpoint, billed per hour rather than
+  per token. Deferred as infra cost out of proportion to a component that by
+  design cannot change any decision.
 - **Ingestion provenance receipts.** Documents are ground-truthed by a stored
   count today; a `document.ingested` receipt with a content hash would also make
   *stored-then-altered* detectable. The topology audit in

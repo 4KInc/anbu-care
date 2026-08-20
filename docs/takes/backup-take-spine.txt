@@ -1,16 +1,23 @@
-ANBU CARE — BACKUP TAKE, CURRENT SPINE
+ANBU CARE — BACKUP TAKE, CURRENT SPINE (post P2/P4/P6)
 Captured against the deployed service: https://anbu-care-37j4eofpwq-el.a.run.app
-All seven beats green. All data synthetic.
+All eight beats green, exit 0. All data synthetic.
 
 This is the always-submittable fallback transcript. It is NOT the video —
-recording the ~4-min screen take is a manual step (see docs/DEMO_SCRIPT.md).
-Reproduce this transcript at any time with:  ./scripts/demo_run.sh
+recording the screen take is a manual step (see docs/DEMO_SCRIPT.md).
+Reproduce at any time with:  ./scripts/demo_run.sh
 
-The two cases below were deliberately LEFT IN PLACE (not --reset) so a judge, or
-a re-take, can verify them live with no login:
+Left in place (not --reset) so both stay live-verifiable with no login:
 
-  valid    case-003b74a920  -> verified=true,  3 receipts
-  tampered case-eb894e0c0c  -> verified=false, broken_at_seq=1
+  valid    case-64cfea9f71
+  tampered case-f5b42602bb
+
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-64cfea9f71/verify
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-64cfea9f71/brief
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-f5b42602bb/verify
+
+Beats: onboarding · multimodal living record · intake signal + HIGH hold ·
+WhatsApp gate (agent refuses, code blocks anyway) · claim QUERY -> agent reacts
+-> PARTIAL INR 66,000 · unauthenticated verify · tamper · reload from Firestore.
 
 ==============================================================================
 
@@ -22,7 +29,7 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
 ▶ BEAT 1 — Onboarding: seed a synthetic Thoothukudi family
 ────────────────────────────────────────────────────────────────────────────
   $ curl -sX POST https://anbu-care-37j4eofpwq-el.a.run.app/api/demo/seed
-  parent_id: parent-279e888811
+  parent_id: parent-62f5122d05
 
 ────────────────────────────────────────────────────────────────────────────
 ▶ BEAT 2 — Multimodal: Gemini reads a lab report into the living record
@@ -30,7 +37,7 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
   Two synthetic lab reports, five months apart. Watch LDL.
 
   ── MARCH baseline (lab_report_mar2026.png)
-  $ uv run python scripts/demo_support.py ingest-doc https://anbu-care-37j4eofpwq-el.a.run.app parent-279e888811 assets/synthetic/lab_report_mar2026.png
+  $ uv run python scripts/demo_support.py ingest-doc https://anbu-care-37j4eofpwq-el.a.run.app parent-62f5122d05 assets/synthetic/lab_report_mar2026.png
     extracted by Gemini vision:
       Total Cholesterol: 232 mg/dL  [high]
       LDL Cholesterol: 165 mg/dL  [high]
@@ -48,7 +55,7 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
     reported status 'ingested' vs stored count 1: consistent
 
   ── AUGUST follow-up (lab_report_aug2026.png)
-  $ uv run python scripts/demo_support.py ingest-doc https://anbu-care-37j4eofpwq-el.a.run.app parent-279e888811 assets/synthetic/lab_report_aug2026.png
+  $ uv run python scripts/demo_support.py ingest-doc https://anbu-care-37j4eofpwq-el.a.run.app parent-62f5122d05 assets/synthetic/lab_report_aug2026.png
     extracted by Gemini vision:
       Total Cholesterol: 236 mg/dL  [high]
       LDL Cholesterol: 165 mg/dL  [high]
@@ -72,10 +79,14 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
   Ground truth is read back from the service, not from what the agent said.
 
 ────────────────────────────────────────────────────────────────────────────
-▶ BEAT 3 — 'She says it's probably just gas' → severity must still hold HIGH
+▶ BEAT 3 — A signal ARRIVES (nothing was detected), and severity holds HIGH
 ────────────────────────────────────────────────────────────────────────────
-  $ curl -sX POST https://anbu-care-37j4eofpwq-el.a.run.app/api/intake -d '{"symptoms":["chest pain","sweating"],"free_text":"she says it's probably just gas"}'
-  case_id: case-003b74a920
+  Anbu Care does not watch anyone. The episode starts because the hospital's
+  intake desk posted to us — the system reacts, it does not sense.
+  $ curl -sX POST https://anbu-care-37j4eofpwq-el.a.run.app/api/intake-signal -d '{"channel":"er_desk_webhook", ...}'
+  channel : er_desk_webhook — hospital emergency-desk intake posting to our webhook
+  label   : SIMULATED INTAKE SIGNAL — received from an external channel, not detected by Anbu Care
+  case_id: case-64cfea9f71
 {
   "severity": "HIGH",
   "severity_rationale": [
@@ -112,44 +123,74 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
   4b. Code-level — bypass the agent entirely and call the send tool directly.
       This is the claim that matters: the boundary holds when the model is not
       the thing enforcing it. The blocked attempt is written to the chain.
-  $ uv run python scripts/demo_support.py block-receipt case-003b74a920 parent-279e888811 +14155550142
+  $ uv run python scripts/demo_support.py block-receipt case-64cfea9f71 parent-62f5122d05 +14155550142
 {
   "allowed": false,
   "status": "blocked",
   "reason": "Blocked: clinical detail may not be sent over WhatsApp under Meta's healthcare policy and DPDP. It names a lab or diagnostic result, carries a clinical measurement. Deliver this through the secure dashboard instead.",
-  "receipt_id": "case-003b74a920:000002"
+  "receipt_id": "case-64cfea9f71:000003"
 }
 
 ────────────────────────────────────────────────────────────────────────────
-▶ BEAT 5 — Anyone can verify the chain, with no login
+▶ BEAT 5 — The claim comes back QUERIED, and the agent reacts
 ────────────────────────────────────────────────────────────────────────────
-  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-003b74a920/verify
+  The counterparty is SIMULATED. What is real: the packet, the policy math,
+  the SLA clocks, and the receipts.
+  $ uv run python scripts/demo_support.py claim-flow case-64cfea9f71 parent-62f5122d05
+    packet packet-d55ef1d0b4: INR 358,500 claimed
+
+    [1] SUBMITTED -> QUERY   (SIMULATED — deterministic local rules, not an insurer)
+        · required document not attached: discharge summary — needed to confirm the treatment claimed before any amount can be assessed
+        original SLA: 59 min remaining
+        query response clock started, both now running
+
+    [2] The agent reacts: looking for the queried document on file…
+        found and attached: doc-3e0ea057d0 (kind=discharge_summary)
+
+    [3] RESUBMITTED -> PARTIAL
+        · cardiac_icu_room: claimed INR 96,000, allowed INR 30,000, disallowed INR 66,000 (sub-limit: 2% of sum insured per day = INR 10,000/day x 3 day(s) = INR 30,000)
+
+        claimed    INR 358,500
+        allowed    INR 292,500
+        DISALLOWED INR 66,000   <- family told now, not at settlement
+
+  All four outcomes are reachable — see: ./scripts/demo_run.sh --branches
+
+────────────────────────────────────────────────────────────────────────────
+▶ BEAT 6 — Anyone can verify the chain, with no login
+────────────────────────────────────────────────────────────────────────────
+  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-64cfea9f71/verify
 {
     "status": "ok",
-    "case_id": "case-003b74a920",
+    "case_id": "case-64cfea9f71",
     "verified": true,
-    "receipt_count": 3,
+    "receipt_count": 8,
     "broken_at_seq": null,
     "reason": null,
     "public_key": "v/JLEciPv3U4DrYgvOUl8E0CM601GVFCFolLkFgHMZQ=",
     "key_warning": null
 }
 
-  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-003b74a920/trail
-    [ 0] case.opened              by intake_agent           00000000000000 -> 370046e4d4a490
-    [ 1] triage.decision          by triage_agent           370046e4d4a490 -> 70f3b280ef53e8
-    [ 2] comms.blocked            by whatsapp_agent         70f3b280ef53e8 -> e21b70ba0e23f5
+  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-64cfea9f71/trail
+    [ 0] case.opened              by intake_agent           00000000000000 -> 01f5832da568a2
+    [ 1] intake.signal_received   by intake_agent           01f5832da568a2 -> 111e19464e021e
+    [ 2] triage.decision          by triage_agent           111e19464e021e -> ecfadc328460e0
+    [ 3] comms.blocked            by whatsapp_agent         ecfadc328460e0 -> 32de59dede8c68
+    [ 4] claim.packet_assembled   by insurer_liaison_agent  32de59dede8c68 -> d1f870bf81458c
+    [ 5] claim.adjudicated        by simulated_tpa          d1f870bf81458c -> 1c2bccca33c0e9
+    [ 6] claim.submitted          by insurer_liaison_agent  1c2bccca33c0e9 -> 744e313fef9434
+    [ 7] claim.adjudicated        by simulated_tpa          744e313fef9434 -> 539a7bf6a00ad8
 
 ────────────────────────────────────────────────────────────────────────────
-▶ BEAT 6 — Tamper (throwaway case; the case above stays valid)
+▶ BEAT 7 — Tamper (throwaway case; the case above stays valid)
 ────────────────────────────────────────────────────────────────────────────
-  throwaway case_id: case-eb894e0c0c
+  throwaway case_id: case-f5b42602bb
   valid before tamper:
     verified=True  receipts=2
 
-  $ uv run python scripts/demo_support.py tamper case-eb894e0c0c
+  $ uv run python scripts/demo_support.py tamper case-f5b42602bb
 {
-  "tampered_case": "case-eb894e0c0c",
+  "tampered_case": "case-f5b42602bb",
   "receipt_seq": 1,
   "field": "payload.severity",
   "before": "HIGH",
@@ -158,10 +199,10 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
 }
 
   the deployed, unauthenticated verify endpoint now reports it:
-  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-eb894e0c0c/verify
+  $ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-f5b42602bb/verify
 {
     "status": "ok",
-    "case_id": "case-eb894e0c0c",
+    "case_id": "case-f5b42602bb",
     "verified": false,
     "receipt_count": 2,
     "broken_at_seq": 1,
@@ -171,19 +212,24 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
 }
 
   and the case a judge was shown is STILL valid:
-    verified=True  receipts=3
+    verified=True  receipts=8
 
 ────────────────────────────────────────────────────────────────────────────
-▶ BEAT 7 — Reload from Firestore in a fresh process (not process memory)
+▶ BEAT 8 — Reload from Firestore in a fresh process (not process memory)
 ────────────────────────────────────────────────────────────────────────────
-  $ uv run python scripts/demo_support.py reload-verify case-003b74a920
+  $ uv run python scripts/demo_support.py reload-verify case-64cfea9f71
 {
-  "case_id": "case-003b74a920",
-  "receipts_read_from_firestore": 3,
+  "case_id": "case-64cfea9f71",
+  "receipts_read_from_firestore": 8,
   "kinds": [
     "case.opened",
+    "intake.signal_received",
     "triage.decision",
-    "comms.blocked"
+    "comms.blocked",
+    "claim.packet_assembled",
+    "claim.adjudicated",
+    "claim.submitted",
+    "claim.adjudicated"
   ],
   "verified": true,
   "broken_at_seq": null,
@@ -191,13 +237,13 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
 }
 
 ────────────────────────────────────────────────────────────────────────────
-case shown to judges (valid) : case-003b74a920
-throwaway (tampered)         : case-eb894e0c0c
-synthetic parent             : parent-279e888811
+case shown to judges (valid) : case-64cfea9f71
+throwaway (tampered)         : case-f5b42602bb
+synthetic parent             : parent-62f5122d05
 
 Verify yourself, no login:
-  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-003b74a920/verify
-  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-eb894e0c0c/verify
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-64cfea9f71/verify
+  curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-f5b42602bb/verify
 
 Clean up everything this run created:
   ./scripts/demo_run.sh --reset
