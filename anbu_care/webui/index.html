@@ -60,9 +60,14 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .card.edge-red{border-left:4px solid var(--red)}
 .card.edge-teal{border-left:4px solid var(--teal)}
 .card.edge-amber{border-left:4px solid var(--amber)}
-.card > h2{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
-           color:var(--ink-mute);margin-bottom:12px}
+.card > h2{font-size:19px;font-weight:800;letter-spacing:-.01em;color:var(--ink);
+           margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line-soft)}
+.card > h2.mini{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+                color:var(--ink-mute);border-bottom:0;padding-bottom:0;margin-bottom:12px}
 .sec{font-size:19px;font-weight:800;letter-spacing:-.01em;margin:22px 0 12px}
+.title{margin:2px 0 16px}
+.title h1{font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.title p{font-size:14px;color:var(--ink-mute);margin-top:5px;line-height:1.5}
 
 /* ---- hero ------------------------------------------------------------- */
 .hero .lbl{font-size:11.5px;font-weight:800;letter-spacing:.08em;
@@ -132,13 +137,14 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .delta .ic{flex:none;font-weight:800}
 
 /* ---- code / cta ------------------------------------------------------- */
-pre{background:var(--card-low);border:1px solid var(--line);border-radius:var(--r);
-    padding:11px 12px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:12px;line-height:1.6;color:var(--ink)}
+pre{background:#10202e;border:0;border-radius:var(--r);color:#d6e6f2;
+    padding:13px 14px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12.5px;line-height:1.6}
 .btn{min-height:46px;border:0;border-radius:var(--r);padding:12px 18px;font-family:inherit;
      font-size:14.5px;font-weight:800;cursor:pointer;background:var(--teal);color:#fff}
 .btn.ghost{background:var(--card);color:var(--teal-ink);border:2px solid var(--teal-bg)}
 .btns{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+@media(max-width:719px){.btns .btn{flex:1 1 100%}}
 input{width:100%;min-height:46px;background:var(--card);border:1px solid var(--line);
       border-radius:var(--r);padding:11px 12px;font-family:inherit;font-size:15px;color:var(--ink)}
 input:focus{outline:0;border:2px solid var(--teal);padding:10px 11px}
@@ -199,6 +205,7 @@ const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 const SYNTH = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
+const title = (h, p) => `<div class="title"><h1>${esc(h)}</h1><p>${esc(p)}</p></div>`;
 
 async function api(path, {auth=false} = {}) {
   const headers = auth && S.token ? { Authorization:`Bearer ${S.token}` } : {};
@@ -246,6 +253,7 @@ function vNow(){
   const t=last("triage.decision"), sig=last("intake.signal_received");
   const sev=t?t.payload.severity:null;
   return `${SYNTH}
+  ${title("What is happening now","Every entry below is a signed receipt you can verify yourself.")}
   <div class="card hero ${sev==="HIGH"?"edge-red":"edge-teal"}">
     <div class="lbl">Severity assessed</div>
     ${t?`<div class="sev ${sev==="HIGH"?"":"ok"}"><span class="dot"></span><b>${esc(sev)}</b></div>
@@ -286,6 +294,7 @@ function vBrief(){
   const b=S.brief.brief;
   const f=x=>row(x.label, x.known?esc(x.value):unknown(x.source?.note));
   return `${SYNTH}
+  ${title("Arrival brief","What is waiting when you land, and what is not yet known.")}
   <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
     A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
   <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
@@ -305,6 +314,7 @@ function vRouting(){
   if(!t) return `${SYNTH}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
   const p=t.payload;
   return `${SYNTH}
+  ${title("Routing rationale","Why this hospital, and what was traded to get there.")}
   <div class="card edge-teal">
     <h2>Why this hospital</h2>
     <p style="font-size:15px;line-height:1.6">${esc(p.explanation)}</p>
@@ -329,15 +339,16 @@ function vRecord(){
   if(!S.record) return `<div class="card"><p class="mute">Reading the record…</p></div>`;
   const docs=S.record.documents||[], pr=S.record.profile||{};
   return `${SYNTH}
+  ${title("Health record","Parsed from uploaded documents. New readings are compared with the baseline.")}
   <span class="lock">🔒 Credentialed access</span>
   <div class="strip note">This is the clinical view. It is the reason the WhatsApp gate can refuse to
     send lab values — they live here, behind a server-enforced credential.</div>
   <div class="card">
-    <h2>Documents stored — ground truth</h2>
+    <h2 class="mini">Documents stored — ground truth</h2>
     <div class="big num">${docs.length}</div>
     <p class="mute" style="margin-top:6px">read back from the record, not from what an agent said</p>
   </div>
-  <div class="card"><h2>Baseline</h2>
+  <div class="card"><h2 class="mini">Baseline</h2>
     ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
     ${row("Conditions",(pr.chronic_conditions||[]).map(esc).join(", ")||unknown("none recorded"))}
     ${row("Allergies",(pr.allergies||[]).map(esc).join(", ")||unknown("none recorded"))}
@@ -371,6 +382,7 @@ function vClaim(){
   const a=adjs.length?adjs[adjs.length-1].payload:null;
   const priced=a && ["PASS","PARTIAL"].includes(a.outcome);
   return `${SYNTH}
+  ${title("Claim status","What the insurer allowed, what it did not, and why.")}
   <div class="pills" style="margin-bottom:12px"><span class="pill p-violet">SIMULATED TPA</span></div>
   <div class="strip note">No production insurer API is integrated. The packet, the policy arithmetic,
     the SLA clocks and the receipts are real; the counterparty's answer is not.</div>
@@ -399,7 +411,8 @@ function vClaim(){
 }
 
 function vAudit(){
-  return `<div class="card">
+  return `${title("Security & audit","Public where it proves. Private where it reveals.")}
+  <div class="card">
     <h2>Two access models, both enforced by the server</h2>
     <div class="row"><div class="k"><span class="pill p-teal">open</span></div>
       <div class="v long"><code class="hash">/api/cases/{id}/verify</code>
