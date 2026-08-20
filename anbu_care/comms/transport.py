@@ -36,9 +36,21 @@ SANDBOX_LABEL = (
 )
 
 
+# A 2xx from the create call is not success on its own: Twilio can return one
+# of these terminal states in the same body.
+TERMINAL_FAILURE = {"failed", "undelivered", "canceled"}
+
+
 @dataclass(frozen=True)
 class DeliveryResult:
-    """What actually happened. `delivered` is never optimistic."""
+    """What actually happened.
+
+    `delivered` means the provider ACCEPTED the message for delivery — not that
+    it reached the handset. Twilio returns `queued`/`accepted` on the create
+    call; the handset-confirmed `delivered` status arrives later over a status
+    callback we do not run. So `delivered=True` is the strongest claim we can
+    honestly make, and every label spells out which one it is.
+    """
 
     delivered: bool
     channel: str
@@ -46,6 +58,7 @@ class DeliveryResult:
     label: str = SANDBOX_LABEL
     provider_id: str | None = None
     http_status: int | None = None
+    provider_status: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +68,7 @@ class DeliveryResult:
             "label": self.label,
             "provider_id": self.provider_id,
             "http_status": self.http_status,
+            "provider_status": self.provider_status,
         }
 
 
@@ -106,11 +120,23 @@ def _twilio(to_e164: str, body: str) -> DeliveryResult:
         )
 
     payload = response.json()
+    status = payload.get("status")
+    if status in TERMINAL_FAILURE:
+        return DeliveryResult(
+            delivered=False, channel="twilio", provider_id=payload.get("sid"),
+            http_status=response.status_code, provider_status=status,
+            detail=(f"Twilio accepted the request but the message is {status}; "
+                    f"it did not reach {to_e164}. "
+                    f"{payload.get('error_message') or ''}".strip()),
+        )
     return DeliveryResult(
         delivered=True, channel="twilio",
         provider_id=payload.get("sid"),
         http_status=response.status_code,
-        detail=f"accepted by Twilio for delivery to {to_e164} (status {payload.get('status')})",
+        provider_status=status,
+        detail=(f"accepted by Twilio for delivery to {to_e164} (status: {status}). "
+                "Handset confirmation would arrive over a status callback, which "
+                "this demo does not run — so this is acceptance, not receipt."),
     )
 
 

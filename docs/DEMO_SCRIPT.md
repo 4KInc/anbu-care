@@ -196,6 +196,10 @@ message and let it land on your handset on camera. Hold the phone up: the
 permitted message arrives, and the disguised clinical one from 4b never did.
 Real delivery and the boundary, in the same beat.
 
+Say the acceptance honestly too, if asked whether it "delivered": the API
+confirms Twilio **accepted** the message; handset confirmation arrives over a
+status callback this demo does not run. The receipt says acceptance, not receipt.
+
 Say the reach honestly, once: **"this is the Twilio WhatsApp sandbox — real
 delivery to a number that opted in. Reaching any number needs Meta business
 verification and template approval, about ten to fifteen business days."** Do not

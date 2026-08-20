@@ -8,6 +8,8 @@ calls to a fake transport rather than trusting the ordering to stay put.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from anbu_care import service
@@ -208,3 +210,80 @@ def test_every_result_carries_the_honest_reach_label():
     assert "opted-in test numbers" in result.label
     assert "business verification" in result.label
     assert "template approval" in result.label
+
+
+# ---- acceptance is not receipt ------------------------------------------
+#
+# Twilio's create call returns `queued`/`accepted`; the handset-confirmed
+# `delivered` status arrives later over a status callback we do not run. A 2xx
+# therefore proves acceptance, not receipt — and a 2xx can even carry a
+# terminal failure in the same body. Both are asserted here because the value
+# feeds `comms.sent` and `sent_at` in the receipt chain.
+
+
+class _Resp:
+    def __init__(self, status_code: int, payload: dict):
+        self.status_code, self._payload = status_code, payload
+        self.ok = 200 <= status_code < 300
+        self.text = json.dumps(payload)
+
+    def json(self) -> dict:
+        return self._payload
+
+
+@pytest.fixture
+def twilio_env(monkeypatch):
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test-not-a-real-sid")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test-token-not-real")
+
+
+def _post_returning(monkeypatch, response):
+    import requests
+
+    seen: dict = {}
+
+    def fake_post(url, **kw):
+        seen.update({"url": url, **kw})
+        return response
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    return seen
+
+
+@pytest.mark.parametrize("status", ["failed", "undelivered", "canceled"])
+def test_a_2xx_carrying_a_terminal_status_is_not_reported_as_sent(
+    monkeypatch, twilio_env, status
+):
+    _post_returning(monkeypatch, _Resp(201, {"sid": "SM1", "status": status,
+                                             "error_message": "not opted in"}))
+    result = transport.send("+919000000000", "Rescheduled to 4pm.", mode="twilio")
+    assert result.delivered is False, f"HTTP 201 with status={status} claimed a send"
+    assert result.provider_status == status
+
+
+@pytest.mark.parametrize("status", ["queued", "accepted", "sending", "sent"])
+def test_acceptance_is_recorded_as_acceptance_not_as_handset_receipt(
+    monkeypatch, twilio_env, status
+):
+    _post_returning(monkeypatch, _Resp(201, {"sid": "SM2", "status": status}))
+    result = transport.send("+919000000000", "Rescheduled to 4pm.", mode="twilio")
+    assert result.delivered is True
+    assert result.provider_id == "SM2"
+    # The claim must name itself as acceptance. Anything stronger is unearned.
+    assert "acceptance, not receipt" in result.detail
+    assert "confirm" in result.detail.lower()
+
+
+def test_the_request_matches_twilios_documented_shape(monkeypatch, twilio_env):
+    """Endpoint, auth and parameter capitalisation, per the Messages API spec."""
+    seen = _post_returning(monkeypatch, _Resp(201, {"sid": "SM3", "status": "queued"}))
+    transport.send("+919000000000", "Rescheduled to 4pm.", mode="twilio")
+
+    assert seen["url"] == (
+        "https://api.twilio.com/2010-04-01/Accounts/"
+        "AC-test-not-a-real-sid/Messages.json"
+    )
+    assert seen["auth"] == ("AC-test-not-a-real-sid", "test-token-not-real")
+    assert set(seen["data"]) == {"From", "To", "Body"}       # exact capitalisation
+    assert seen["data"]["To"] == "whatsapp:+919000000000"    # channel prefix
+    assert seen["data"]["From"].startswith("whatsapp:")
