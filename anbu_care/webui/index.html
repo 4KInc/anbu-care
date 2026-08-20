@@ -267,6 +267,16 @@ function describe(r){
   }
 }
 const inr = n => "₹" + Number(n).toLocaleString("en-IN");
+// The brief returns timestamps as ISO strings. Printing 2026-08-20T17:39:40
+// .795665+00:00 verbatim wraps across two lines and reads as a machine dump;
+// format it for a person. Display only — the value is unchanged.
+function human(v){
+  if(typeof v!=="string") return v;
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v;
+  const d=new Date(v);
+  return isNaN(d) ? v : d.toLocaleString(undefined,
+    {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+}
 // Find when a document of the named kind was stored, so the claim timeline can
 // say when the gap was filled rather than leaving the two tabs to contradict.
 function resolvedAt(kind){
@@ -330,14 +340,21 @@ function vBrief(){
   if(S.brief.__denied) return denied(S.brief.detail,"The arrival brief");
   const b=S.brief.brief;
   // Prose gets a stacked row; short facts keep the label/value pairing.
-  const f=x=>row(x.label, x.known?esc(x.value):unknown(x.source?.note),
+  const f=x=>row(x.label, x.known?esc(human(x.value)):unknown(x.source?.note),
                  (x.value||"").length>60 ? "stack" : "");
   return `${SYNTH}
   ${title("Arrival brief","What is waiting when you land, and what is not yet known.")}
   <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
     A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
   <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
-  <div class="card"><h2>What has been done</h2>${(b.actions_taken||[]).map(f).join("")||unknown("nothing recorded yet")}</div>
+  <div class="card"><h2>What has been done</h2>
+    ${(b.actions_taken||[]).length ? `<div class="tl">
+      ${b.actions_taken.map(x=>`<div class="ev on">
+        <div class="t">${esc(x.label)}</div>
+        <div class="d">${x.known?esc(human(x.value)):unknown(x.source?.note)}</div>
+      </div>`).join("")}
+    </div>` : unknown("nothing recorded yet")}
+  </div>
   <div class="card edge-amber"><h2>Still open</h2>${(b.pending||[]).map(f).join("")}</div>
   <div class="card"><h2>Bring with you</h2>${(b.bring_with_you||[]).map(f).join("")}</div>
   <div class="card"><h2>Who to contact</h2>${(b.contacts||[]).map(f).join("")}</div>
