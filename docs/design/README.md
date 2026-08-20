@@ -67,3 +67,17 @@ The screens above came from `generate_screen_from_text` against a **fresh**
 project. Generation against an existing project with a hand-authored design
 system timed out repeatedly and produced nothing — worth knowing before
 debugging it again.
+
+## Built result, at phone width
+
+`docs/design/mobile/` holds the built screens captured at 402px — what the
+family actually sees, as opposed to the Stitch designs above.
+
+`06-arrival-before-fix.png` and `08-arrival-after-fix.png` are the same screen
+before and after the long-value fix. Worth keeping the pair: it is the clearest
+record of the one real layout bug that only phone width exposed, where a long
+explanation was right-aligned and bolded into an unreadable column.
+
+Capture note: `resize_window` does not move the page viewport in this setup —
+`innerWidth` stays at desktop. These were taken by forcing the mobile stylesheet
+into a 402px column, so the CSS is real but the device is simulated.
