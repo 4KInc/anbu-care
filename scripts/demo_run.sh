@@ -64,10 +64,18 @@ echo
 echo "  Ground truth is read back from the service, not from what the agent said."
 
 # ---------------------------------------------------------------------------
-beat "BEAT 3 — 'She says it's probably just gas' → severity must still hold HIGH"
-cmd "curl -sX POST $URL/api/intake -d '{\"symptoms\":[\"chest pain\",\"sweating\"],\"free_text\":\"she says it's probably just gas\"}'"
-INTAKE=$(curl -s -X POST "$URL/api/intake" -H 'content-type: application/json' \
-  -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\",\"sweating\"],\"free_text\":\"Neighbour called. Chest tightness ~20 min, radiating to left arm, sweating. She says it's probably just gas.\",\"reported_by\":\"neighbour\"}")
+beat "BEAT 3 — A signal ARRIVES (nothing was detected), and severity holds HIGH"
+echo "  Anbu Care does not watch anyone. The episode starts because the hospital's"
+echo "  intake desk posted to us — the system reacts, it does not sense."
+cmd "curl -sX POST $URL/api/intake-signal -d '{\"channel\":\"er_desk_webhook\", ...}'"
+SIGNAL=$(curl -s -X POST "$URL/api/intake-signal" -H 'content-type: application/json' \
+  -d "{\"parent_id\":\"$PARENT\",\"channel\":\"er_desk_webhook\",\"reported_by\":\"Sacred Heart ER desk\",\"symptoms\":[\"chest pain\",\"sweating\"],\"raw_text\":\"71F brought in by a neighbour. Chest tightness ~20 min, radiating to left arm, sweating. She says it's probably just gas.\"}")
+echo "$SIGNAL" | python3 -c "
+import sys,json;d=json.load(sys.stdin)['signal']
+print(f\"  channel : {d['channel']} — {d['channel_description']}\")
+print(f\"  label   : {d['label']}\")
+"
+INTAKE=$(echo "$SIGNAL" | JQ "json.dumps(d['triage'])")
 CASE=$(echo "$INTAKE" | JQ "d['case_id']")
 uv run python scripts/demo_support.py track "$CASE" "" >/dev/null
 echo "  case_id: $CASE"

@@ -21,7 +21,13 @@ from anbu_care import service
 from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.provenance.signing import load_signer
-from anbu_care.tools import brief_tools, onboarding_tools, provenance_tools, triage_tools
+from anbu_care.tools import (
+    brief_tools,
+    intake_tools,
+    onboarding_tools,
+    provenance_tools,
+    triage_tools,
+)
 
 # ADK discovers agents by directory. The repo root holds the `anbu_care`
 # package, whose agent.py exposes `root_agent`.
@@ -42,6 +48,19 @@ app = get_fast_api_app(
     host="0.0.0.0",
     port=int(os.getenv("PORT", "8080")),
 )
+
+
+class IntakeSignalRequest(BaseModel):
+    parent_id: str
+    channel: str = "er_desk_webhook"
+    raw_text: str = ""
+    reported_by: str = "unknown"
+    # Optional: triage immediately, which is what a real intake desk posting
+    # would want. Kept explicit so the two steps stay visibly separate.
+    triage_now: bool = True
+    symptoms: list[str] = []
+    lat: float = 0.0
+    lon: float = 0.0
 
 
 class IntakeRequest(BaseModel):
@@ -159,6 +178,43 @@ def parent_detail(parent_id: str) -> dict[str, Any]:
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result["error"])
     return result
+
+
+@app.post("/api/intake-signal")
+def intake_signal(request: IntakeSignalRequest) -> dict[str, Any]:
+    """An intake signal arriving from outside — the only way an episode starts.
+
+    Anbu Care does not monitor and cannot notice anything on its own. This is
+    the inbound channel something else posts to. Every signal is labelled
+    SIMULATED in this build, because no real ER system posts here.
+    """
+    signal = intake_tools.receive_intake_signal(
+        parent_id=request.parent_id,
+        channel=request.channel,
+        raw_text=request.raw_text,
+        reported_by=request.reported_by,
+    )
+    if signal.get("status") == "error":
+        raise HTTPException(status_code=400, detail=signal["error"])
+
+    response: dict[str, Any] = {"signal": signal}
+    if request.triage_now:
+        response["triage"] = triage_tools.run_triage(
+            parent_id=request.parent_id,
+            symptoms=request.symptoms,
+            free_text=request.raw_text,
+            reported_by=request.reported_by,
+            lat=request.lat,
+            lon=request.lon,
+            case_id=signal["case_id"],
+        )
+    return response
+
+
+@app.get("/api/intake-channels")
+def intake_channels() -> dict[str, Any]:
+    """The channels an episode can start on. All labelled stubs in this build."""
+    return intake_tools.list_intake_channels()
 
 
 @app.get("/api/cases/{case_id}/brief")

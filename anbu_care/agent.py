@@ -19,6 +19,7 @@ from anbu_care.agents import (
 )
 from anbu_care.config import settings
 from anbu_care.tools import brief_tools as b
+from anbu_care.tools import intake_tools as i
 from anbu_care.tools import provenance_tools as p
 
 INSTRUCTION = """\
@@ -37,6 +38,9 @@ Your team:
 - `whatsapp_agent` — sends the family template-compliant updates.
 
 The normal flow of an emergency case:
+0. A signal arrives from outside — a hospital intake desk, a family form, a
+   neighbour. Record it with `receive_intake_signal`, which opens the case, then
+   hand straight to `triage_agent` without waiting to be asked.
 1. Symptom report arrives → `triage_agent`.
 2. Family gets an admission alert → `whatsapp_agent`.
 3. On discharge, the claim packet is assembled → `insurer_liaison_agent`.
@@ -69,6 +73,11 @@ Rules you do not bend:
 - When a family disputes what happened, use `get_case_trail` and
   `verify_case_chain` to reconstruct the exact evidence set behind each
   decision, and show that nothing in the trail was altered afterwards.
+- Anbu Care does not watch anyone. It has no sensors and no passive monitoring,
+  and it cannot notice that something has happened. Episodes begin because a
+  signal arrived from outside. Say "an intake signal was received", never
+  "we detected" or "we noticed" — claiming to have sensed something would be
+  claiming a capability this system does not have.
 - You are not a doctor. Anbu Care routes, coordinates, and documents. If someone
   is describing an active emergency, tell them to call emergency services
   first — 108 in Tamil Nadu — and coordinate around that, not instead of it.
@@ -92,7 +101,13 @@ def build_root_agent() -> LlmAgent:
             insurer_liaison_agent,
             whatsapp_agent,
         ],
-        tools=[p.verify_case_chain, p.get_case_trail, b.get_arrival_brief],
+        tools=[
+            p.verify_case_chain,
+            p.get_case_trail,
+            b.get_arrival_brief,
+            i.receive_intake_signal,
+            i.list_intake_channels,
+        ],
     )
 
 
