@@ -13,7 +13,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
+from fastapi.responses import FileResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
@@ -28,6 +29,7 @@ from anbu_care.tools import (
     provenance_tools,
     triage_tools,
 )
+from anbu_care.webauth import require_family_session
 
 # ADK discovers agents by directory. The repo root holds the `anbu_care`
 # package, whose agent.py exposes `root_agent`.
@@ -71,6 +73,21 @@ class IntakeRequest(BaseModel):
     lat: float = 0.0
     lon: float = 0.0
     case_id: str = ""
+
+
+WEBUI = Path(__file__).resolve().parent / "webui" / "index.html"
+
+
+@app.get("/app")
+def dashboard() -> FileResponse:
+    """The family dashboard.
+
+    A view over the endpoints that already exist — it computes nothing the
+    backend guarantees. Severity, routing scores, adjudication arithmetic and
+    chain verification are all rendered exactly as the audited endpoints
+    returned them.
+    """
+    return FileResponse(WEBUI, media_type="text/html")
 
 
 @app.get("/api/healthz")
@@ -172,7 +189,7 @@ def demo_seed() -> dict[str, Any]:
 
 
 @app.get("/api/parents/{parent_id}")
-def parent_detail(parent_id: str) -> dict[str, Any]:
+def parent_detail(parent_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
     """The baseline record and every document ingested for this parent."""
     result = onboarding_tools.get_parent_profile(parent_id)
     if result.get("status") == "error":
@@ -218,7 +235,7 @@ def intake_channels() -> dict[str, Any]:
 
 
 @app.get("/api/cases/{case_id}/brief")
-def case_brief(case_id: str) -> dict[str, Any]:
+def case_brief(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
     """The arrival brief: what is waiting when the family lands.
 
     Composed from the signed chain. Every line carries its provenance, and
@@ -232,7 +249,7 @@ def case_brief(case_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/cases/{case_id}/trail")
-def case_trail(case_id: str) -> dict[str, Any]:
+def case_trail(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
     """Reconstruct every decision on a case, in order, with its hash links."""
     result = provenance_tools.get_case_trail(case_id)
     if result.get("status") == "error":
@@ -252,7 +269,7 @@ def case_verify(case_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/cases/{case_id}")
-def case_detail(case_id: str) -> dict[str, Any]:
+def case_detail(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
     """Case metadata and its current chain head."""
     case = service.load_case(case_id)
     if case is None:

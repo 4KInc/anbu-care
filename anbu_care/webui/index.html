@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anbu Care — family dashboard</title>
+<style>
+  :root{
+    --bg:#0f1417; --panel:#161d21; --panel-2:#1c252a; --line:#26333a;
+    --ink:#e8eef1; --muted:#93a6b0; --dim:#6d818c;
+    --accent:#4db6a0; --warn:#e0a458; --bad:#d9776a; --ok:#5fb87f;
+    --synthetic:#3a2f16; --synthetic-ink:#e8c479;
+    --header-h:57px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding-bottom:76px;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent)}
+  header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);padding:14px 16px 10px}
+  h1{font-size:17px;font-weight:650;letter-spacing:.2px}
+  h1 small{display:block;font-size:12px;font-weight:400;color:var(--dim);margin-top:2px}
+  main{padding:14px 16px;max-width:820px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--muted);font-weight:650;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .row .k{color:var(--muted);flex:0 0 42%;font-size:13px}
+  .row .v{text-align:right;flex:1;word-break:break-word}
+  .unknown{color:var(--dim);font-style:italic}
+  .why{display:block;color:var(--dim);font-size:12px;font-style:normal;margin-top:2px}
+  .badge{display:inline-block;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;
+         padding:3px 8px;border-radius:999px;font-weight:700;white-space:nowrap}
+  .b-synth{background:var(--synthetic);color:var(--synthetic-ink)}
+  .b-sim{background:#2a2136;color:#c3a7e0}
+  .b-seed{background:#20303a;color:#8fc4dd}
+  .b-ok{background:#16301f;color:var(--ok)}
+  .b-bad{background:#341f1c;color:var(--bad)}
+  .b-warn{background:#332714;color:var(--warn)}
+  .b-open{background:#123028;color:#68d3ae}
+  .b-lock{background:#2b2222;color:#e0a09a}
+  .banner{border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;line-height:1.45}
+  .banner.synth{background:var(--synthetic);color:var(--synthetic-ink);font-weight:600}
+  .banner.note{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
+  nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--panel);
+      border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  nav button{flex:1;background:none;border:0;color:var(--dim);font-size:10.5px;padding:11px 2px 13px;
+             cursor:pointer;font-family:inherit;letter-spacing:.3px}
+  nav button.on{color:var(--accent);box-shadow:inset 0 2px 0 var(--accent)}
+  .tl{position:relative;padding-left:20px}
+  .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .ev{position:relative;padding:0 0 14px}
+  .ev::before{content:"";position:absolute;left:-19px;top:5px;width:10px;height:10px;border-radius:50%;
+              background:var(--panel);border:2px solid var(--accent)}
+  .ev .t{font-size:11.5px;color:var(--dim)}
+  .ev .d{font-size:14px;margin-top:1px}
+  .ev .a{font-size:11.5px;color:var(--muted)}
+  code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel-2);
+       padding:2px 6px;border-radius:5px;color:#b9d4cd;word-break:break-all}
+  pre{background:#0b1013;border:1px solid var(--line);border-radius:8px;padding:11px;overflow-x:auto;
+      font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a8c3bd}
+  button.act{background:var(--accent);color:#06231d;border:0;border-radius:8px;padding:10px 14px;
+             font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit}
+  button.act.ghost{background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
+  input{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;
+        padding:10px;font-family:inherit;font-size:14px;width:100%}
+  .obs{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .obs:last-child{border-bottom:0}
+  .obs .n{font-weight:600}
+  .obs .val{font-variant-numeric:tabular-nums}
+  .delta{font-size:12px;margin-top:3px}
+  .delta.base{color:var(--dim)}
+  .delta.new{color:var(--warn)}
+  .stack{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .muted{color:var(--muted);font-size:12.5px}
+  .err{color:var(--bad);font-size:13px}
+  @media(min-width:760px){
+    body{padding-bottom:0}
+    /* Sticks BELOW the header rather than competing with it at top:0 —
+       two sticky elements both pinned to 0 leave the nav unreachable once
+       the page scrolls, which is exactly when you need it. */
+    nav{position:sticky;top:var(--header-h);z-index:19;border-top:0;
+        border-bottom:1px solid var(--line);max-width:820px;margin:0 auto;background:var(--bg)}
+    nav button{font-size:12px;padding:12px 4px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Anbu Care <small id="sub">family dashboard</small></h1>
+</header>
+
+<nav>
+  <button data-v="now" class="on">Now</button>
+  <button data-v="brief">Arrival</button>
+  <button data-v="routing">Routing</button>
+  <button data-v="record">Record</button>
+  <button data-v="claim">Claim</button>
+  <button data-v="audit">Audit</button>
+</nav>
+
+<main id="app"></main>
+
+<script>
+const API = location.origin;
+const S = { caseId: null, parentId: null, token: null, trail: null, brief: null, view: "now" };
+const $ = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstElementChild; };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+const SYNTH = `<div class="banner synth">SYNTHETIC — DEMO DATA. No real patient, no real record.</div>`;
+
+async function api(path, { auth = false } = {}) {
+  const headers = auth && S.token ? { Authorization: `Bearer ${S.token}` } : {};
+  const r = await fetch(API + path, { headers });
+  if (r.status === 401) return { __denied: true, detail: (await r.json()).detail };
+  if (!r.ok) return { __error: `HTTP ${r.status}` };
+  return r.json();
+}
+
+// ---- degraded states are demo states: never a bare spinner, never a fake zero
+const unknown = (why) => `<span class="unknown">not yet known${why ? `<span class="why">${esc(why)}</span>` : ""}</span>`;
+const pending = (what) => `<span class="unknown">pending — ${esc(what)}</span>`;
+
+function row(k, v) { return `<div class="row"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
+
+function receiptsOfKind(kind) {
+  return (S.trail?.receipts || []).filter(r => r.kind === kind);
+}
+function lastOfKind(kind) {
+  const all = receiptsOfKind(kind);
+  return all.length ? all[all.length - 1] : null;
+}
+
+// =====================================================================
+// views — each renders ONLY what an endpoint returned. No computation here.
+// =====================================================================
+
+function vNow() {
+  if (!S.trail) return needCase();
+  if (S.trail.__denied) return denied(S.trail.detail, "the case trail");
+  const t = lastOfKind("triage.decision");
+  const sig = lastOfKind("intake.signal_received");
+  return `
+  ${SYNTH}
+  <div class="card">
+    <h2>What is happening now</h2>
+    ${row("Case", `<code>${esc(S.caseId)}</code>`)}
+    ${row("Severity", t ? `<b>${esc(t.payload.severity)}</b>` : unknown("triage has not run on this case"))}
+    ${row("Hospital", t ? esc(hospitalName(t)) : unknown("no routing decision recorded yet"))}
+    ${row("Episode began", sig
+      ? `${esc(sig.payload.channel_description || sig.payload.channel)}<span class="why">${esc(sig.payload.label)}</span>`
+      : unknown("no intake signal recorded on this case"))}
+  </div>
+  <div class="card">
+    <h2>Timeline — every entry is a signed receipt</h2>
+    <div class="tl">
+      ${(S.trail.receipts || []).map(r => `
+        <div class="ev">
+          <div class="t">${esc(new Date(r.created_at).toLocaleString())}</div>
+          <div class="d">${esc(describe(r))}</div>
+          <div class="a">${esc(r.actor)} · seq ${r.seq}</div>
+        </div>`).join("")}
+    </div>
+    <div class="stack">
+      <span class="badge ${S.trail.verified ? "b-ok" : "b-bad"}">chain ${S.trail.verified ? "verified" : "BROKEN"}</span>
+      <span class="badge b-seed">${(S.trail.receipts || []).length} receipts</span>
+    </div>
+  </div>`;
+}
+
+function describe(r) {
+  const p = r.payload || {};
+  switch (r.kind) {
+    case "case.opened": return "Case opened.";
+    case "intake.signal_received": return "Intake signal received from an external channel.";
+    case "triage.decision": return `Triage assessed severity ${p.severity}.`;
+    case "comms.sent": return "Family notified over WhatsApp.";
+    case "comms.blocked": return "A message was blocked before sending — clinical detail may not go over WhatsApp.";
+    case "claim.packet_assembled": return "Claim packet assembled.";
+    case "evidence.assessed": return `Evidence assessed: ${p.gate}.`;
+    case "evidence.enriched": return "Evidence enriched before submission.";
+    case "claim.submitted": return "Claim submitted to the SIMULATED insurer endpoint.";
+    case "claim.adjudicated": return `SIMULATED adjudication returned ${p.outcome}.`;
+    case "claim.stage_changed": return `Claim stage moved ${p.from} → ${p.to}.`;
+    default: return r.kind;
+  }
+}
+
+function hospitalName(t) {
+  const id = t.payload.recommended_hospital_id;
+  const hit = (t.payload.ranked || []).find(h => h.hospital_id === id);
+  return hit ? hit.name : id || "—";
+}
+
+function vBrief() {
+  if (!S.brief) return needCase();
+  if (S.brief.__denied) return denied(S.brief.detail, "the arrival brief");
+  const b = S.brief.brief;
+  const fact = (f) => row(f.label, f.known ? esc(f.value) : unknown(f.source?.note));
+  return `
+  ${SYNTH}
+  <div class="banner note">
+    <b>State as of ${esc(b.as_of ? new Date(b.as_of).toLocaleString() : "no activity recorded")}</b><br>
+    A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.
+  </div>
+  <div class="card"><h2>Where things stand</h2>${(b.facts || []).map(fact).join("")}</div>
+  <div class="card"><h2>What has been done</h2>${(b.actions_taken || []).map(fact).join("") || unknown("nothing recorded yet")}</div>
+  <div class="card"><h2>Still open</h2>${(b.pending || []).map(fact).join("")}</div>
+  <div class="card"><h2>Bring with you</h2>${(b.bring_with_you || []).map(fact).join("")}</div>
+  <div class="card"><h2>Who to contact</h2>${(b.contacts || []).map(fact).join("")}</div>
+  <div class="card"><h2>Grounding</h2>
+    <p class="muted">${b.facts.filter(f => !f.known).length} item(s) not yet known — shown rather than guessed.
+    Every line above carries the receipt or stored field it came from.</p>
+  </div>`;
+}
+
+function vRouting() {
+  if (!S.trail) return needCase();
+  if (S.trail.__denied) return denied(S.trail.detail, "the routing decision");
+  const t = lastOfKind("triage.decision");
+  if (!t) return `${SYNTH}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
+  const p = t.payload;
+  return `
+  ${SYNTH}
+  <div class="card">
+    <h2>Why this hospital</h2>
+    <p>${esc(p.explanation)}</p>
+    <div class="stack"><span class="badge b-seed">SEEDED SNAPSHOT — NOT A LIVE FEED</span></div>
+  </div>
+  <div class="card">
+    <h2>How each option scored</h2>
+    ${(p.ranked || []).map(h => `
+      <div class="row">
+        <div class="k">${esc(h.name)}${h.hospital_id === p.recommended_hospital_id ? " ★" : ""}</div>
+        <div class="v">${h.total_score.toFixed(3)}
+          <span class="why">${h.distance_km} km · capability ${h.capability_score} ·
+          ${h.network_match ? "in network" : "NOT in network"}</span></div>
+      </div>`).join("")}
+  </div>
+  <div class="card">
+    <h2>Why that severity</h2>
+    ${(p.severity_rationale || []).map(r => `<div class="row"><div class="v" style="text-align:left">${esc(r)}</div></div>`).join("")}
+  </div>`;
+}
+
+function vRecord() {
+  if (!S.parentId) return needCase();
+  if (!S.token) return gateNotice();
+  if (S.record?.__denied) return denied(S.record.detail, "the health record");
+  if (!S.record) return `<div class="card"><p class="muted">Loading the record…</p></div>`;
+  const docs = S.record.documents || [];
+  const p = S.record.profile || {};
+  return `
+  ${SYNTH}
+  <div class="banner note"><span class="badge b-lock">credentialed</span>
+    This is the clinical view. It is the reason the WhatsApp gate can refuse to send lab values —
+    they live here, behind a server-enforced credential.</div>
+  <div class="card">
+    <h2>Baseline</h2>
+    ${row("Name", esc(p.name))}
+    ${row("Age", esc(p.age))}
+    ${row("Conditions", (p.chronic_conditions || []).map(esc).join(", ") || unknown("none recorded"))}
+    ${row("Allergies", (p.allergies || []).map(esc).join(", ") || unknown("none recorded"))}
+  </div>
+  <div class="card">
+    <h2>Documents stored — ground truth</h2>
+    ${row("Documents actually stored", `<b>${docs.length}</b><span class="why">read back from the record, not from what an agent said</span>`)}
+  </div>
+  ${docs.length === 0 ? `<div class="card"><p>${unknown("no documents have been ingested for this parent")}</p></div>` : ""}
+  ${docs.map(d => `
+    <div class="card">
+      <h2>${esc(d.kind)} · ${esc(d.source_filename || "—")}</h2>
+      ${(d.observations || []).length === 0
+        ? `<p>${unknown("this document carries no structured observations")}</p>`
+        : d.observations.map(o => `
+          <div class="obs">
+            <div class="n">${esc(o.name)}</div>
+            <div class="val">${esc(o.value)} ${esc(o.unit || "")}
+              ${o.flag ? `<span class="badge ${o.flag === "high" || o.flag === "low" || o.flag === "abnormal" ? "b-warn" : "b-ok"}">${esc(o.flag)}</span>` : ""}
+            </div>
+          </div>`).join("")}
+      <div class="delta ${/(consistent with baseline)/.test(d.delta_vs_baseline || "") ? "base" : "new"}">
+        ${d.delta_vs_baseline ? esc(d.delta_vs_baseline) : unknown("no comparison recorded")}
+      </div>
+    </div>`).join("")}`;
+}
+
+function vClaim() {
+  if (!S.trail) return needCase();
+  if (S.trail.__denied) return denied(S.trail.detail, "the claim status");
+  const adjs = receiptsOfKind("claim.adjudicated");
+  const sub = lastOfKind("claim.submitted");
+  if (!adjs.length && !sub) {
+    return `${SYNTH}<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`;
+  }
+  const last = adjs.length ? adjs[adjs.length - 1] : null;
+  return `
+  ${SYNTH}
+  <div class="banner note"><span class="badge b-sim">SIMULATED TPA</span>
+    No production insurer API is integrated. The packet, the policy arithmetic, the SLA clocks and the
+    receipts are real; the counterparty's answer is not.</div>
+  <div class="card">
+    <h2>Where the claim stands</h2>
+    ${row("Latest outcome", last ? `<b>${esc(last.payload.outcome)}</b>` : pending("submitted, awaiting adjudication"))}
+    ${row("SLA", sub?.payload?.sla_deadline
+      ? `${esc(sub.payload.sla_kind)}<span class="why">deadline ${esc(new Date(sub.payload.sla_deadline).toLocaleString())}</span>`
+      : unknown("no SLA clock recorded"))}
+    ${row("Claimed", last?.payload?.total_claimed_inr != null ? `INR ${last.payload.total_claimed_inr.toLocaleString("en-IN")}` : unknown("nothing priced yet"))}
+    ${row("Allowed", last && ["PASS","PARTIAL"].includes(last.payload.outcome)
+      ? `INR ${last.payload.total_allowed_inr.toLocaleString("en-IN")}` : unknown("the claim has not been priced yet"))}
+    ${row("You may owe", last && ["PASS","PARTIAL"].includes(last.payload.outcome)
+      ? `<b>INR ${last.payload.total_disallowed_inr.toLocaleString("en-IN")}</b>`
+      : unknown("no amount has been priced yet"))}
+  </div>
+  <div class="card">
+    <h2>Every adjudication, in order</h2>
+    ${adjs.map(a => `
+      <div class="row">
+        <div class="k">attempt ${a.payload.attempt} · ${esc(a.payload.outcome)}</div>
+        <div class="v" style="text-align:left">
+          ${(a.payload.reasons || []).map(r => `<div class="why" style="margin-top:4px">${esc(r)}</div>`).join("")}
+        </div>
+      </div>`).join("")}
+    ${adjs.length > 1 ? `<p class="muted" style="margin-top:8px">The claim was queried, the missing document
+      was found on the record, and it was resubmitted — that reaction is what the receipts above record.</p>` : ""}
+  </div>`;
+}
+
+function vAudit() {
+  return `
+  <div class="card">
+    <h2>Two access models, both enforced by the server</h2>
+    <div class="row"><div class="k"><span class="badge b-open">open</span></div>
+      <div class="v" style="text-align:left"><code>/api/cases/{id}/verify</code>
+        <span class="why">Proves the record was not altered without revealing what it says.
+        No credential — anyone can check us, including you, from a terminal.</span></div></div>
+    <div class="row"><div class="k"><span class="badge b-lock">credentialed</span></div>
+      <div class="v" style="text-align:left"><code>/api/parents/{id}</code>, <code>/trail</code>, <code>/brief</code>
+        <span class="why">Return case or patient content. Rejected with 401 without a session —
+        server-side, not a hidden link.</span></div></div>
+  </div>
+  <div class="card">
+    <h2>Verify this case yourself</h2>
+    <p class="muted">Runs unauthenticated. Copy it into any terminal.</p>
+    <pre>curl -s ${esc(API)}/api/cases/${esc(S.caseId || "{case_id}")}/verify</pre>
+    <div id="vout">${S.verify ? verifyBlock(S.verify) : `<p class="muted">Press verify to call it live.</p>`}</div>
+    <div class="stack">
+      <button class="act" onclick="doVerify()">Verify now</button>
+      <button class="act ghost" onclick="probeGate()">Prove the gate</button>
+    </div>
+    <div id="probe"></div>
+  </div>`;
+}
+
+function verifyBlock(v) {
+  return `
+    <div class="stack" style="margin:8px 0">
+      <span class="badge ${v.verified ? "b-ok" : "b-bad"}">${v.verified ? "VERIFIED" : "TAMPER DETECTED"}</span>
+      <span class="badge b-seed">${v.receipt_count} receipts</span>
+    </div>
+    ${v.verified ? "" : `<p class="err">Broken at receipt ${v.broken_at_seq}: ${esc(v.reason)}</p>`}`;
+}
+
+async function doVerify() {
+  if (!S.caseId) return;
+  S.verify = await api(`/api/cases/${S.caseId}/verify`);
+  render();
+}
+
+async function probeGate() {
+  const el = document.getElementById("probe");
+  el.innerHTML = `<p class="muted">Calling the clinical endpoint with no credential…</p>`;
+  const r = await fetch(`${API}/api/parents/${S.parentId || "unknown"}`);
+  const open = await fetch(`${API}/api/cases/${S.caseId}/verify`);
+  el.innerHTML = `
+    <pre>GET /api/parents/{id}          -> HTTP ${r.status}   ${r.status === 401 ? "denied, no credential" : ""}
+GET /api/cases/{id}/verify    -> HTTP ${open.status}   open by design</pre>`;
+}
+
+function needCase() {
+  return `
+  ${SYNTH}
+  <div class="card">
+    <h2>Open a case</h2>
+    <p class="muted">Every screen below is bound to the live API. Seed a synthetic episode, or paste a case id.</p>
+    <div class="stack" style="margin-top:10px">
+      <button class="act" onclick="seedDemo()">Seed a synthetic episode</button>
+    </div>
+    <div style="margin-top:12px"><input id="cid" placeholder="or paste a case id" value="${esc(S.caseId || "")}"></div>
+    <div class="stack"><button class="act ghost" onclick="useCase()">Open it</button></div>
+    <div id="seederr"></div>
+  </div>`;
+}
+
+function gateNotice() {
+  return `
+  <div class="card">
+    <h2><span class="badge b-lock">credentialed</span> Clinical view</h2>
+    <p>The health record holds lab values and diagnoses. It is refused by the server without a family
+    session — that refusal is what lets the WhatsApp gate promise this data lives somewhere protected.</p>
+    <p class="muted" style="margin-top:8px">The demo credential is not a secret; it is published in the README.
+    Secrecy is not what is being shown here — server-side enforcement is.</p>
+    <div class="stack"><button class="act" onclick="signIn()">Sign in as the family (demo)</button></div>
+  </div>`;
+}
+
+function denied(detail, what) {
+  return `
+  <div class="card">
+    <h2><span class="badge b-lock">401</span> ${esc(what)} is credentialed</h2>
+    <p class="muted">${esc(detail || "")}</p>
+    <div class="stack"><button class="act" onclick="signIn()">Sign in as the family (demo)</button></div>
+  </div>`;
+}
+
+// ---- actions -------------------------------------------------------------
+
+async function signIn() {
+  S.token = "anbu-demo-family-token";
+  await load();
+}
+
+async function seedDemo() {
+  const err = document.getElementById("seederr");
+  err.innerHTML = `<p class="muted">Seeding…</p>`;
+  const seed = await (await fetch(`${API}/api/demo/seed`, { method: "POST" })).json();
+  const sig = await (await fetch(`${API}/api/intake-signal`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      parent_id: seed.parent_id, channel: "er_desk_webhook",
+      reported_by: "Sacred Heart ER desk", symptoms: ["chest pain", "sweating"],
+      raw_text: "71F brought in by a neighbour. Chest tightness ~20 min, radiating to left arm, sweating. She says it's probably just gas.",
+    }),
+  })).json();
+  S.parentId = seed.parent_id;
+  S.caseId = sig.signal.case_id;
+  await load();
+}
+
+function useCase() {
+  const v = document.getElementById("cid").value.trim();
+  if (v) { S.caseId = v; load(); }
+}
+
+async function load() {
+  if (S.caseId) {
+    S.trail = await api(`/api/cases/${S.caseId}/trail`, { auth: true });
+    S.brief = await api(`/api/cases/${S.caseId}/brief`, { auth: true });
+    S.verify = await api(`/api/cases/${S.caseId}/verify`);
+    if (!S.parentId && S.brief?.brief) S.parentId = S.brief.brief.parent_id;
+  }
+  if (S.parentId && S.token) S.record = await api(`/api/parents/${S.parentId}`, { auth: true });
+  render();
+}
+
+function render() {
+  const views = { now: vNow, brief: vBrief, routing: vRouting, record: vRecord, claim: vClaim, audit: vAudit };
+  document.getElementById("app").innerHTML = views[S.view]();
+  document.getElementById("sub").textContent =
+    (S.caseId ? S.caseId : "no case open") + (S.token ? " · signed in (demo)" : " · not signed in");
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.v === S.view));
+}
+
+document.querySelectorAll("nav button").forEach(b =>
+  b.addEventListener("click", () => { S.view = b.dataset.v; render(); }));
+
+render();
+</script>
+</body>
+</html>

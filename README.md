@@ -18,10 +18,24 @@ CASE=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
 curl -s $URL/api/cases/$CASE/verify | jq        # verify the signed chain yourself
 ```
 
-The agent UI is at [`/dev-ui/`](https://anbu-care-37j4eofpwq-el.a.run.app/dev-ui/).
-Access is open because the receipt chain is meant to be independently checkable —
-see [Public access](#public-access-under-domain-restricted-sharing). All demo data
-is synthetic. Liveness probe is `/api/healthz`.
+**Family dashboard:** [`/app`](https://anbu-care-37j4eofpwq-el.a.run.app/app) ·
+**agent UI:** [`/dev-ui/`](https://anbu-care-37j4eofpwq-el.a.run.app/dev-ui/)
+
+Two access models, both enforced server-side — this contrast is deliberate:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/parents/{parent_id}     # 401 — clinical content
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/{case_id}/verify  # 200 — open to everyone
+```
+
+Verification proves the record was not altered *without revealing what it says*,
+which is why it needs no credential. Anything returning case or patient content
+requires a family session. The demo credential is
+`anbu-demo-family-token` — published deliberately: secrecy is not what is being
+demonstrated, server-side enforcement is. Take the token out of the page and the
+401 still happens.
+
+All demo data is synthetic. Liveness probe is `/api/healthz`.
 
 > *"If something happens to my parent right now, who makes sure the right decisions
 > get made, fast, and that I actually know what's happening?"*
@@ -335,7 +349,7 @@ Then deploy a new revision — running instances do not pick up IAM changes.
 
 ## Future work
 
-- **Gemma as an intake normalizer.** The plan was a small model converting messy
+- **Gemma as an intake normalizer — DEFERRED, precheck negative (not pending).** The plan was a small model converting messy
   free-text intake ("amma fell, chest heavy, sweating, BP 160") into the
   structured fields the deterministic triage table consumes — advisory input
   only, never able to set severity or write a receipt. **Not built:** Gemma is

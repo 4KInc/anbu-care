@@ -16,6 +16,9 @@ JQ() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
 # gRPC's fork handler chatters on stderr when Pub/Sub publishes from a short-lived
 # process. Harmless, and unreadable on camera.
 export GRPC_VERBOSITY=NONE GLOG_minloglevel=3
+# The trail returns case content and is credentialed. Verification is not.
+TOKEN="${ANBU_DEMO_TOKEN:-anbu-demo-family-token}"
+AUTH=(-H "Authorization: Bearer $TOKEN")
 quiet() { "$@" 2> >(grep -v "ev_poll_posix\|FD from fork parent" >&2); }
 BAR="────────────────────────────────────────────────────────────────────────────"
 
@@ -141,12 +144,21 @@ echo
 echo "  All four outcomes are reachable — see: ./scripts/demo_run.sh --branches"
 
 # ---------------------------------------------------------------------------
-beat "BEAT 6 — Anyone can verify the chain, with no login"
+beat "BEAT 6 — Two access models, both enforced by the server"
+echo "  The clinical record is refused without a credential. Verification is not."
+cmd "curl -s -o /dev/null -w '%{http_code}' $URL/api/parents/$PARENT      # no auth"
+printf "    /api/parents/{id}        -> HTTP %s   (denied — this is where lab values live)\n" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/parents/$PARENT")"
+cmd "curl -s -o /dev/null -w '%{http_code}' $URL/api/cases/$CASE/verify   # no auth"
+printf "    /api/cases/{id}/verify   -> HTTP %s   (open by design — proves integrity without revealing content)\n" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/cases/$CASE/verify")"
+echo
+echo "  Anyone can verify the chain, with no login:"
 cmd "curl -s $URL/api/cases/$CASE/verify"
 curl -s "$URL/api/cases/$CASE/verify" | python3 -m json.tool
 echo
-cmd "curl -s $URL/api/cases/$CASE/trail"
-curl -s "$URL/api/cases/$CASE/trail" | python3 -c "
+cmd "curl -s -H 'Authorization: Bearer <token>' $URL/api/cases/$CASE/trail"
+curl -s "${AUTH[@]}" "$URL/api/cases/$CASE/trail" | python3 -c "
 import sys,json;d=json.load(sys.stdin)
 for r in d['receipts']:
     print(f\"    [{r['seq']:>2}] {r['kind']:<24} by {r['actor']:<22} {r['prev_hash'][:14]} -> {r['hash'][:14]}\")
