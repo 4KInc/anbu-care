@@ -313,7 +313,7 @@ def _delta_vs_baseline(parent_id: str, doc: ParsedDocument) -> str:
             notes.append(
                 f"{obs.name}={obs.value}: changed from {seen[-1]}, "
                 f"inside the {MATERIAL_CHANGE_FRACTION:.0%} band — within normal variation"
-                + (" (still flagged abnormal against the reference range)" if abnormal else "")
+                + (" (still outside reference range)" if abnormal else "")
             )
         else:
             notes.append(

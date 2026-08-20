@@ -149,7 +149,7 @@ def test_small_move_reads_as_variation_not_as_new_and_abnormal(parent_id):
     assert "within normal variation" in delta
     assert "new and abnormal" not in delta
     # The reference-range flag is untouched — it is still abnormal, just stable.
-    assert "still flagged abnormal" in delta
+    assert "still outside reference range" in delta
 
 
 def test_hba1c_crossing_still_reads_new_and_abnormal(parent_id):

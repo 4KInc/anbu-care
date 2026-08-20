@@ -149,6 +149,15 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .delta.base{color:var(--teal-ink)}
 .delta.new{color:var(--amber)}
 .delta .ic{flex:none;font-weight:800}
+/* One line per analyte. A single run-on paragraph buried the one reading that
+   moved, which is the thing the materiality band exists to surface. */
+.deltas{margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)}
+.dline{display:flex;gap:8px;font-size:12.5px;line-height:1.5;padding:4px 0;
+       color:var(--ink-mute)}
+.dline .ic{flex:none;font-weight:800}
+.dline.base{color:var(--teal-ink)}
+.dline.new{color:var(--amber);font-weight:700;font-size:13.5px;
+           background:var(--amber-bg);margin:4px -8px;padding:8px;border-radius:var(--r-sm)}
 
 /* ---- code / cta ------------------------------------------------------- */
 pre{background:#10202e;border:0;border-radius:var(--r);color:#d6e6f2;
@@ -402,8 +411,14 @@ function vRecord(){
             <div class="v num">${esc(o.value)} <span class="u">${esc(o.unit||"")}</span>
               ${o.flag?`<span class="pill ${["high","low","abnormal"].includes((o.flag||"").toLowerCase())?"p-red":"p-teal"}">${esc(o.flag)}</span>`:""}
             </div></div>`).join("")}
-      ${d.delta_vs_baseline?`<div class="delta ${base?"base":"new"}">
-        <span class="ic">${base?"✓":"⚠"}</span><span>${esc(d.delta_vs_baseline)}</span></div>`:""}
+      ${d.delta_vs_baseline?`<div class="deltas">
+        ${d.delta_vs_baseline.split("; ").map(n=>{
+          const material=/new and abnormal/.test(n);
+          const stable=/consistent with baseline|within normal variation/.test(n);
+          return `<div class="dline ${material?"new":stable?"base":""}">
+            <span class="ic">${material?"⚠":"✓"}</span><span>${esc(n)}</span></div>`;
+        }).join("")}
+      </div>`:""}
     </div>`;}).join("")}`;
 }
 
