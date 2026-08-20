@@ -197,16 +197,13 @@ def test_dashboard_does_not_reimplement_any_guarantee(client):
             f"client appears to reimplement a guarantee: {token!r}"
         )
 
-    # No severity assignment anywhere in the client — severity is displayed,
-    # never decided.
-    assert not re.search(r'severity\s*=\s*[\"\']', html)
-    assert not re.search(r'=\s*[\"\'](HIGH|MEDIUM|LOW)[\"\']', html)
-
     # No severity assignment anywhere: severity is displayed, never decided.
     # (Prose containing the word is fine — what must not exist is the client
     # producing a value rather than rendering one.)
     assert not re.search(r"severity\s*=\s*['\"]", html)
-    assert not re.search(r"=\s*['\"](HIGH|MEDIUM|LOW)['\"]", html)
+    # Assignment only. `sev === "HIGH"` is a comparison against a value the
+    # server decided, used to pick a CSS class — that is rendering, not deciding.
+    assert not re.search(r"(?<![=!<>])=\s*['\"](HIGH|MEDIUM|LOW)['\"]", html)
     assert "p.severity" in html or "payload.severity" in html, (
         "expected severity to be read off an API payload"
     )

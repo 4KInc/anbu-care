@@ -4,177 +4,229 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Anbu Care — family dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Atkinson Hyperlegible Next: drawn for low-vision readers. For an eldercare
+     record read by frightened people on a phone, that is the right typeface.
+     A webfont only, with a full fallback stack — no CDN scripts ship here. -->
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg:#0f1417; --panel:#161d21; --panel-2:#1c252a; --line:#26333a;
-    --ink:#e8eef1; --muted:#93a6b0; --dim:#6d818c;
-    --accent:#4db6a0; --warn:#e0a458; --bad:#d9776a; --ok:#5fb87f;
-    --synthetic:#3a2f16; --synthetic-ink:#e8c479;
-    --header-h:57px;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-       padding-bottom:76px;-webkit-font-smoothing:antialiased}
-  a{color:var(--accent)}
-  header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);padding:14px 16px 10px}
-  h1{font-size:17px;font-weight:650;letter-spacing:.2px}
-  h1 small{display:block;font-size:12px;font-weight:400;color:var(--dim);margin-top:2px}
-  main{padding:14px 16px;max-width:820px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
-  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--muted);font-weight:650;margin-bottom:10px}
-  .row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}
-  .row:last-child{border-bottom:0}
-  .row .k{color:var(--muted);flex:0 0 42%;font-size:13px}
-  .row .v{text-align:right;flex:1;word-break:break-word}
-  .unknown{color:var(--dim);font-style:italic}
-  .why{display:block;color:var(--dim);font-size:12px;font-style:normal;margin-top:2px}
-  .badge{display:inline-block;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;
-         padding:3px 8px;border-radius:999px;font-weight:700;white-space:nowrap}
-  .b-synth{background:var(--synthetic);color:var(--synthetic-ink)}
-  .b-sim{background:#2a2136;color:#c3a7e0}
-  .b-seed{background:#20303a;color:#8fc4dd}
-  .b-ok{background:#16301f;color:var(--ok)}
-  .b-bad{background:#341f1c;color:var(--bad)}
-  .b-warn{background:#332714;color:var(--warn)}
-  .b-open{background:#123028;color:#68d3ae}
-  .b-lock{background:#2b2222;color:#e0a09a}
-  .banner{border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;line-height:1.45}
-  .banner.synth{background:var(--synthetic);color:var(--synthetic-ink);font-weight:600}
-  .banner.note{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
-  nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--panel);
-      border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-  nav button{flex:1;background:none;border:0;color:var(--dim);font-size:10.5px;padding:11px 2px 13px;
-             cursor:pointer;font-family:inherit;letter-spacing:.3px}
-  nav button.on{color:var(--accent);box-shadow:inset 0 2px 0 var(--accent)}
-  .tl{position:relative;padding-left:20px}
-  .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
-  .ev{position:relative;padding:0 0 14px}
-  .ev::before{content:"";position:absolute;left:-19px;top:5px;width:10px;height:10px;border-radius:50%;
-              background:var(--panel);border:2px solid var(--accent)}
-  .ev .t{font-size:11.5px;color:var(--dim)}
-  .ev .d{font-size:14px;margin-top:1px}
-  .ev .a{font-size:11.5px;color:var(--muted)}
-  code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel-2);
-       padding:2px 6px;border-radius:5px;color:#b9d4cd;word-break:break-all}
-  pre{background:#0b1013;border:1px solid var(--line);border-radius:8px;padding:11px;overflow-x:auto;
-      font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a8c3bd}
-  button.act{background:var(--accent);color:#06231d;border:0;border-radius:8px;padding:10px 14px;
-             font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit}
-  button.act.ghost{background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
-  input{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;
-        padding:10px;font-family:inherit;font-size:14px;width:100%}
-  .obs{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
-  .obs:last-child{border-bottom:0}
-  .obs .n{font-weight:600}
-  .obs .val{font-variant-numeric:tabular-nums}
-  .delta{font-size:12px;margin-top:3px}
-  .delta.base{color:var(--dim)}
-  .delta.new{color:var(--warn)}
-  .stack{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-  .muted{color:var(--muted);font-size:12.5px}
-  .err{color:var(--bad);font-size:13px}
-  @media(min-width:760px){
-    body{padding-bottom:0}
-    /* Sticks BELOW the header rather than competing with it at top:0 —
-       two sticky elements both pinned to 0 leave the nav unreachable once
-       the page scrolls, which is exactly when you need it. */
-    nav{position:sticky;top:var(--header-h);z-index:19;border-top:0;
-        border-bottom:1px solid var(--line);max-width:820px;margin:0 auto;background:var(--bg)}
-    nav button{font-size:12px;padding:12px 4px}
-  }
+/* Design system: "Vigilant Care", generated in Google Stitch for this project.
+   Red is reserved for severity and alerts; teal carries the chrome. */
+:root{
+  --surface:#f6f7fb; --card:#ffffff; --card-low:#eff4ff;
+  --ink:#0b1c30; --ink-soft:#4d5c6e; --ink-mute:#7d8b9c;
+  --line:#e3e8f0; --line-soft:#eef1f6;
+  --teal:#0d7d70; --teal-ink:#065f56; --teal-bg:#e2f6f2;
+  --red:#c2313b; --red-ink:#93000a; --red-bg:#fdecec;
+  --amber:#b06a00; --amber-bg:#fdf3e2;
+  --violet:#5b4b9a; --violet-bg:#efecfb;
+  --slate-bg:#eef2f8;
+  --r-sm:6px; --r:10px; --r-lg:14px;
+  --shadow:0 1px 2px rgba(11,28,48,.05), 0 1px 3px rgba(11,28,48,.04);
+  --pad:16px;
+  --font:"Atkinson Hyperlegible Next","Atkinson Hyperlegible",-apple-system,
+         BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--surface);color:var(--ink);font-family:var(--font);
+     font-size:16px;line-height:1.5;padding-bottom:84px;-webkit-font-smoothing:antialiased}
+
+/* ---- app bar ---------------------------------------------------------- */
+.bar{position:sticky;top:0;z-index:30;background:var(--card);
+     border-bottom:1px solid var(--line);padding:12px var(--pad)}
+.bar-in{max-width:760px;margin:0 auto;display:flex;align-items:center;
+        justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--teal);
+      color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;flex:none}
+.brand h1{font-size:17px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.brand .sub{font-size:11.5px;color:var(--ink-mute);font-weight:600}
+
+/* ---- shell ------------------------------------------------------------ */
+main{max-width:760px;margin:0 auto;padding:var(--pad)}
+.strip{border-radius:var(--r);padding:9px 12px;font-size:12.5px;font-weight:700;
+       letter-spacing:.02em;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.strip.demo{background:var(--red-bg);color:var(--red-ink);border:1px solid #f6d6d6}
+.strip.note{background:var(--card);color:var(--ink-soft);border:1px solid var(--line);
+            font-weight:400;letter-spacing:0;font-size:13px;line-height:1.5;display:block}
+.lock{display:inline-flex;align-items:center;gap:6px;background:var(--teal-bg);
+      color:var(--teal-ink);border-radius:999px;padding:5px 11px;font-size:11.5px;
+      font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+      box-shadow:var(--shadow);padding:var(--pad);margin-bottom:14px;overflow:hidden}
+.card.edge-red{border-left:4px solid var(--red)}
+.card.edge-teal{border-left:4px solid var(--teal)}
+.card.edge-amber{border-left:4px solid var(--amber)}
+.card > h2{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+           color:var(--ink-mute);margin-bottom:12px}
+.sec{font-size:19px;font-weight:800;letter-spacing:-.01em;margin:22px 0 12px}
+
+/* ---- hero ------------------------------------------------------------- */
+.hero .lbl{font-size:11.5px;font-weight:800;letter-spacing:.08em;
+           text-transform:uppercase;color:var(--ink-mute)}
+.sev{display:inline-flex;align-items:center;gap:9px;margin:6px 0 4px}
+.sev b{font-size:38px;font-weight:800;letter-spacing:-.02em;line-height:1.05;color:var(--red)}
+.sev.ok b{color:var(--teal)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex:none}
+.hero .why{font-size:14px;color:var(--ink-soft);margin-bottom:14px}
+.hero .hosp{font-size:21px;font-weight:800;letter-spacing:-.01em;margin-bottom:8px}
+
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;
+      padding:4px 10px;font-size:11.5px;font-weight:800;letter-spacing:.03em;white-space:nowrap}
+.p-teal{background:var(--teal-bg);color:var(--teal-ink)}
+.p-red{background:var(--red-bg);color:var(--red-ink)}
+.p-amber{background:var(--amber-bg);color:var(--amber)}
+.p-violet{background:var(--violet-bg);color:var(--violet)}
+.p-slate{background:var(--slate-bg);color:var(--ink-soft)}
+.pills{display:flex;flex-wrap:wrap;gap:7px}
+
+/* ---- rows ------------------------------------------------------------- */
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+     padding:11px 0;border-bottom:1px solid var(--line-soft)}
+.row:last-child{border-bottom:0;padding-bottom:0}
+.row:first-of-type{padding-top:0}
+.row .k{color:var(--ink-soft);font-size:14.5px;flex:0 0 auto;max-width:46%}
+.row .v{text-align:right;font-weight:700;font-size:15px;flex:1;min-width:0;
+        overflow-wrap:anywhere}
+.row .v.long{font-weight:400;font-size:14.5px;text-align:left;line-height:1.55}
+.num{font-variant-numeric:tabular-nums}
+.unk{color:var(--ink-mute);font-weight:400;font-style:italic}
+.why2{display:block;font-size:12.5px;color:var(--ink-mute);font-style:normal;
+      font-weight:400;margin-top:3px;line-height:1.45}
+
+/* ---- money ------------------------------------------------------------ */
+.owe{border-top:1px solid var(--line);margin-top:6px;padding-top:14px}
+.owe .k{font-size:16px;font-weight:800;color:var(--ink)}
+.owe .v{font-size:26px;font-weight:800;color:var(--red);letter-spacing:-.01em}
+
+/* ---- timeline --------------------------------------------------------- */
+.tl{position:relative;margin-left:6px;padding-left:22px;border-left:2px solid var(--line)}
+.ev{position:relative;padding-bottom:18px}
+.ev:last-child{padding-bottom:0}
+.ev::before{content:"";position:absolute;left:-29px;top:4px;width:12px;height:12px;
+            border-radius:50%;background:var(--line);border:2px solid var(--card)}
+.ev.on::before{background:var(--teal)}
+.ev.alert::before{background:var(--red);box-shadow:0 0 0 4px var(--red-bg)}
+.ev .t{font-size:11.5px;color:var(--ink-mute);font-weight:700}
+.ev .d{font-size:14.5px;margin-top:2px;line-height:1.45}
+.ev .a{font-size:11.5px;color:var(--ink-mute);margin-top:3px}
+.ev.alert{background:var(--red-bg);margin-left:-10px;padding:8px 10px 12px;
+          border-radius:var(--r-sm)}
+.hash{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+      color:var(--ink-mute);background:var(--card-low);padding:2px 6px;border-radius:4px}
+
+/* ---- observations ----------------------------------------------------- */
+.obs{display:flex;justify-content:space-between;align-items:center;gap:12px;
+     padding:11px 0;border-bottom:1px solid var(--line-soft)}
+.obs:last-of-type{border-bottom:0}
+.obs .n{font-size:15px;font-weight:700}
+.obs .v{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800}
+.obs .u{color:var(--ink-mute);font-weight:400;font-size:13px}
+.delta{display:flex;gap:8px;margin-top:12px;padding-top:12px;
+       border-top:1px solid var(--line-soft);font-size:13px;line-height:1.5}
+.delta.base{color:var(--teal-ink)}
+.delta.new{color:var(--amber)}
+.delta .ic{flex:none;font-weight:800}
+
+/* ---- code / cta ------------------------------------------------------- */
+pre{background:var(--card-low);border:1px solid var(--line);border-radius:var(--r);
+    padding:11px 12px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px;line-height:1.6;color:var(--ink)}
+.btn{min-height:46px;border:0;border-radius:var(--r);padding:12px 18px;font-family:inherit;
+     font-size:14.5px;font-weight:800;cursor:pointer;background:var(--teal);color:#fff}
+.btn.ghost{background:var(--card);color:var(--teal-ink);border:2px solid var(--teal-bg)}
+.btns{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+input{width:100%;min-height:46px;background:var(--card);border:1px solid var(--line);
+      border-radius:var(--r);padding:11px 12px;font-family:inherit;font-size:15px;color:var(--ink)}
+input:focus{outline:0;border:2px solid var(--teal);padding:10px 11px}
+.mute{color:var(--ink-mute);font-size:13.5px;line-height:1.55}
+.big{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1}
+
+/* ---- nav -------------------------------------------------------------- */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--card);
+    border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.nav-in{max-width:760px;margin:0 auto;display:flex}
+nav button{flex:1;min-height:56px;background:none;border:0;cursor:pointer;font-family:inherit;
+           display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+           color:var(--ink-mute);font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:6px 2px}
+nav button .g{width:26px;height:22px;border-radius:999px;display:grid;place-items:center;
+              font-size:13px;font-weight:800;transition:background .15s}
+nav button.on{color:var(--teal-ink)}
+nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
+
+@media(min-width:720px){
+  body{padding-bottom:0}
+  nav{position:sticky;top:61px;bottom:auto;border-top:0;border-bottom:1px solid var(--line)}
+  nav button{min-height:50px;flex-direction:row;gap:7px;font-size:13px}
+  main{padding:22px var(--pad) 48px}
+  .sev b{font-size:44px}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>Anbu Care <small id="sub">family dashboard</small></h1>
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand">
+      <div class="mark">அ</div>
+      <div>
+        <h1>Anbu Care</h1>
+        <div class="sub" id="sub">no case open</div>
+      </div>
+    </div>
+    <span class="pill p-slate" id="stamp">snapshot</span>
+  </div>
 </header>
 
 <nav>
-  <button data-v="now" class="on">Now</button>
-  <button data-v="brief">Arrival</button>
-  <button data-v="routing">Routing</button>
-  <button data-v="record">Record</button>
-  <button data-v="claim">Claim</button>
-  <button data-v="audit">Audit</button>
+  <div class="nav-in">
+    <button data-v="now" class="on"><span class="g">◎</span>Now</button>
+    <button data-v="brief"><span class="g">✈</span>Arrival</button>
+    <button data-v="routing"><span class="g">⛨</span>Routing</button>
+    <button data-v="record"><span class="g">⚕</span>Record</button>
+    <button data-v="claim"><span class="g">₹</span>Claim</button>
+    <button data-v="audit"><span class="g">✓</span>Audit</button>
+  </div>
 </nav>
 
 <main id="app"></main>
-
 <script>
 const API = location.origin;
-const S = { caseId: null, parentId: null, token: null, trail: null, brief: null, view: "now" };
-const $ = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstElementChild; };
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
+            record:null, verify:null, view:"now" };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-const SYNTH = `<div class="banner synth">SYNTHETIC — DEMO DATA. No real patient, no real record.</div>`;
+const SYNTH = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
 
-async function api(path, { auth = false } = {}) {
-  const headers = auth && S.token ? { Authorization: `Bearer ${S.token}` } : {};
+async function api(path, {auth=false} = {}) {
+  const headers = auth && S.token ? { Authorization:`Bearer ${S.token}` } : {};
   const r = await fetch(API + path, { headers });
-  if (r.status === 401) return { __denied: true, detail: (await r.json()).detail };
-  if (!r.ok) return { __error: `HTTP ${r.status}` };
+  if (r.status === 401) return { __denied:true, detail:(await r.json()).detail };
+  if (!r.ok) return { __error:`HTTP ${r.status}` };
   return r.json();
 }
 
-// ---- degraded states are demo states: never a bare spinner, never a fake zero
-const unknown = (why) => `<span class="unknown">not yet known${why ? `<span class="why">${esc(why)}</span>` : ""}</span>`;
-const pending = (what) => `<span class="unknown">pending — ${esc(what)}</span>`;
+/* Degraded states are states, never spinners and never a fake zero. */
+const unknown = why => `<span class="unk">not yet known${why?`<span class="why2">${esc(why)}</span>`:""}</span>`;
+const row = (k,v,cls="") => `<div class="row ${cls}"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`;
+const kinds = k => (S.trail?.receipts||[]).filter(r=>r.kind===k);
+const last  = k => { const a=kinds(k); return a.length?a[a.length-1]:null; };
 
-function row(k, v) { return `<div class="row"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
-
-function receiptsOfKind(kind) {
-  return (S.trail?.receipts || []).filter(r => r.kind === kind);
+function hospitalName(t){
+  const id=t.payload.recommended_hospital_id;
+  const h=(t.payload.ranked||[]).find(x=>x.hospital_id===id);
+  return h?h.name:(id||"—");
 }
-function lastOfKind(kind) {
-  const all = receiptsOfKind(kind);
-  return all.length ? all[all.length - 1] : null;
-}
-
-// =====================================================================
-// views — each renders ONLY what an endpoint returned. No computation here.
-// =====================================================================
-
-function vNow() {
-  if (!S.trail) return needCase();
-  if (S.trail.__denied) return denied(S.trail.detail, "the case trail");
-  const t = lastOfKind("triage.decision");
-  const sig = lastOfKind("intake.signal_received");
-  return `
-  ${SYNTH}
-  <div class="card">
-    <h2>What is happening now</h2>
-    ${row("Case", `<code>${esc(S.caseId)}</code>`)}
-    ${row("Severity", t ? `<b>${esc(t.payload.severity)}</b>` : unknown("triage has not run on this case"))}
-    ${row("Hospital", t ? esc(hospitalName(t)) : unknown("no routing decision recorded yet"))}
-    ${row("Episode began", sig
-      ? `${esc(sig.payload.channel_description || sig.payload.channel)}<span class="why">${esc(sig.payload.label)}</span>`
-      : unknown("no intake signal recorded on this case"))}
-  </div>
-  <div class="card">
-    <h2>Timeline — every entry is a signed receipt</h2>
-    <div class="tl">
-      ${(S.trail.receipts || []).map(r => `
-        <div class="ev">
-          <div class="t">${esc(new Date(r.created_at).toLocaleString())}</div>
-          <div class="d">${esc(describe(r))}</div>
-          <div class="a">${esc(r.actor)} · seq ${r.seq}</div>
-        </div>`).join("")}
-    </div>
-    <div class="stack">
-      <span class="badge ${S.trail.verified ? "b-ok" : "b-bad"}">chain ${S.trail.verified ? "verified" : "BROKEN"}</span>
-      <span class="badge b-seed">${(S.trail.receipts || []).length} receipts</span>
-    </div>
-  </div>`;
-}
-
-function describe(r) {
-  const p = r.payload || {};
-  switch (r.kind) {
+function describe(r){
+  const p=r.payload||{};
+  switch(r.kind){
     case "case.opened": return "Case opened.";
     case "intake.signal_received": return "Intake signal received from an external channel.";
     case "triage.decision": return `Triage assessed severity ${p.severity}.`;
     case "comms.sent": return "Family notified over WhatsApp.";
-    case "comms.blocked": return "A message was blocked before sending — clinical detail may not go over WhatsApp.";
+    case "comms.blocked": return "Message blocked before sending — clinical detail may not go over WhatsApp.";
     case "claim.packet_assembled": return "Claim packet assembled.";
     case "evidence.assessed": return `Evidence assessed: ${p.gate}.`;
     case "evidence.enriched": return "Evidence enriched before submission.";
@@ -184,285 +236,281 @@ function describe(r) {
     default: return r.kind;
   }
 }
+const inr = n => "₹" + Number(n).toLocaleString("en-IN");
 
-function hospitalName(t) {
-  const id = t.payload.recommended_hospital_id;
-  const hit = (t.payload.ranked || []).find(h => h.hospital_id === id);
-  return hit ? hit.name : id || "—";
-}
+/* ===================== views ===================== */
 
-function vBrief() {
-  if (!S.brief) return needCase();
-  if (S.brief.__denied) return denied(S.brief.detail, "the arrival brief");
-  const b = S.brief.brief;
-  const fact = (f) => row(f.label, f.known ? esc(f.value) : unknown(f.source?.note));
-  return `
-  ${SYNTH}
-  <div class="banner note">
-    <b>State as of ${esc(b.as_of ? new Date(b.as_of).toLocaleString() : "no activity recorded")}</b><br>
-    A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.
+function vNow(){
+  if(!S.trail) return vOpen();
+  if(S.trail.__denied) return denied(S.trail.detail,"The case timeline");
+  const t=last("triage.decision"), sig=last("intake.signal_received");
+  const sev=t?t.payload.severity:null;
+  return `${SYNTH}
+  <div class="card hero ${sev==="HIGH"?"edge-red":"edge-teal"}">
+    <div class="lbl">Severity assessed</div>
+    ${t?`<div class="sev ${sev==="HIGH"?"":"ok"}"><span class="dot"></span><b>${esc(sev)}</b></div>
+       <div class="why">${esc((t.payload.severity_rationale||[])[0]||"")}</div>
+       <div class="hosp">${esc(hospitalName(t))}</div>
+       <div class="pills">
+         <span class="pill p-teal">${(t.payload.ranked||[]).find(h=>h.hospital_id===t.payload.recommended_hospital_id)?.distance_km ?? "—"} km · cashless network</span>
+         <span class="pill p-slate">seeded snapshot</span>
+       </div>`
+      :`<div class="sev ok"><b>—</b></div><div class="why">${unknown("triage has not run on this case")}</div>`}
   </div>
-  <div class="card"><h2>Where things stand</h2>${(b.facts || []).map(fact).join("")}</div>
-  <div class="card"><h2>What has been done</h2>${(b.actions_taken || []).map(fact).join("") || unknown("nothing recorded yet")}</div>
-  <div class="card"><h2>Still open</h2>${(b.pending || []).map(fact).join("")}</div>
-  <div class="card"><h2>Bring with you</h2>${(b.bring_with_you || []).map(fact).join("")}</div>
-  <div class="card"><h2>Who to contact</h2>${(b.contacts || []).map(fact).join("")}</div>
-  <div class="card"><h2>Grounding</h2>
-    <p class="muted">${b.facts.filter(f => !f.known).length} item(s) not yet known — shown rather than guessed.
-    Every line above carries the receipt or stored field it came from.</p>
+  ${sig?`<div class="card edge-teal">
+    <div class="row"><div class="k">Episode began</div>
+      <div class="v">${esc(sig.payload.channel_description||sig.payload.channel)}
+        <span class="why2">${esc(sig.payload.label)}</span></div></div>
+  </div>`:""}
+  <div class="card">
+    <h2>Case timeline — every entry is a signed receipt</h2>
+    <div class="tl">
+      ${(S.trail.receipts||[]).map(r=>{
+        const alert=r.kind==="comms.blocked";
+        return `<div class="ev ${alert?"alert":"on"}">
+          <div class="t">${esc(new Date(r.created_at).toLocaleString())}</div>
+          <div class="d">${esc(describe(r))}</div>
+          <div class="a">${esc(r.actor)} · seq ${r.seq} <span class="hash">${esc(r.hash)}</span></div>
+        </div>`;}).join("")}
+    </div>
+    <div class="pills" style="margin-top:14px">
+      <span class="pill ${S.trail.verified?"p-teal":"p-red"}">chain ${S.trail.verified?"verified ✓":"BROKEN"}</span>
+      <span class="pill p-slate">${(S.trail.receipts||[]).length} receipts</span>
+    </div>
   </div>`;
 }
 
-function vRouting() {
-  if (!S.trail) return needCase();
-  if (S.trail.__denied) return denied(S.trail.detail, "the routing decision");
-  const t = lastOfKind("triage.decision");
-  if (!t) return `${SYNTH}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
-  const p = t.payload;
-  return `
-  ${SYNTH}
-  <div class="card">
+function vBrief(){
+  if(!S.brief) return vOpen();
+  if(S.brief.__denied) return denied(S.brief.detail,"The arrival brief");
+  const b=S.brief.brief;
+  const f=x=>row(x.label, x.known?esc(x.value):unknown(x.source?.note));
+  return `${SYNTH}
+  <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
+    A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
+  <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
+  <div class="card"><h2>What has been done</h2>${(b.actions_taken||[]).map(f).join("")||unknown("nothing recorded yet")}</div>
+  <div class="card edge-amber"><h2>Still open</h2>${(b.pending||[]).map(f).join("")}</div>
+  <div class="card"><h2>Bring with you</h2>${(b.bring_with_you||[]).map(f).join("")}</div>
+  <div class="card"><h2>Who to contact</h2>${(b.contacts||[]).map(f).join("")}</div>
+  <div class="card"><h2>Grounding</h2><p class="mute">
+    ${(b.facts||[]).filter(x=>!x.known).length} item(s) not yet known — shown rather than guessed.
+    Every line carries the receipt or stored field it came from.</p></div>`;
+}
+
+function vRouting(){
+  if(!S.trail) return vOpen();
+  if(S.trail.__denied) return denied(S.trail.detail,"The routing decision");
+  const t=last("triage.decision");
+  if(!t) return `${SYNTH}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
+  const p=t.payload;
+  return `${SYNTH}
+  <div class="card edge-teal">
     <h2>Why this hospital</h2>
-    <p>${esc(p.explanation)}</p>
-    <div class="stack"><span class="badge b-seed">SEEDED SNAPSHOT — NOT A LIVE FEED</span></div>
+    <p style="font-size:15px;line-height:1.6">${esc(p.explanation)}</p>
+    <div class="pills" style="margin-top:12px"><span class="pill p-amber">SEEDED SNAPSHOT — NOT A LIVE FEED</span></div>
   </div>
-  <div class="card">
-    <h2>How each option scored</h2>
-    ${(p.ranked || []).map(h => `
-      <div class="row">
-        <div class="k">${esc(h.name)}${h.hospital_id === p.recommended_hospital_id ? " ★" : ""}</div>
-        <div class="v">${h.total_score.toFixed(3)}
-          <span class="why">${h.distance_km} km · capability ${h.capability_score} ·
-          ${h.network_match ? "in network" : "NOT in network"}</span></div>
-      </div>`).join("")}
+  <div class="card"><h2>How each option scored</h2>
+    ${(p.ranked||[]).map(h=>`<div class="row">
+      <div class="k">${esc(h.name)}${h.hospital_id===p.recommended_hospital_id?' <span class="pill p-teal">chosen</span>':""}</div>
+      <div class="v num">${h.total_score.toFixed(3)}
+        <span class="why2">${h.distance_km} km · capability ${h.capability_score} ·
+        ${h.network_match?"in network":"NOT in network"}</span></div></div>`).join("")}
   </div>
-  <div class="card">
-    <h2>Why that severity</h2>
-    ${(p.severity_rationale || []).map(r => `<div class="row"><div class="v" style="text-align:left">${esc(r)}</div></div>`).join("")}
+  <div class="card"><h2>Why that severity</h2>
+    ${(p.severity_rationale||[]).map(r=>`<div class="row"><div class="v long">${esc(r)}</div></div>`).join("")}
   </div>`;
 }
 
-function vRecord() {
-  if (!S.parentId) return needCase();
-  if (!S.token) return gateNotice();
-  if (S.record?.__denied) return denied(S.record.detail, "the health record");
-  if (!S.record) return `<div class="card"><p class="muted">Loading the record…</p></div>`;
-  const docs = S.record.documents || [];
-  const p = S.record.profile || {};
-  return `
-  ${SYNTH}
-  <div class="banner note"><span class="badge b-lock">credentialed</span>
-    This is the clinical view. It is the reason the WhatsApp gate can refuse to send lab values —
-    they live here, behind a server-enforced credential.</div>
-  <div class="card">
-    <h2>Baseline</h2>
-    ${row("Name", esc(p.name))}
-    ${row("Age", esc(p.age))}
-    ${row("Conditions", (p.chronic_conditions || []).map(esc).join(", ") || unknown("none recorded"))}
-    ${row("Allergies", (p.allergies || []).map(esc).join(", ") || unknown("none recorded"))}
-  </div>
+function vRecord(){
+  if(!S.parentId) return vOpen();
+  if(!S.token) return gate();
+  if(S.record?.__denied) return denied(S.record.detail,"The health record");
+  if(!S.record) return `<div class="card"><p class="mute">Reading the record…</p></div>`;
+  const docs=S.record.documents||[], pr=S.record.profile||{};
+  return `${SYNTH}
+  <span class="lock">🔒 Credentialed access</span>
+  <div class="strip note">This is the clinical view. It is the reason the WhatsApp gate can refuse to
+    send lab values — they live here, behind a server-enforced credential.</div>
   <div class="card">
     <h2>Documents stored — ground truth</h2>
-    ${row("Documents actually stored", `<b>${docs.length}</b><span class="why">read back from the record, not from what an agent said</span>`)}
+    <div class="big num">${docs.length}</div>
+    <p class="mute" style="margin-top:6px">read back from the record, not from what an agent said</p>
   </div>
-  ${docs.length === 0 ? `<div class="card"><p>${unknown("no documents have been ingested for this parent")}</p></div>` : ""}
-  ${docs.map(d => `
-    <div class="card">
-      <h2>${esc(d.kind)} · ${esc(d.source_filename || "—")}</h2>
-      ${(d.observations || []).length === 0
-        ? `<p>${unknown("this document carries no structured observations")}</p>`
-        : d.observations.map(o => `
-          <div class="obs">
+  <div class="card"><h2>Baseline</h2>
+    ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
+    ${row("Conditions",(pr.chronic_conditions||[]).map(esc).join(", ")||unknown("none recorded"))}
+    ${row("Allergies",(pr.allergies||[]).map(esc).join(", ")||unknown("none recorded"))}
+  </div>
+  <div class="sec">Lab results</div>
+  ${docs.length===0?`<div class="card"><p>${unknown("no documents have been ingested for this parent")}</p></div>`:""}
+  ${docs.map(d=>{
+    // If anything in this document is new and abnormal, the line reads as a
+    // warning even when other values were stable — a mixed result must not be
+    // coloured reassuringly because one analyte happened not to move.
+    const txt=d.delta_vs_baseline||"";
+    const base=/consistent with baseline/.test(txt) && !/new and abnormal/.test(txt);
+    return `<div class="card ${base?"edge-teal":"edge-amber"}">
+      <h2>${esc(d.kind)} · ${esc(d.source_filename||"—")}</h2>
+      ${(d.observations||[]).length===0?`<p>${unknown("this document carries no structured observations")}</p>`
+        :d.observations.map(o=>`<div class="obs">
             <div class="n">${esc(o.name)}</div>
-            <div class="val">${esc(o.value)} ${esc(o.unit || "")}
-              ${o.flag ? `<span class="badge ${o.flag === "high" || o.flag === "low" || o.flag === "abnormal" ? "b-warn" : "b-ok"}">${esc(o.flag)}</span>` : ""}
-            </div>
-          </div>`).join("")}
-      <div class="delta ${/(consistent with baseline)/.test(d.delta_vs_baseline || "") ? "base" : "new"}">
-        ${d.delta_vs_baseline ? esc(d.delta_vs_baseline) : unknown("no comparison recorded")}
-      </div>
-    </div>`).join("")}`;
+            <div class="v num">${esc(o.value)} <span class="u">${esc(o.unit||"")}</span>
+              ${o.flag?`<span class="pill ${["high","low","abnormal"].includes((o.flag||"").toLowerCase())?"p-red":"p-teal"}">${esc(o.flag)}</span>`:""}
+            </div></div>`).join("")}
+      ${d.delta_vs_baseline?`<div class="delta ${base?"base":"new"}">
+        <span class="ic">${base?"✓":"⚠"}</span><span>${esc(d.delta_vs_baseline)}</span></div>`:""}
+    </div>`;}).join("")}`;
 }
 
-function vClaim() {
-  if (!S.trail) return needCase();
-  if (S.trail.__denied) return denied(S.trail.detail, "the claim status");
-  const adjs = receiptsOfKind("claim.adjudicated");
-  const sub = lastOfKind("claim.submitted");
-  if (!adjs.length && !sub) {
-    return `${SYNTH}<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`;
-  }
-  const last = adjs.length ? adjs[adjs.length - 1] : null;
-  return `
-  ${SYNTH}
-  <div class="banner note"><span class="badge b-sim">SIMULATED TPA</span>
-    No production insurer API is integrated. The packet, the policy arithmetic, the SLA clocks and the
-    receipts are real; the counterparty's answer is not.</div>
+function vClaim(){
+  if(!S.trail) return vOpen();
+  if(S.trail.__denied) return denied(S.trail.detail,"The claim status");
+  const adjs=kinds("claim.adjudicated"), sub=last("claim.submitted");
+  if(!adjs.length && !sub) return `${SYNTH}<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`;
+  const a=adjs.length?adjs[adjs.length-1].payload:null;
+  const priced=a && ["PASS","PARTIAL"].includes(a.outcome);
+  return `${SYNTH}
+  <div class="pills" style="margin-bottom:12px"><span class="pill p-violet">SIMULATED TPA</span></div>
+  <div class="strip note">No production insurer API is integrated. The packet, the policy arithmetic,
+    the SLA clocks and the receipts are real; the counterparty's answer is not.</div>
   <div class="card">
-    <h2>Where the claim stands</h2>
-    ${row("Latest outcome", last ? `<b>${esc(last.payload.outcome)}</b>` : pending("submitted, awaiting adjudication"))}
-    ${row("SLA", sub?.payload?.sla_deadline
-      ? `${esc(sub.payload.sla_kind)}<span class="why">deadline ${esc(new Date(sub.payload.sla_deadline).toLocaleString())}</span>`
-      : unknown("no SLA clock recorded"))}
-    ${row("Claimed", last?.payload?.total_claimed_inr != null ? `INR ${last.payload.total_claimed_inr.toLocaleString("en-IN")}` : unknown("nothing priced yet"))}
-    ${row("Allowed", last && ["PASS","PARTIAL"].includes(last.payload.outcome)
-      ? `INR ${last.payload.total_allowed_inr.toLocaleString("en-IN")}` : unknown("the claim has not been priced yet"))}
-    ${row("You may owe", last && ["PASS","PARTIAL"].includes(last.payload.outcome)
-      ? `<b>INR ${last.payload.total_disallowed_inr.toLocaleString("en-IN")}</b>`
-      : unknown("no amount has been priced yet"))}
+    ${row("Claimed", a?`<span class="num">${inr(a.total_claimed_inr)}</span>`:unknown("nothing submitted yet"))}
+    ${row("Allowed", priced?`<span class="num">${inr(a.total_allowed_inr)}</span>`:unknown("the claim has not been priced yet"))}
+    ${row("You may owe", priced?`<span class="num">${inr(a.total_disallowed_inr)}</span>`:unknown("no amount has been priced yet"),"owe")}
   </div>
-  <div class="card">
-    <h2>Every adjudication, in order</h2>
-    ${adjs.map(a => `
-      <div class="row">
-        <div class="k">attempt ${a.payload.attempt} · ${esc(a.payload.outcome)}</div>
-        <div class="v" style="text-align:left">
-          ${(a.payload.reasons || []).map(r => `<div class="why" style="margin-top:4px">${esc(r)}</div>`).join("")}
-        </div>
-      </div>`).join("")}
-    ${adjs.length > 1 ? `<p class="muted" style="margin-top:8px">The claim was queried, the missing document
-      was found on the record, and it was resubmitted — that reaction is what the receipts above record.</p>` : ""}
-  </div>`;
+  <div class="card"><h2>SLA</h2>
+    ${sub?.payload?.sla_deadline
+      ? row(esc(sub.payload.sla_kind), esc(new Date(sub.payload.sla_deadline).toLocaleString()))
+      : row("Clock", unknown("no SLA clock recorded"))}
+  </div>
+  <div class="sec">Adjudication history</div>
+  <div class="tl">
+    ${adjs.map(r=>{const p=r.payload;const q=p.outcome==="QUERY";
+      return `<div class="ev ${q?"alert":"on"}">
+        <div class="pills"><span class="pill ${q?"p-amber":"p-teal"}">${esc(p.outcome)}</span>
+          <span class="pill p-slate">attempt ${p.attempt}</span></div>
+        ${(p.reasons||[]).map(x=>`<div class="d" style="margin-top:7px">${esc(x)}</div>`).join("")}
+      </div>`;}).join("")}
+  </div>
+  ${adjs.length>1?`<div class="delta base" style="border:0;margin-top:4px"><span class="ic">✓</span>
+    <span>The claim was queried, the missing document was found on the record, and it was
+    resubmitted — that is what the receipts above record.</span></div>`:""}`;
 }
 
-function vAudit() {
-  return `
-  <div class="card">
+function vAudit(){
+  return `<div class="card">
     <h2>Two access models, both enforced by the server</h2>
-    <div class="row"><div class="k"><span class="badge b-open">open</span></div>
-      <div class="v" style="text-align:left"><code>/api/cases/{id}/verify</code>
-        <span class="why">Proves the record was not altered without revealing what it says.
+    <div class="row"><div class="k"><span class="pill p-teal">open</span></div>
+      <div class="v long"><code class="hash">/api/cases/{id}/verify</code>
+        <span class="why2">Proves the record was not altered without revealing what it says.
         No credential — anyone can check us, including you, from a terminal.</span></div></div>
-    <div class="row"><div class="k"><span class="badge b-lock">credentialed</span></div>
-      <div class="v" style="text-align:left"><code>/api/parents/{id}</code>, <code>/trail</code>, <code>/brief</code>
-        <span class="why">Return case or patient content. Rejected with 401 without a session —
+    <div class="row"><div class="k"><span class="pill p-red">credentialed</span></div>
+      <div class="v long"><code class="hash">/api/parents/{id}</code> · <code class="hash">/trail</code> · <code class="hash">/brief</code>
+        <span class="why2">Return case or patient content. Rejected with 401 without a session —
         server-side, not a hidden link.</span></div></div>
   </div>
   <div class="card">
     <h2>Verify this case yourself</h2>
-    <p class="muted">Runs unauthenticated. Copy it into any terminal.</p>
-    <pre>curl -s ${esc(API)}/api/cases/${esc(S.caseId || "{case_id}")}/verify</pre>
-    <div id="vout">${S.verify ? verifyBlock(S.verify) : `<p class="muted">Press verify to call it live.</p>`}</div>
-    <div class="stack">
-      <button class="act" onclick="doVerify()">Verify now</button>
-      <button class="act ghost" onclick="probeGate()">Prove the gate</button>
+    <p class="mute">Runs unauthenticated. Copy it into any terminal.</p>
+    <pre>curl -s ${esc(API)}/api/cases/${esc(S.caseId||"{case_id}")}/verify</pre>
+    <div id="vout">${S.verify&&!S.verify.__error?vblock(S.verify):`<p class="mute">Press verify to call it live.</p>`}</div>
+    <div class="btns">
+      <button class="btn" onclick="doVerify()">Verify now</button>
+      <button class="btn ghost" onclick="probe()">Prove the gate</button>
     </div>
     <div id="probe"></div>
   </div>`;
 }
-
-function verifyBlock(v) {
-  return `
-    <div class="stack" style="margin:8px 0">
-      <span class="badge ${v.verified ? "b-ok" : "b-bad"}">${v.verified ? "VERIFIED" : "TAMPER DETECTED"}</span>
-      <span class="badge b-seed">${v.receipt_count} receipts</span>
-    </div>
-    ${v.verified ? "" : `<p class="err">Broken at receipt ${v.broken_at_seq}: ${esc(v.reason)}</p>`}`;
+function vblock(v){
+  return `<div class="pills" style="margin:12px 0">
+    <span class="pill ${v.verified?"p-teal":"p-red"}">${v.verified?"VERIFIED ✓":"TAMPER DETECTED"}</span>
+    <span class="pill p-slate">${v.receipt_count} receipts</span></div>
+    ${v.verified?"":`<p style="color:var(--red);font-size:13.5px">Broken at receipt ${v.broken_at_seq}: ${esc(v.reason)}</p>`}`;
 }
 
-async function doVerify() {
-  if (!S.caseId) return;
-  S.verify = await api(`/api/cases/${S.caseId}/verify`);
-  render();
-}
-
-async function probeGate() {
-  const el = document.getElementById("probe");
-  el.innerHTML = `<p class="muted">Calling the clinical endpoint with no credential…</p>`;
-  const r = await fetch(`${API}/api/parents/${S.parentId || "unknown"}`);
-  const open = await fetch(`${API}/api/cases/${S.caseId}/verify`);
-  el.innerHTML = `
-    <pre>GET /api/parents/{id}          -> HTTP ${r.status}   ${r.status === 401 ? "denied, no credential" : ""}
-GET /api/cases/{id}/verify    -> HTTP ${open.status}   open by design</pre>`;
-}
-
-function needCase() {
-  return `
-  ${SYNTH}
+function vOpen(){
+  return `${SYNTH}
   <div class="card">
     <h2>Open a case</h2>
-    <p class="muted">Every screen below is bound to the live API. Seed a synthetic episode, or paste a case id.</p>
-    <div class="stack" style="margin-top:10px">
-      <button class="act" onclick="seedDemo()">Seed a synthetic episode</button>
-    </div>
-    <div style="margin-top:12px"><input id="cid" placeholder="or paste a case id" value="${esc(S.caseId || "")}"></div>
-    <div class="stack"><button class="act ghost" onclick="useCase()">Open it</button></div>
+    <p class="mute">Every screen is bound to the live API. Seed a synthetic episode, or paste a case id.</p>
+    <div class="btns"><button class="btn" onclick="seed()">Seed a synthetic episode</button></div>
+    <div style="margin-top:14px"><input id="cid" placeholder="or paste a case id" value="${esc(S.caseId||"")}"></div>
+    <div class="btns"><button class="btn ghost" onclick="useCase()">Open it</button></div>
     <div id="seederr"></div>
   </div>`;
 }
-
-function gateNotice() {
-  return `
-  <div class="card">
-    <h2><span class="badge b-lock">credentialed</span> Clinical view</h2>
-    <p>The health record holds lab values and diagnoses. It is refused by the server without a family
-    session — that refusal is what lets the WhatsApp gate promise this data lives somewhere protected.</p>
-    <p class="muted" style="margin-top:8px">The demo credential is not a secret; it is published in the README.
-    Secrecy is not what is being shown here — server-side enforcement is.</p>
-    <div class="stack"><button class="act" onclick="signIn()">Sign in as the family (demo)</button></div>
+function gate(){
+  return `<span class="lock">🔒 Credentialed</span>
+  <div class="card edge-teal">
+    <h2>Clinical view</h2>
+    <p style="font-size:15px;line-height:1.6">The health record holds lab values and diagnoses. It is
+    refused by the server without a family session — that refusal is what lets the WhatsApp gate
+    promise this data lives somewhere protected.</p>
+    <p class="mute" style="margin-top:10px">The demo credential is not a secret; it is published in the
+    README. Secrecy is not what is being shown here — server-side enforcement is.</p>
+    <div class="btns"><button class="btn" onclick="signIn()">Sign in as the family (demo)</button></div>
+  </div>`;
+}
+function denied(detail,what){
+  return `<div class="card edge-red">
+    <div class="pills" style="margin-bottom:10px"><span class="pill p-red">401</span></div>
+    <h2 style="color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0">${esc(what)} is credentialed</h2>
+    <p class="mute" style="margin-top:8px">${esc(detail||"")}</p>
+    <div class="btns"><button class="btn" onclick="signIn()">Sign in as the family (demo)</button></div>
   </div>`;
 }
 
-function denied(detail, what) {
-  return `
-  <div class="card">
-    <h2><span class="badge b-lock">401</span> ${esc(what)} is credentialed</h2>
-    <p class="muted">${esc(detail || "")}</p>
-    <div class="stack"><button class="act" onclick="signIn()">Sign in as the family (demo)</button></div>
-  </div>`;
+/* ===================== actions ===================== */
+async function signIn(){ S.token="anbu-demo-family-token"; await load(); }
+async function doVerify(){ if(!S.caseId) return; S.verify=await api(`/api/cases/${S.caseId}/verify`); render(); }
+async function probe(){
+  const el=document.getElementById("probe");
+  el.innerHTML=`<p class="mute">Calling the clinical endpoint with no credential…</p>`;
+  const a=await fetch(`${API}/api/parents/${S.parentId||"unknown"}`);
+  const b=await fetch(`${API}/api/cases/${S.caseId}/verify`);
+  el.innerHTML=`<pre>GET /api/parents/{id}        -> HTTP ${a.status}   ${a.status===401?"denied, no credential":""}
+GET /api/cases/{id}/verify   -> HTTP ${b.status}   open by design</pre>`;
 }
-
-// ---- actions -------------------------------------------------------------
-
-async function signIn() {
-  S.token = "anbu-demo-family-token";
-  await load();
+async function seed(){
+  document.getElementById("seederr").innerHTML=`<p class="mute" style="margin-top:10px">Seeding…</p>`;
+  const s=await (await fetch(`${API}/api/demo/seed`,{method:"POST"})).json();
+  const sig=await (await fetch(`${API}/api/intake-signal`,{method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({parent_id:s.parent_id,channel:"er_desk_webhook",
+      reported_by:"Sacred Heart ER desk",symptoms:["chest pain","sweating"],
+      raw_text:"71F brought in by a neighbour. Chest tightness ~20 min, radiating to left arm, sweating. She says it's probably just gas."})})).json();
+  S.parentId=s.parent_id; S.caseId=sig.signal.case_id; await load();
 }
+function useCase(){ const v=document.getElementById("cid").value.trim(); if(v){S.caseId=v; load();} }
+// Enter submits. Leaving it inert makes the field feel broken.
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter" && e.target && e.target.id==="cid"){ e.preventDefault(); useCase(); }
+});
 
-async function seedDemo() {
-  const err = document.getElementById("seederr");
-  err.innerHTML = `<p class="muted">Seeding…</p>`;
-  const seed = await (await fetch(`${API}/api/demo/seed`, { method: "POST" })).json();
-  const sig = await (await fetch(`${API}/api/intake-signal`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      parent_id: seed.parent_id, channel: "er_desk_webhook",
-      reported_by: "Sacred Heart ER desk", symptoms: ["chest pain", "sweating"],
-      raw_text: "71F brought in by a neighbour. Chest tightness ~20 min, radiating to left arm, sweating. She says it's probably just gas.",
-    }),
-  })).json();
-  S.parentId = seed.parent_id;
-  S.caseId = sig.signal.case_id;
-  await load();
-}
-
-function useCase() {
-  const v = document.getElementById("cid").value.trim();
-  if (v) { S.caseId = v; load(); }
-}
-
-async function load() {
-  if (S.caseId) {
-    S.trail = await api(`/api/cases/${S.caseId}/trail`, { auth: true });
-    S.brief = await api(`/api/cases/${S.caseId}/brief`, { auth: true });
-    S.verify = await api(`/api/cases/${S.caseId}/verify`);
-    if (!S.parentId && S.brief?.brief) S.parentId = S.brief.brief.parent_id;
+async function load(){
+  if(S.caseId){
+    S.trail=await api(`/api/cases/${S.caseId}/trail`,{auth:true});
+    S.brief=await api(`/api/cases/${S.caseId}/brief`,{auth:true});
+    S.verify=await api(`/api/cases/${S.caseId}/verify`);
+    if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
-  if (S.parentId && S.token) S.record = await api(`/api/parents/${S.parentId}`, { auth: true });
+  if(S.parentId && S.token) S.record=await api(`/api/parents/${S.parentId}`,{auth:true});
   render();
 }
-
-function render() {
-  const views = { now: vNow, brief: vBrief, routing: vRouting, record: vRecord, claim: vClaim, audit: vAudit };
-  document.getElementById("app").innerHTML = views[S.view]();
-  document.getElementById("sub").textContent =
-    (S.caseId ? S.caseId : "no case open") + (S.token ? " · signed in (demo)" : " · not signed in");
-  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.v === S.view));
+function render(){
+  const v={now:vNow,brief:vBrief,routing:vRouting,record:vRecord,claim:vClaim,audit:vAudit};
+  document.getElementById("app").innerHTML=v[S.view]();
+  document.getElementById("sub").textContent=(S.caseId||"no case open")+(S.token?" · signed in":" · not signed in");
+  const b=S.brief?.brief;
+  document.getElementById("stamp").textContent = b?.as_of
+    ? "as of "+new Date(b.as_of).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
+    : "snapshot";
+  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===S.view));
+  window.scrollTo(0,0);
 }
-
-document.querySelectorAll("nav button").forEach(b =>
-  b.addEventListener("click", () => { S.view = b.dataset.v; render(); }));
-
+document.querySelectorAll("nav button").forEach(b=>
+  b.addEventListener("click",()=>{S.view=b.dataset.v; render();}));
 render();
 </script>
 </body>
