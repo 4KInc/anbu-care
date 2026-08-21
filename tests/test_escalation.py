@@ -283,3 +283,50 @@ def test_the_family_alert_gates_on_the_same_purpose_it_selects_on():
     source = inspect.getsource(handler._tell_the_family)
     assert "consent_ok(contact.consents, consent.ADMISSION_ALERTS)" in source
     assert "purpose_override=consent.ADMISSION_ALERTS" in source
+
+
+# ---- times a person can read ---------------------------------------------
+
+
+def test_each_reader_gets_the_time_on_their_own_clock():
+    """"15:46 UTC" is a number nobody lives in."""
+    from datetime import UTC, datetime
+
+    from anbu_care.comms.localtime import for_reader
+
+    moment = datetime(2026, 8, 21, 15, 46, tzinfo=UTC)
+    son = for_reader(moment, "America/Los_Angeles", "Asia/Kolkata", "Thoothukudi")
+    assert "8:46 AM your time" in son
+    assert "9:16 PM in Thoothukudi" in son
+    assert "UTC" not in son
+
+
+def test_a_reader_in_the_same_city_is_not_told_the_time_twice():
+    from datetime import UTC, datetime
+
+    from anbu_care.comms.localtime import for_reader
+
+    same = for_reader(datetime(2026, 8, 21, 15, 46, tzinfo=UTC),
+                      "Asia/Kolkata", "Asia/Kolkata", "Thoothukudi")
+    assert same == "9:16 PM"
+
+
+def test_her_local_time_is_carried_because_it_changes_the_meaning():
+    """A message sent at 2am reads differently from one sent after lunch, and
+    a son three time zones away cannot tell which from his own clock."""
+    from datetime import UTC, datetime
+
+    from anbu_care.comms.localtime import for_reader
+
+    small_hours = for_reader(datetime(2026, 8, 21, 20, 30, tzinfo=UTC),
+                             "America/Los_Angeles", "Asia/Kolkata", "Thoothukudi")
+    assert "2:00 AM in Thoothukudi" in small_hours
+
+
+def test_an_unknown_timezone_says_utc_rather_than_lying():
+    """Falling back silently would print a time wrong by hours."""
+    from datetime import UTC, datetime
+
+    from anbu_care.comms.localtime import in_zone
+
+    assert "UTC" in in_zone(datetime(2026, 8, 21, 15, 46, tzinfo=UTC), "Mars/Olympus")

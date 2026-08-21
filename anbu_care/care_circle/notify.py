@@ -20,8 +20,10 @@ receipted exactly like every other message.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from anbu_care import service
-from anbu_care.comms import consent
+from anbu_care.comms import consent, localtime
 from anbu_care.comms.policy import consent_ok
 from anbu_care.schemas import FamilyContact, NotificationResult
 
@@ -43,6 +45,7 @@ def notify(
     hospital_name: str,
     timestamp: str,
     cashless_status: str,
+    now: datetime | None = None,
 ) -> list[NotificationResult]:
     """Notify each consented contact, and report each one separately.
 
@@ -72,6 +75,11 @@ def notify(
             ))
             continue
 
+        # Each contact reads the time on their own clock.
+        when = (localtime.for_reader(now, contact.timezone,
+                                     getattr(profile, "timezone", "Asia/Kolkata"),
+                                     profile.city)
+                if now is not None else timestamp)
         sent = whatsapp_tools.send_family_update(
             case_id=case_id,
             parent_id=parent_id,
@@ -80,7 +88,7 @@ def notify(
             template_params={
                 "parent_name": first_name,
                 "hospital_name": hospital_name,
-                "timestamp": timestamp,
+                "timestamp": when,
                 "cashless_status": cashless_status,
             },
             message_class="logistics",

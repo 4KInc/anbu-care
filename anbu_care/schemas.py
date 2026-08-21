@@ -68,6 +68,9 @@ class ParentProfile(BaseModel):
     # The parent's own WhatsApp number, if they have one. Only used to label a
     # check-in as coming from the registered parent number.
     whatsapp_e164: str | None = None
+    # Her local time, so an alert can say whether a message arrived at 2am or
+    # at lunchtime. Set at onboarding rather than guessed from coordinates.
+    timezone: str = "Asia/Kolkata"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

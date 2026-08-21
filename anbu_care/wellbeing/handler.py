@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from anbu_care import service
+from anbu_care.comms import localtime
 from anbu_care.provenance.store import PARENT_SUBJECT
 from anbu_care.schemas import WellbeingEntry
 from anbu_care.wellbeing import escalation as esc
@@ -190,7 +192,13 @@ def _tell_the_family(
             template_name="urgent_family_alert",
             template_params={
                 "parent_name": first,
-                "timestamp": entry.received_at.strftime("%H:%M UTC"),
+                # Rendered per recipient: the son abroad and a neighbour two
+                # streets away read the same instant differently, and neither
+                # should be doing timezone arithmetic at 2am.
+                "timestamp": localtime.for_reader(
+                    entry.received_at, contact.timezone,
+                    getattr(profile, "timezone", "Asia/Kolkata"), profile.city,
+                ),
                 "said": entry.text,
                 "hospital_name": hospital,
                 "distance_km": distance,
@@ -229,6 +237,7 @@ def _tell_the_care_circle(
             parent_id=parent_id,
             hospital_name=hospital,
             timestamp="just now",
+            now=datetime.now(UTC),
             cashless_status=(
                 f"An urgent message was received from {name}. Please call them now"
             ),
