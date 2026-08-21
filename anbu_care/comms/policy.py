@@ -12,6 +12,7 @@ diagnosis live inside the secure dashboard.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -37,36 +38,52 @@ CLINICAL_PATTERNS: list[tuple[str, str]] = [
     (r"\b(biopsy|histopath\w*|culture report|scan (report|findings))\b", "references a diagnostic report"),
 ]
 
-# The pre-approved template set. Production template approval takes ~10–15
+# Where a family member goes for anything the gate will not send. Every
+# template points here, because "we did not tell you the lab value" is only
+# reasonable if the same message says where the lab value actually is.
+DASHBOARD_URL = os.getenv("ANBU_DASHBOARD_URL", "https://anbu-care-37j4eofpwq-el.a.run.app/app")
+
+# The pre-approved template set. Production template approval takes ~10-15
 # business days and will not clear inside the hackathon window, so these are
 # registered against the WhatsApp Business API sandbox.
+#
+# These are read by a worried son or daughter on a phone, usually at a bad
+# hour, so they are written the way a person would write them. No em dashes,
+# no semicolons, no stacked clauses, and a link rather than an instruction to
+# go and find something.
 TEMPLATES: dict[str, dict[str, object]] = {
     "admission_alert": {
         "message_class": MessageClass.LOGISTICS,
-        "body": "Anbu Care: {parent_name} is being taken to {hospital_name}, {hospital_area}. "
-                "Reason: {reason_short}. Full details in your Anbu Care dashboard.",
+        "body": "Anbu Care: {parent_name} is being taken to {hospital_name} in {hospital_area}. "
+                "The reason given was {reason_short}. "
+                "You can see everything we know here: {dashboard_url}",
         "params": ["parent_name", "hospital_name", "hospital_area", "reason_short"],
     },
     "status_update": {
         "message_class": MessageClass.STATUS,
-        "body": "Anbu Care: {parent_name} — {status} at {hospital_name}, {timestamp}.",
+        "body": "Anbu Care: {parent_name} is {status}. "
+                "That is from {hospital_name} at {timestamp}. "
+                "The full record is here: {dashboard_url}",
         "params": ["parent_name", "status", "hospital_name", "timestamp"],
     },
     "claim_stage": {
         "message_class": MessageClass.BILLING,
-        "body": "Anbu Care: claim for {parent_name} is now {stage}. "
-                "Claimed amount INR {amount}. Track it in your dashboard.",
+        "body": "Anbu Care: the claim for {parent_name} has moved to {stage}. "
+                "The amount claimed is INR {amount}. "
+                "You can follow it here: {dashboard_url}",
         "params": ["parent_name", "stage", "amount"],
     },
     "billing_summary": {
         "message_class": MessageClass.BILLING,
-        "body": "Anbu Care: bill summary for {parent_name} — INR {total} across {line_count} items. "
-                "Itemised breakdown in your dashboard.",
+        "body": "Anbu Care: the bill for {parent_name} comes to INR {total} across {line_count} items. "
+                "The itemised breakdown is here: {dashboard_url}",
         "params": ["parent_name", "total", "line_count"],
     },
     "doctor_assigned": {
         "message_class": MessageClass.LOGISTICS,
-        "body": "Anbu Care: Dr. {doctor_name} ({department}) is attending to {parent_name} at {hospital_name}.",
+        "body": "Anbu Care: Dr. {doctor_name} from {department} is now looking after {parent_name} "
+                "at {hospital_name}. "
+                "You can see the case here: {dashboard_url}",
         "params": ["doctor_name", "department", "parent_name", "hospital_name"],
     },
 }
@@ -165,7 +182,9 @@ def render_template(template_name: str, params: dict[str, str]) -> str:
     missing = required - params.keys()
     if missing:
         raise ValueError(f"template '{template_name}' missing params: {sorted(missing)}")
-    return str(template["body"]).format(**params)
+    # The link is injected here, not passed in: a caller must not be able to
+    # point a family member at an address of its choosing.
+    return str(template["body"]).format(**{**params, "dashboard_url": DASHBOARD_URL})
 
 
 def consent_ok(consents: dict[str, datetime], purpose: str) -> bool:

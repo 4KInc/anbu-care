@@ -147,3 +147,55 @@ def test_consent_is_checked_per_purpose():
 def test_classify_returns_the_signals_it_matched():
     _, hits = classify_message("Troponin I 0.94 ng/mL", MessageClass.STATUS)
     assert len(hits) >= 1
+
+
+# ---- the messages a person actually reads ---------------------------------
+
+
+def test_templates_read_like_a_person_wrote_them():
+    """No em dashes, no semicolons, no stacked clauses.
+
+    These land on a phone at a bad hour. Punctuation that reads as generated
+    costs trust exactly when the family has least of it to spare.
+    """
+    for name, spec in TEMPLATES.items():
+        body = str(spec["body"])
+        assert "—" not in body, f"{name} uses an em dash"
+        assert "–" not in body, f"{name} uses an en dash"
+        assert ";" not in body, f"{name} uses a semicolon"
+
+
+def test_every_template_links_to_the_dashboard():
+    """The gate refuses to send clinical detail. The least it can do is say
+    where that detail lives, in the same message, as something tappable."""
+    for name, spec in TEMPLATES.items():
+        assert "{dashboard_url}" in str(spec["body"]), f"{name} has no dashboard link"
+
+
+def test_the_link_cannot_be_supplied_by_the_caller():
+    """dashboard_url is injected by the renderer. A caller that tries to
+    override it must not be able to redirect a worried family member."""
+    from anbu_care.comms.policy import DASHBOARD_URL
+
+    body = render_template(
+        "status_update",
+        {"parent_name": "Amma", "status": "resting", "hospital_name": "Sacred Heart",
+         "timestamp": "4:12 PM", "dashboard_url": "https://not-us.example.com"},
+    )
+    assert DASHBOARD_URL in body
+    assert "not-us.example.com" not in body
+
+
+def test_a_rendered_template_still_passes_the_gate():
+    """Rewriting the copy must not accidentally trip the clinical classifier."""
+    sample = {
+        "parent_name": "Amma", "status": "resting comfortably",
+        "hospital_name": "Sacred Heart Hospital", "timestamp": "4:12 PM",
+        "hospital_area": "Palayamkottai", "reason_short": "a fall at home",
+        "stage": "approved", "amount": "66,000", "total": "1,20,000",
+        "line_count": "14", "doctor_name": "Iyer", "department": "Cardiology",
+    }
+    for name, spec in TEMPLATES.items():
+        body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
+        gate = gate_message(body, spec["message_class"], template_name=name)  # type: ignore[arg-type]
+        assert gate.allowed is True, f"{name} now trips the gate: {gate.reason}"
