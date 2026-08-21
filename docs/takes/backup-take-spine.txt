@@ -133,14 +133,14 @@ note:   all data synthetic; TPA responses simulated; hospital KB is a seeded sna
     "emergency"
   ],
   "recommended_hospital": "Sacred Heart Hospital",
-  "explanation": "Severity HIGH. Recommending Sacred Heart Hospital (2.2 km, score 0.971). That is 1.4 km farther than the nearest option (Idhayalaya Heart Centre, 0.8 km). The extra distance was accepted because Sacred Heart Hospital is empanelled with Star Health and Idhayalaya Heart Centre is not, so this keeps the admission cashless.",
+  "explanation": "Severity HIGH. Recommending Sacred Heart Hospital (5.6 km, score 0.925). That is 1.7 km farther than the nearest option (Government Thoothukudi Medical College Hospital, 3.9 km). The extra distance was accepted because capability scored 1.00 there versus 0.70 at Government Thoothukudi Medical College Hospital; and Sacred Heart Hospital is empanelled with Star Health and Government Thoothukudi Medical College Hospital is not, so this keeps the admission cashless.",
   "knowledge_base": "SEEDED SNAPSHOT \u2014 NOT A LIVE FEED"
 }
 
   ranked:
-    0.971  Sacred Heart Hospital                            2.2 km  cap 1.00  network yes  <-- chosen
+    0.925  Sacred Heart Hospital                            5.6 km  cap 1.00  network yes  <-- chosen
     0.803  Sundaram Arulrhaj Hospitals                      1.2 km  cap 0.70  network yes
-    0.790  Idhayalaya Heart Centre                          0.8 km  cap 1.00  network no
+    0.735  Idhayalaya Heart Centre                          4.9 km  cap 1.00  network no
     0.717  Arputham Hospital                                0.9 km  cap 0.55  network yes
     0.558  Government Thoothukudi Medical College Hospital   4.6 km  cap 0.70  network no
 

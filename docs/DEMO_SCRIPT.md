@@ -87,6 +87,13 @@ curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
       and **case-a7cf9fa613** (tampered, `broken_at_seq: 1`). Both stay live
       after the recording so anyone can re-verify from the video. Do not delete
       them.
+- [ ] **Old cases carry old distances, and that is correct.** Hospital
+      coordinates were re-verified against Google Places on 21 Aug, which moved
+      them by up to 5 km. Receipts are immutable, so a case triaged before that
+      keeps the numbers that were true when the decision was made. If anyone
+      asks why an old receipt says 2.2 km and a fresh run says 5.6 km, that is
+      the answer, and it is the chain working rather than failing. The case you
+      create live during the demo will use the corrected coordinates.
 
 ### 5. Walk the dashboard by hand
 
@@ -169,12 +176,26 @@ the phone buzz.
    - **"Understood as: chest pain, difficulty breathing."**
    - the timestamp in **both clocks**: "11:58 AM your time, 12:28 AM in Thoothukudi"
 
-2. **The routing** — Sacred Heart, 2.2 km, *1.4 km further than the nearest
-   hospital*, chosen because it is empanelled with Star Health so the admission
-   stays cashless.
+2. **The routing** — Sacred Heart at **5.6 km**, *1.7 km further than the
+   nearest hospital* (Government Medical College, 3.9 km). It went further for
+   two reasons, and the explanation names both: cardiac capability scored 1.00
+   there against 0.70, **and** it is empanelled with Star Health so the
+   admission stays cashless.
+
+   Worth saying out loud: *"the nearest hospital was not the right hospital,
+   and the system says why in the same sentence."*
+
+   > **These distances are real.** Hospital identity and coordinates are
+   > verified against Google Places, with the place id and verification date on
+   > each record. Only empanelment and capability are still seeded — Google can
+   > confirm a hospital exists and where; it cannot say who it bills.
 
 3. **The care-circle notice** — the neighbour is asked to call. **No symptoms.
    No link into her record.**
+
+   Then open the **Routing** tab and show the map: her location, all five
+   hospitals, the chosen one marked. Say *"this shows where she is being
+   directed, not where she is — no location is ever collected from her."*
 
 4. **Tap the link.** It opens straight into the case — no sign-in, no pasting a
    token. The alert carries a signed link scoped to this case and this parent,
