@@ -36,27 +36,57 @@ def _bucket_name() -> str | None:
     return value.strip() if value else None
 
 
+METADATA_EMAIL_URL = (
+    "http://metadata.google.internal/computeMetadata/v1/"
+    "instance/service-accounts/default/email"
+)
+
+
+def _runtime_service_account() -> str | None:
+    """Ask the metadata server who we are actually running as.
+
+    On Cloud Run, google.auth reports the service account email as the literal
+    string "default" — that is the metadata server's alias for the attached
+    account, not an address. Handing it to the IAM signBytes API fails with
+    "Invalid form of account ID default", so the real address has to be
+    resolved before signing.
+    """
+    import requests
+
+    try:
+        response = requests.get(
+            METADATA_EMAIL_URL, headers={"Metadata-Flavor": "Google"}, timeout=2,
+        )
+    except Exception:  # noqa: BLE001 - not on GCP, or no metadata server
+        return None
+    email = response.text.strip() if response.ok else ""
+    return email if "@" in email else None
+
+
 def _signing_kwargs() -> dict[str, str]:
     """How to sign, given whatever credentials we happen to be running under.
 
-    A service account with a private key can sign locally. Application Default
-    Credentials from `gcloud auth application-default login` cannot — they are
-    a bare token with no key — so signing goes through the IAM SignBlob API
-    instead, which needs the signer named explicitly. Cloud Run supplies its
-    own service account, so this resolves without configuration there.
+    A service account with a private key can sign locally. Anything else — a
+    developer's Application Default Credentials, or Cloud Run's attached
+    account — has only a token, so signing goes through the IAM signBytes API,
+    which needs the signer named as a real email address.
     """
     import google.auth
     import google.auth.transport.requests
 
     creds, _ = google.auth.default()
-    email = getattr(creds, "service_account_email", None) or os.getenv("ANBU_SIGNER_SERVICE_ACCOUNT")
-    if getattr(creds, "signer", None) is not None and email:
+    if getattr(creds, "signer", None) is not None and getattr(creds, "signer_email", None):
         return {}  # has a private key; the library signs directly
+
+    email = getattr(creds, "service_account_email", None)
+    if not email or email == "default" or "@" not in email:
+        email = _runtime_service_account() or os.getenv("ANBU_SIGNER_SERVICE_ACCOUNT")
 
     if not email:
         raise RuntimeError(
-            "cannot sign: credentials carry no private key and no signer is named. "
-            "Set ANBU_SIGNER_SERVICE_ACCOUNT to a service account you may impersonate."
+            "cannot sign: credentials carry no private key and no signer address could "
+            "be resolved. Set ANBU_SIGNER_SERVICE_ACCOUNT to a service account you may "
+            "impersonate."
         )
     if not creds.valid:
         creds.refresh(google.auth.transport.requests.Request())

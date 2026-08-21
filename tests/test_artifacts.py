@@ -296,3 +296,42 @@ def test_the_timestamp_is_readable():
     art = artifacts.build("claim_summary", _adjudication())
     assert "T" not in art.text.split("Assessed on ")[1][:20]  # not ISO-8601
     assert "UTC" in art.text
+
+
+def test_cloud_runs_default_alias_is_resolved_to_a_real_address(monkeypatch):
+    """google.auth reports "default" on Cloud Run, which IAM signBytes rejects
+    with "Invalid form of account ID". The metadata server holds the real one."""
+    from anbu_care.comms import storage
+
+    class FakeCreds:
+        signer = None
+        signer_email = None
+        service_account_email = "default"
+        valid = True
+        token = "tok"
+
+    monkeypatch.setattr("google.auth.default", lambda: (FakeCreds(), "proj"))
+    monkeypatch.setattr(storage, "_runtime_service_account",
+                        lambda: "runtime@project.iam.gserviceaccount.com")
+
+    kwargs = storage._signing_kwargs()
+    assert kwargs["service_account_email"] == "runtime@project.iam.gserviceaccount.com"
+    assert kwargs["service_account_email"] != "default"
+
+
+def test_signing_refuses_rather_than_guessing_an_address(monkeypatch):
+    from anbu_care.comms import storage
+
+    class FakeCreds:
+        signer = None
+        signer_email = None
+        service_account_email = "default"
+        valid = True
+        token = "tok"
+
+    monkeypatch.setattr("google.auth.default", lambda: (FakeCreds(), "proj"))
+    monkeypatch.setattr(storage, "_runtime_service_account", lambda: None)
+    monkeypatch.delenv("ANBU_SIGNER_SERVICE_ACCOUNT", raising=False)
+
+    with pytest.raises(RuntimeError, match="no signer address could be resolved"):
+        storage._signing_kwargs()
