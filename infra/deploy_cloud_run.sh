@@ -18,6 +18,10 @@
 #   gcloud run services update anbu-care --region "$REGION" --invoker-iam-check
 set -euo pipefail
 
+# NOTE: --set-env-vars must appear ONCE. gcloud replaces rather than merges on
+# a repeat, so a second flag silently discards everything the first one set.
+# The "^@^" prefix changes the delimiter to @ so values may contain commas.
+
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-anbu-care-hack}"
 REGION="${ANBU_REGION:-asia-south1}"
 SERVICE="${ANBU_SERVICE:-anbu-care}"
@@ -42,8 +46,8 @@ gcloud run deploy "${SERVICE}" \
   --memory 1Gi \
   --cpu 1 \
   --timeout 600 \
-  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,ANBU_MODEL=${MODEL},ANBU_STORE_BACKEND=firestore,ANBU_TPA_MODE=simulated,ANBU_WHATSAPP_MODE=${ANBU_WHATSAPP_MODE:-off},ANBU_PUBSUB_ENABLED=${ANBU_PUBSUB_ENABLED:-false},ANBU_DEMO_TOKEN=${ANBU_DEMO_TOKEN:-anbu-demo-family-token}" \
-  --set-env-vars "ANBU_SIGNING_KEY_B64=${ANBU_SIGNING_KEY_B64}"
+  --set-env-vars "^@^GOOGLE_GENAI_USE_VERTEXAI=TRUE@GOOGLE_CLOUD_PROJECT=${PROJECT_ID}@GOOGLE_CLOUD_LOCATION=global@ANBU_MODEL=${MODEL}@ANBU_STORE_BACKEND=firestore@ANBU_TPA_MODE=simulated@ANBU_WHATSAPP_MODE=${ANBU_WHATSAPP_MODE:-off}@ANBU_PUBSUB_ENABLED=${ANBU_PUBSUB_ENABLED:-false}@ANBU_DEMO_TOKEN=${ANBU_DEMO_TOKEN:-anbu-demo-family-token}@ANBU_SIGNING_KEY_B64=${ANBU_SIGNING_KEY_B64}@ANBU_ARTIFACT_BUCKET=${ANBU_ARTIFACT_BUCKET:-}@TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}@TWILIO_API_KEY_SID=${TWILIO_API_KEY_SID:-}@TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM:-}" \
+  --set-secrets "TWILIO_API_KEY_SECRET=twilio-api-key-secret:latest"
 
 URL=$(gcloud run services describe "${SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')
 echo
