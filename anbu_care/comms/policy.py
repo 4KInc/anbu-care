@@ -97,6 +97,25 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "params": ["parent_name", "timestamp", "said", "hospital_name",
                    "distance_km", "why_hospital", "cashless_status"],
     },
+    "urgent_family_alert_withheld": {
+        "message_class": MessageClass.STATUS,
+        # The same alert with the quote removed, for when what she wrote
+        # contains medical detail the gate will not carry. Everything else is
+        # identical, because the routing, the cost and the instruction to call
+        # were never the problem. Being more clinically precise must not make a
+        # mother harder to help.
+        "body": "Anbu Care, urgent. {parent_name} sent a message at {timestamp}.\n"
+                "What she wrote contains medical detail, so it is not repeated here. "
+                "You can read it in the dashboard.\n\n"
+                "She is being directed to {hospital_name}, {distance_km} km away. "
+                "{why_hospital}\n"
+                "{cashless_status}.\n\n"
+                "Call her now. If you cannot reach her, call 108, the ambulance "
+                "line in India. Anbu Care has not called an ambulance and cannot.\n"
+                "Her exact words and everything else: {dashboard_url}",
+        "params": ["parent_name", "timestamp", "hospital_name",
+                   "distance_km", "why_hospital", "cashless_status"],
+    },
     "care_circle_notice": {
         "message_class": MessageClass.LOGISTICS,
         # Where, when, and whether the bill is covered. There is no slot for a

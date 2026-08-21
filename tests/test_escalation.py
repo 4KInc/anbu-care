@@ -426,3 +426,161 @@ def test_a_separate_care_circle_contact_still_gets_their_notice(monkeypatch):
 
     assert sorted(out.alerted) == ["Karthik", "Meena"]
     assert sorted(sent) == ["+16692167706", "+919000000101"]
+
+
+# ---- being precise must not make her harder to help ----------------------
+
+
+def _clinical_case(monkeypatch):
+    from anbu_care.comms import consent, transport
+    from anbu_care.tools import onboarding_tools
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        transport, "send",
+        lambda to, body, mode=None, media_url=None: (
+            sent.append((to, body)),
+            transport.DeliveryResult(delivered=True, channel="spy", detail="ok"),
+        )[1],
+    )
+    pid = onboarding_tools.create_parent_profile(
+        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_insurance_policy(
+        pid, insurer="Star Health", policy_number="SH-1", sum_insured_inr=500_000,
+        network_hospitals=["Sacred Heart Hospital"], cashless_eligible=True,
+    )
+    onboarding_tools.record_family_contact(
+        parent_id=pid, name="Karthik", relationship="son", whatsapp_e164="+16692167706",
+        timezone_name="America/Los_Angeles", is_primary=True,
+        consent_purposes=[consent.ADMISSION_ALERTS],
+    )
+    return pid, sent
+
+
+def test_a_mother_who_mentions_a_lab_value_still_gets_her_son_told(monkeypatch):
+    """The perverse failure this fixes.
+
+    The family alert quotes her, which is what makes it useful and also the
+    only part the gate can refuse. Before the fallback, a check-in mentioning a
+    troponin value was blocked outright, so the neighbour was told and the son
+    abroad — the one with the dashboard, the insurer relationship and the
+    ability to phone the hospital — heard nothing. Being more clinically
+    precise made her harder to help.
+    """
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    pid, sent = _clinical_case(monkeypatch)
+    out = handler.handle(
+        wb.record(pid, "self-reported",
+                  "crushing chest pain, my troponin was 0.94 ng/mL last time"),
+        pid,
+    )
+
+    assert out.escalated is True
+    assert out.alerted == ["Karthik"], "the son was left untold"
+    assert out.not_alerted == []
+    assert len(sent) == 1
+
+
+def test_the_fallback_carries_no_clinical_fragment(monkeypatch):
+    """It exists because the gate refused the quote. It must not smuggle it."""
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    pid, sent = _clinical_case(monkeypatch)
+    handler.handle(
+        wb.record(pid, "self-reported",
+                  "crushing chest pain, my troponin was 0.94 ng/mL last time"),
+        pid,
+    )
+    body = sent[0][1]
+    for fragment in ("troponin", "0.94", "ng/mL"):
+        assert fragment not in body, f"the fallback leaked '{fragment}'"
+
+
+def test_the_fallback_says_where_her_words_are(monkeypatch):
+    """The move this system makes everywhere: refuse to send something, then
+    say where it lives rather than pretending it does not exist."""
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    pid, sent = _clinical_case(monkeypatch)
+    handler.handle(
+        wb.record(pid, "self-reported", "chest pain, troponin 0.94 ng/mL"), pid,
+    )
+    body = sent[0][1]
+    assert "not repeated here" in body
+    assert "dashboard" in body
+    assert "/app" in body
+
+
+def test_the_fallback_keeps_everything_that_was_never_the_problem(monkeypatch):
+    """Routing, cost and the instruction to call were never clinical."""
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    pid, sent = _clinical_case(monkeypatch)
+    handler.handle(
+        wb.record(pid, "self-reported", "chest pain, troponin 0.94 ng/mL"), pid,
+    )
+    body = sent[0][1]
+    assert "Sacred Heart Hospital" in body
+    assert "2.2 km" in body
+    assert "cashless" in body.lower()
+    assert "Call her now" in body
+    assert "108" in body
+    assert "has not called an ambulance and cannot" in body
+
+
+def test_the_blocked_attempt_is_still_on_the_chain(monkeypatch):
+    """Both facts are recorded: the gate refused the quoted version, and the
+    withheld version went. A chain showing only the send would hide that the
+    boundary held."""
+    from anbu_care import service
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    pid, _ = _clinical_case(monkeypatch)
+    out = handler.handle(
+        wb.record(pid, "self-reported", "chest pain, troponin 0.94 ng/mL"), pid,
+    )
+    kinds = [r.kind for r in service.get_chain(out.case_id).receipts
+             if r.kind.startswith("comms.")]
+    assert kinds == ["comms.blocked", "comms.sent"]
+
+
+def test_an_ordinary_urgent_message_still_quotes_her(monkeypatch):
+    """The fallback must not become the default. When nothing is clinical, her
+    words are what make the alert worth reading."""
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    pid, sent = _clinical_case(monkeypatch)
+    handler.handle(
+        wb.record(pid, "self-reported", "crushing chest pain, can't breathe"), pid,
+    )
+    body = sent[0][1]
+    assert '"crushing chest pain, can\'t breathe"' in body
+    assert "not repeated here" not in body
+
+
+def test_the_model_earns_its_place_on_wording_the_table_misses(model):
+    """Concrete evidence, not a claim.
+
+    "chest hurts badly" is how a 71-year-old actually types at 2am, and the
+    keyword table rates it MEDIUM because it contains no phrase from RED_FLAGS.
+    Gemini restating it as "chest pain" is the difference between a son being
+    woken and finding out in the morning.
+    """
+    # No phrase here is in RED_FLAGS: "breathless" and "chest pain" are,
+    # "chest hurts badly" is not.
+    said = "my chest hurts badly and it is hard to get air"
+
+    model([])                                   # table alone
+    assert esc.assess(said).escalate is False
+
+    model(["chest pain", "shortness of breath"])   # with normalisation
+    assert esc.assess(said).escalate is True

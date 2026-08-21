@@ -204,10 +204,7 @@ def _tell_the_family(
         if not consent_ok(contact.consents, consent.ADMISSION_ALERTS):
             continue
         reached.add(contact.whatsapp_e164)
-        sent = whatsapp_tools.send_family_update(
-            case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
-            template_name="urgent_family_alert",
-            template_params={
+        params = {
                 "parent_name": first,
                 # Rendered per recipient: the son abroad and a neighbour two
                 # streets away read the same instant differently, and neither
@@ -221,7 +218,11 @@ def _tell_the_family(
                 "distance_km": distance,
                 "why_hospital": why,
                 "cashless_status": cashless,
-            },
+        }
+        sent = whatsapp_tools.send_family_update(
+            case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+            template_name="urgent_family_alert",
+            template_params={**params, "said": entry.text},
             message_class="status",
             # Selection and gate must demand the SAME purpose. Without this the
             # class implies status_updates while the loop selects on
@@ -229,6 +230,22 @@ def _tell_the_family(
             # is silently skipped by the gate after being chosen to receive one.
             purpose_override=consent.ADMISSION_ALERTS,
         )
+        # Quoting her is what makes the alert useful, and it is also the only
+        # thing in it the gate can refuse. If her own words carry a lab value
+        # the message is blocked, and without a second attempt the one person
+        # who can actually act is the only one not told. Being more clinically
+        # precise must not make a mother harder to help.
+        if not sent.get("allowed"):
+            logger.info("family alert withheld her words for %s; retrying without the quote",
+                        contact.name)
+            sent = whatsapp_tools.send_family_update(
+                case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+                template_name="urgent_family_alert_withheld",
+                template_params=params,
+                message_class="status",
+                purpose_override=consent.ADMISSION_ALERTS,
+            )
+
         (alerted if sent.get("delivered") else failed).append(contact.name)
     return alerted, failed, reached
 
