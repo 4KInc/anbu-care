@@ -12,7 +12,7 @@ not a clinical judgement at all. It is routing. A neighbour phoning to say
 "amma is holding her chest" already reaches the deterministic severity table;
 there was never a principled reason the parent's own words should not.
 
-    "elephant sitting on my chest, can't catch my breath"
+    "maarbu vali, moochu vaanga mudiyala"   (transliterated Tamil)
             |
             v   Gemini: normalise wording into symptom terms  (ADVISORY)
     ["chest pressure", "shortness of breath"]
@@ -23,6 +23,12 @@ there was never a principled reason the parent's own words should not.
 Gemini widens what the system RECOGNISES. It never decides what is URGENT. The
 severity table does, exactly as it does for every other intake, because a
 guarantee that lives in a prompt is not a guarantee.
+
+Language is the widest part of that gap and the least optional. The table is a
+list of English phrases. The person using this product is seventy-one and lives
+in Thoothukudi, and at 2am she will write in whatever comes first — Tamil,
+Tamil in English letters, or half of each. No keyword table can be extended far
+enough to cover that. A model can.
 
 Two properties keep that honest rather than decorative:
 
@@ -56,10 +62,16 @@ ESCALATING = {Severity.HIGH}
 
 _PROMPT = """You normalise informal descriptions of how someone feels into short clinical symptom terms.
 
-Return ONLY a JSON array of lowercase symptom phrases, at most six. Use plain
-clinical wording such as "chest pain", "chest pressure", "shortness of breath",
-"dizziness", "fainting", "confusion", "weakness one side", "severe bleeding",
-"vomiting", "fever", "abdominal pain".
+The message may be in ANY language, or in a language written with English
+letters. Tamil, transliterated Tamil ("maarbu vali", "moochu vaanga
+mudiyala"), Hindi, or a mix of a language and English are all expected. Always
+return the terms in ENGLISH, whatever the message was written in.
+
+Return ONLY a JSON array of lowercase English symptom phrases, at most six.
+Use plain clinical wording such as "chest pain", "chest pressure", "shortness
+of breath", "difficulty breathing", "dizziness", "fainting", "confusion",
+"slurred speech", "weakness on one side", "severe bleeding", "vomiting",
+"fever", "severe abdominal pain", "palpitations", "seizure".
 
 Return [] if the message describes ordinary daily life, mood, sleep, appetite
 or general wellbeing with no physical symptom.

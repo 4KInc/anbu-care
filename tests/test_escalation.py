@@ -694,3 +694,76 @@ def test_the_spoken_line_carries_no_symptoms(monkeypatch):
     source = inspect.getsource(handler._ring_them)
     assert "classify_message" in source, "the spoken line is not gated"
     assert "entry.text" not in source, "her words are read out over the phone"
+
+
+# ---- the widest gap a keyword table has ----------------------------------
+
+
+def test_the_prompt_expects_any_language_and_returns_english(model):
+    """The table is a list of English phrases. The person using this product is
+    71 and lives in Thoothukudi, and at 2am she writes whatever comes first."""
+    prompt = esc._PROMPT
+    assert "ANY language" in prompt
+    assert "Tamil" in prompt
+    assert "transliterated" in prompt.lower()
+    assert "ENGLISH" in prompt
+
+
+@pytest.mark.parametrize("said,terms", [
+    ("maarbu vali, moochu vaanga mudiyala", ["chest pain", "difficulty breathing"]),
+    ("மார்பு வலிக்கிறது", ["chest pain"]),
+    ("amma has maarbu vali since morning", ["chest pain"]),
+    ("seene mein dard ho raha hai", ["chest pain"]),
+])
+def test_normalised_terms_from_any_language_reach_the_table(model, said, terms):
+    """The model translates; the table still decides. Nothing about the
+    decision changes because the message arrived in Tamil."""
+    model([])
+    assert esc.assess(said).escalate is False, "the English table caught it unaided"
+
+    model(terms)
+    verdict = esc.assess(said)
+    assert verdict.escalate is True
+    assert verdict.severity is Severity.HIGH
+
+
+def test_a_benign_message_in_another_language_still_does_not_escalate(model):
+    model([])   # "slept well, ate" in transliterated Tamil yields no symptoms
+    assert esc.assess("nalla thoongiten, saapitten").escalate is False
+
+
+# ---- the table is sourced, and says what it is not ------------------------
+
+
+def test_the_red_flag_table_is_denser_than_the_classic_presentation():
+    """The crushing-chest case is the one everybody already acts on. Older
+    women and people with diabetes more often present with jaw or back pain,
+    nausea and sweating, and those are the presentations that get missed."""
+    from anbu_care.triage.severity import RED_FLAGS
+
+    assert len(RED_FLAGS) >= 70
+    for atypical in ("jaw pain", "upper back pain", "neck pain", "shoulder pain",
+                     "heartburn", "chest burning"):
+        assert atypical in RED_FLAGS, f"{atypical} missing: an atypical cardiac presentation"
+
+
+def test_the_table_covers_the_999_criteria():
+    """Difficulty breathing, unconsciousness, severe bleeding, choking,
+    fitting and severe allergic reaction, per the London Ambulance list."""
+    from anbu_care.triage.severity import RED_FLAGS
+
+    for criterion in ("difficulty breathing", "unconscious", "heavy bleeding",
+                      "choking", "seizure", "severe allergic reaction"):
+        assert criterion in RED_FLAGS
+
+
+def test_the_table_says_it_is_not_a_clinical_protocol():
+    """It has not been reviewed by a clinician, and the file must say so where
+    the next person to edit it will read it."""
+    import inspect
+
+    from anbu_care.triage import severity
+
+    source = inspect.getsource(severity)
+    assert "not a clinical protocol" in source
+    assert "reviewed by a clinician" in source

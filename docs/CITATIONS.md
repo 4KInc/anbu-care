@@ -48,3 +48,24 @@ Criteria weights (40/30/30), tracks, mandatory stack, prize pools, and bonus
 items are aligned to the official All Things Agentic Hackathon rules page.
 Re-check them against the live rules page before submission — rules pages get
 edited.
+
+## Triage red-flag table
+
+`anbu_care/triage/severity.py` decides whether a case opens, so its contents
+are load-bearing in a way a market figure is not. Sources:
+
+| Entries | Source | Status |
+|---|---|---|
+| Difficulty breathing, unconsciousness, severe loss of blood, severe burns, choking, fitting, severe allergic reaction | [London Ambulance Service, "When to call 999"](https://www.londonambulance.nhs.uk/calling-us/calling-999/) | cited |
+| Chest pain, pain radiating to arms, jaw, neck, back; shortness of breath; nausea | [NHS, "Symptoms of a heart attack"](https://www.nhs.uk/conditions/heart-attack/symptoms/) | cited |
+| Face drooping, speech difficulty, sudden confusion | [NHS, "Stroke"](https://www.nhs.uk/conditions/stroke/) | cited |
+| Reduced consciousness, meningism with fever | [NHS, "Sepsis"](https://www.nhs.uk/conditions/sepsis/) | cited |
+
+**The table is not a clinical protocol.** It is derived from published public
+first-aid guidance and has not been reviewed by a clinician. A real deployment
+must have that done. It is stated here, and in the source file, because the
+table being a reviewable artefact rather than a prompt is the point — an
+unreviewed artefact that looks reviewed would be worse than no artefact.
+
+A match is not a diagnosis. It means the words appeared, which is why the
+receipt records the matched phrase and never a conclusion.

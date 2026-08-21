@@ -14,27 +14,107 @@ from anbu_care.schemas import Severity
 
 # Red flags force HIGH regardless of anything else, and carry the specialty
 # the case must be routed to.
+# Phrases that mean somebody should be woken now.
+#
+# Sourced, not invented. The cardiac and stroke entries follow NHS heart attack
+# and stroke guidance; the undifferentiated emergencies follow the London
+# Ambulance Service "when to call 999" list (chest pain, difficulty breathing,
+# unconsciousness, severe loss of blood, severe burns, choking, fitting,
+# drowning, severe allergic reaction). See docs/CITATIONS.md.
+#
+# Two things this table is NOT. It is not a clinical protocol: it has not been
+# reviewed by a clinician and a real deployment must have that done. And it is
+# not a diagnosis — a match means "these words appeared", which is why the
+# receipt records the matched phrase and never a conclusion.
+#
+# Weighted towards the atypical. The classic crushing-chest presentation is the
+# one everybody already acts on. Older women, and people with diabetes, more
+# often present with jaw or back pain, nausea and sweating, and those are the
+# presentations that get missed.
 RED_FLAGS: dict[str, tuple[str, str]] = {
+    # ---- cardiac -----------------------------------------------------------
     "chest pain": ("cardiology", "chest pain — possible acute coronary syndrome"),
     "chest tightness": ("cardiology", "chest tightness — possible cardiac event"),
+    "tight chest": ("cardiology", "chest tightness — possible cardiac event"),
     "crushing chest": ("cardiology", "crushing chest pain — high-probability cardiac event"),
+    "chest pressure": ("cardiology", "chest pressure — possible acute coronary syndrome"),
+    "chest heavy": ("cardiology", "chest heaviness — possible acute coronary syndrome"),
+    "heavy chest": ("cardiology", "chest heaviness — possible acute coronary syndrome"),
+    "weight on my chest": ("cardiology", "chest heaviness — possible acute coronary syndrome"),
+    "band around my chest": ("cardiology", "constricting chest pain — possible cardiac event"),
+    "chest burning": ("cardiology", "burning chest pain — cardiac pain is often mistaken for indigestion"),
+    "heartburn": ("cardiology", "burning chest pain — cardiac pain is often mistaken for indigestion"),
     "left arm pain": ("cardiology", "radiating left-arm pain — classic cardiac referral pattern"),
-    "jaw pain": ("cardiology", "jaw pain with cardiac context — atypical presentation"),
-    "shortness of breath": ("cardiology", "dyspnoea — cardiac or respiratory compromise"),
-    "breathless": ("cardiology", "breathlessness — cardiac or respiratory compromise"),
-    "collapse": ("emergency", "collapse — undifferentiated emergency"),
-    "unconscious": ("emergency", "loss of consciousness"),
+    "arm pain": ("cardiology", "arm pain — cardiac pain radiates to either arm"),
+    "jaw pain": ("cardiology", "jaw pain — atypical cardiac presentation, more common in women"),
+    "neck pain": ("cardiology", "neck pain — recognised cardiac radiation pattern"),
+    "shoulder pain": ("cardiology", "shoulder pain — recognised cardiac radiation pattern"),
+    "upper back pain": ("cardiology", "upper back pain — atypical cardiac presentation"),
     "cardiac arrest": ("cardiology", "suspected cardiac arrest"),
+    "heart attack": ("cardiology", "reported heart attack"),
     "palpitations": ("cardiology", "palpitations — possible arrhythmia"),
+    "racing heart": ("cardiology", "tachycardia — possible arrhythmia"),
+    "irregular heartbeat": ("cardiology", "irregular pulse — possible arrhythmia"),
+
+    # ---- breathing ---------------------------------------------------------
+    "shortness of breath": ("cardiology", "dyspnoea — cardiac or respiratory compromise"),
+    "short of breath": ("cardiology", "dyspnoea — cardiac or respiratory compromise"),
+    "breathless": ("cardiology", "breathlessness — cardiac or respiratory compromise"),
+    "difficulty breathing": ("emergency", "difficulty breathing — a 999 criterion"),
+    "cannot breathe": ("emergency", "difficulty breathing — a 999 criterion"),
+    "can't breathe": ("emergency", "difficulty breathing — a 999 criterion"),
+    "cant breathe": ("emergency", "difficulty breathing — a 999 criterion"),
+    "gasping": ("emergency", "gasping — respiratory distress"),
+    "choking": ("emergency", "choking — a 999 criterion"),
+    "blue lips": ("emergency", "cyanosis — hypoxia"),
+
+    # ---- stroke ------------------------------------------------------------
     "slurred speech": ("neurology", "slurred speech — stroke red flag"),
+    "cannot speak": ("neurology", "speech loss — stroke red flag"),
     "face droop": ("neurology", "facial droop — stroke red flag"),
     "facial droop": ("neurology", "facial droop — stroke red flag"),
+    "face has dropped": ("neurology", "facial droop — stroke red flag"),
     "one-sided weakness": ("neurology", "unilateral weakness — stroke red flag"),
     "weakness on one side": ("neurology", "unilateral weakness — stroke red flag"),
+    "arm has gone numb": ("neurology", "unilateral numbness — stroke red flag"),
+    "cannot lift": ("neurology", "unilateral weakness — stroke red flag"),
     "sudden severe headache": ("neurology", "thunderclap headache — haemorrhage red flag"),
-    "seizure": ("neurology", "seizure activity"),
-    "heavy bleeding": ("emergency", "uncontrolled bleeding"),
+    "worst headache": ("neurology", "thunderclap headache — haemorrhage red flag"),
+    "sudden blurred vision": ("neurology", "sudden visual loss — stroke red flag"),
+    "sudden vision loss": ("neurology", "sudden visual loss — stroke red flag"),
+
+    # ---- undifferentiated emergency ---------------------------------------
+    "collapse": ("emergency", "collapse — undifferentiated emergency"),
+    "collapsed": ("emergency", "collapse — undifferentiated emergency"),
+    "unconscious": ("emergency", "loss of consciousness — a 999 criterion"),
+    "passed out": ("emergency", "loss of consciousness — a 999 criterion"),
+    "fainted": ("emergency", "syncope — undifferentiated emergency"),
+    "unresponsive": ("emergency", "unresponsive — a 999 criterion"),
+    "not waking up": ("emergency", "unresponsive — a 999 criterion"),
+    "seizure": ("neurology", "seizure activity — a 999 criterion"),
+    "fitting": ("neurology", "seizure activity — a 999 criterion"),
+    "convulsion": ("neurology", "seizure activity — a 999 criterion"),
+    "heavy bleeding": ("emergency", "uncontrolled bleeding — a 999 criterion"),
+    "bleeding a lot": ("emergency", "uncontrolled bleeding — a 999 criterion"),
+    "will not stop bleeding": ("emergency", "uncontrolled bleeding — a 999 criterion"),
     "vomiting blood": ("emergency", "haematemesis"),
+    "coughing blood": ("emergency", "haemoptysis"),
+    "blood in stool": ("emergency", "gastrointestinal bleeding"),
+    "severe allergic reaction": ("emergency", "anaphylaxis — a 999 criterion"),
+    "anaphylaxis": ("emergency", "anaphylaxis — a 999 criterion"),
+    "throat closing": ("emergency", "airway compromise — anaphylaxis red flag"),
+    "swollen tongue": ("emergency", "airway compromise — anaphylaxis red flag"),
+    "severe burn": ("emergency", "severe burn — a 999 criterion"),
+    "poisoning": ("emergency", "poisoning or overdose"),
+    "overdose": ("emergency", "poisoning or overdose"),
+    "hit her head": ("neurology", "head injury in an elderly patient — bleed risk"),
+    "hit his head": ("neurology", "head injury in an elderly patient — bleed risk"),
+    "head injury": ("neurology", "head injury in an elderly patient — bleed risk"),
+    "stiff neck with fever": ("emergency", "meningism — sepsis or meningitis red flag"),
+    "cannot wake": ("emergency", "reduced consciousness — sepsis red flag"),
+    "cannot stand": ("emergency", "sudden inability to weight-bear — fracture or collapse"),
+    "severe abdominal pain": ("emergency", "acute abdomen"),
+    "cannot pass urine": ("emergency", "urinary retention — obstruction risk"),
 }
 
 # (specialty, why, specialty this symptom becomes high-risk for given a matching
