@@ -27,6 +27,9 @@ packages = ["anbu_care"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_extraction: exercise the real extract_symptoms, with the client stubbed",
+]
 
 [tool.ruff]
 line-length = 110

@@ -86,49 +86,64 @@ def _signed(client, form: dict, token: str = AUTH_TOKEN, signature: str | None =
 # ---- GUARD 4: THE ONE THIS PHASE RESTS ON --------------------------------
 
 
-def test_the_scariest_possible_check_in_still_only_stores_words(client, parent, monkeypatch):
-    """A check-in reading like a cardiac emergency must change nothing.
+def test_the_scariest_possible_check_in_opens_a_case_and_tells_someone(client, parent):
+    """This test used to assert the opposite, and the opposite was wrong.
 
-    "crushing chest pain" is in RED_FLAGS. Routed into run_triage it would
-    return HIGH severity, open a case, and pick a cardiac hospital — a clinical
-    assessment conjured from one self-reported sentence, with a receipt to make
-    it look official.
+    It once proved the inbound path could not reach triage at all. That guard
+    was aimed at the right danger — a mood report must never become a vital —
+    but it caught too much: a system that reads "crushing chest pain, can't
+    breathe" and answers "Thanks, that's noted" is not being careful, it is
+    failing while looking calm.
 
-    So: the triage entry point is replaced with a bomb. If the inbound path can
-    reach it at all, this test explodes.
+    What survives from the old version is the part that was actually load
+    bearing: the stored check-in is still only words, and still has no field a
+    finding could be written into. The escalation lives on the case, where a
+    routing decision belongs.
     """
-    from anbu_care.tools import triage_tools
-
-    def detonate(*args, **kwargs):
-        raise AssertionError(
-            "the inbound wellbeing path called run_triage. A self-reported "
-            "sentence was about to become a clinical severity."
-        )
-
-    monkeypatch.setattr(triage_tools, "run_triage", detonate)
-
     response = _signed(client, {"From": f"whatsapp:{PARENT_NUMBER}",
                                 "Body": "crushing chest pain, can't breathe"})
-
     assert response.status_code == 200
 
-    # The parent chain must hold this and nothing else. A triage decision or an
-    # opened case would show up here as another kind of receipt.
+    # Stored exactly as said, with nothing derived bolted on.
+    stored = wellbeing_store.list_entries(parent)[0]
+    assert stored.text == "crushing chest pain, can't breathe"
+    assert stored.source == "self-reported"
+    dumped = stored.model_dump(mode="json")
+    for forbidden in ("severity", "diagnosis", "mood", "score", "risk", "assessment"):
+        assert forbidden not in dumped, f"the check-in record gained a '{forbidden}' field"
+
+    # And a human is now involved.
+    from anbu_care.provenance.store import PARENT_SUBJECT
+
+    chain = service.get_chain(parent, subject=PARENT_SUBJECT)
+    kinds = [r.kind for r in chain.receipts]
+    assert "wellbeing.recorded" in kinds
+    assert "wellbeing.escalated" in kinds
+
+    escalated = next(r for r in chain.receipts if r.kind == "wellbeing.escalated")
+    assert escalated.payload["severity"] == "HIGH"
+    assert escalated.payload["matched_rules"], "escalated without naming what matched"
+    assert "not a clinical assessment" in escalated.payload["note"]
+
+    # The reply tells them to call an ambulance rather than thanking them.
+    assert "108" in response.text
+    assert "Thanks, that's noted" not in response.text
+
+
+def test_an_ordinary_check_in_opens_nothing(client, parent):
+    """The discriminator. Sleeping well is not an emergency."""
+    for benign in ("slept well, ate breakfast", "feeling better today",
+                   "went for a short walk", "mood is low but I am okay",
+                   "did not sleep much last night"):
+        response = _signed(client, {"From": f"whatsapp:{PARENT_NUMBER}", "Body": benign})
+        assert response.status_code == 200
+        assert "Thanks, that's noted." in response.text
+        assert "108" not in response.text
+
     from anbu_care.provenance.store import PARENT_SUBJECT
 
     kinds = [r.kind for r in service.get_chain(parent, subject=PARENT_SUBJECT).receipts]
-    assert kinds == ["wellbeing.recorded"], f"the inbound path did more than record words: {kinds}"
-
-    entries = wellbeing_store.list_entries(parent)
-    assert len(entries) == 1
-    stored = entries[0]
-    assert stored.text == "crushing chest pain, can't breathe"
-    assert stored.source == "self-reported"
-
-    # Nothing anywhere in the stored record resembles an assessment.
-    dumped = stored.model_dump(mode="json")
-    for forbidden in ("severity", "diagnosis", "triage", "mood", "score", "risk", "assessment"):
-        assert forbidden not in dumped, f"stored entry carries a '{forbidden}' field"
+    assert set(kinds) == {"wellbeing.recorded"}, f"an ordinary check-in escalated: {kinds}"
 
 
 def test_the_entry_type_has_nowhere_to_put_a_finding():

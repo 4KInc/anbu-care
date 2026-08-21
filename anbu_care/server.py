@@ -14,6 +14,7 @@ import os
 import urllib.parse
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape
 
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -35,6 +36,7 @@ from anbu_care.tools import (
     whatsapp_tools,
 )
 from anbu_care.webauth import require_family_session
+from anbu_care.wellbeing import handler as wellbeing_escalation
 from anbu_care.wellbeing import store as wellbeing_store
 
 logger = logging.getLogger(__name__)
@@ -283,13 +285,16 @@ async def wellbeing_inbound(request: Request) -> Response:
     entry = wellbeing_store.record(sender.parent_id, sender.source, body)
     logger.info("wellbeing recorded %s for %s", entry.entry_id, sender.parent_id)
 
-    # Fixed text. It echoes none of their words, so a message containing
-    # clinical detail cannot be reflected back out over WhatsApp by this reply,
-    # and it promises nothing the system will not do.
+    # Stored either way. What follows decides whether a person is told, never
+    # what is wrong with anyone: Gemini restates the wording, the deterministic
+    # severity table rules, and the raw text reaches that table regardless so a
+    # silent model cannot quieten a red flag.
+    alerted = wellbeing_escalation.handle(entry, sender.parent_id)
+
     return Response(
         content=(
             '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response><Message>Thanks, that's noted.</Message></Response>"
+            f"<Response><Message>{escape(alerted.reply)}</Message></Response>"
         ),
         media_type="application/xml",
     )

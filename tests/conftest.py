@@ -43,3 +43,26 @@ def no_ambient_transport(monkeypatch):
     """
     for var in TRANSPORT_ENV:
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def no_model_calls(monkeypatch, request):
+    """No test reaches Gemini unless it explicitly asks to.
+
+    Symptom extraction is advisory and every failure path already returns "no
+    terms", so the default here is the same thing a timeout produces. That is
+    deliberate: it means the suite exercises the deterministic keyword floor,
+    which is the part that must hold when the model is unavailable. A test that
+    wants model behaviour fakes it explicitly.
+    """
+    # A test that needs the real function marks itself; it must still not
+    # reach the network, so it stubs the client instead.
+    if request.node.get_closest_marker("real_extraction"):
+        return
+
+    from anbu_care.wellbeing import escalation
+
+    monkeypatch.setattr(
+        escalation, "extract_symptoms",
+        lambda text: ([], False, "model disabled in tests"),
+    )
