@@ -52,10 +52,13 @@ def handle(entry: WellbeingEntry, parent_id: str) -> Handled:
     # maker is woken at 2am and needs everything the system knows. A neighbour
     # or a listed doctor needs to be asked to go round, and is not entitled to
     # the rest.
-    family = _tell_the_family(case_id, parent_id, entry)
-    circle = _tell_the_care_circle(case_id, parent_id, verdict)
-    alerted = family[0] + circle[0]
-    not_alerted = family[1] + circle[1]
+    family_alerted, family_failed, family_numbers = _tell_the_family(case_id, parent_id, entry)
+    circle_alerted, circle_failed = _tell_the_care_circle(
+        case_id, parent_id, verdict, skip_numbers=family_numbers,
+    )
+    # One person is one name, however many lists they appear on.
+    alerted = _unique(family_alerted + circle_alerted)
+    not_alerted = [n for n in _unique(family_failed + circle_failed) if n not in alerted]
 
     return Handled(
         reply=esc.reply_text(verdict, alerted),
@@ -114,6 +117,18 @@ def _open_and_triage(entry: WellbeingEntry, parent_id: str, verdict: esc.Escalat
     return case.case_id
 
 
+def _unique(names: list[str]) -> list[str]:
+    """Order-preserving dedupe. "alerted X and X" reads as a broken system at
+    the moment it most needs to be believed."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 def _routing_lines(case_id: str) -> tuple[str, str, str]:
     """Hospital, distance and WHY that hospital, straight off the triage receipt.
 
@@ -159,7 +174,7 @@ def _why_only(explanation: str) -> str:
 
 def _tell_the_family(
     case_id: str, parent_id: str, entry: WellbeingEntry
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], set[str]]:
     """The full picture, to contacts who hold admission-alert consent.
 
     Her own words are relayed. They are what she chose to send over WhatsApp
@@ -174,7 +189,7 @@ def _tell_the_family(
 
     profile = service.load_profile(parent_id)
     if profile is None:
-        return [], []
+        return [], [], set()
 
     first = profile.name.split()[0] if profile.name else "your parent"
     hospital, distance, why = _routing_lines(case_id)
@@ -184,9 +199,11 @@ def _tell_the_family(
 
     alerted: list[str] = []
     failed: list[str] = []
+    reached: set[str] = set()
     for contact in profile.family_contacts:
         if not consent_ok(contact.consents, consent.ADMISSION_ALERTS):
             continue
+        reached.add(contact.whatsapp_e164)
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
             template_name="urgent_family_alert",
@@ -213,11 +230,12 @@ def _tell_the_family(
             purpose_override=consent.ADMISSION_ALERTS,
         )
         (alerted if sent.get("delivered") else failed).append(contact.name)
-    return alerted, failed
+    return alerted, failed, reached
 
 
 def _tell_the_care_circle(
-    case_id: str, parent_id: str, verdict: esc.Escalation
+    case_id: str, parent_id: str, verdict: esc.Escalation,
+    skip_numbers: set[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Notify consented contacts. Returns who was actually reached.
 
@@ -238,6 +256,7 @@ def _tell_the_care_circle(
             hospital_name=hospital,
             timestamp="just now",
             now=datetime.now(UTC),
+            skip_numbers=skip_numbers,
             cashless_status=(
                 f"An urgent message was received from {name}. Please call them now"
             ),

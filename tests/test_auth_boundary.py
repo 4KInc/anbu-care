@@ -261,3 +261,13 @@ def test_notify_claim_does_not_take_the_recipient_from_the_caller(client):
     source = inspect.getsource(server.notify_claim)
     assert "contact.whatsapp_e164" in source
     assert "request" not in inspect.signature(server.notify_claim).parameters
+
+
+def test_the_page_title_reads_like_the_messages_do(client):
+    """The title is not only a browser tab. WhatsApp renders it inside the
+    message bubble as the link preview, so it is part of what the family reads
+    and the same punctuation rule applies."""
+    html = client.get("/app").text
+    title = html.split("<title>")[1].split("</title>")[0]
+    assert "—" not in title
+    assert "–" not in title

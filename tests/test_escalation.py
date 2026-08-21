@@ -330,3 +330,99 @@ def test_an_unknown_timezone_says_utc_rather_than_lying():
     from anbu_care.comms.localtime import in_zone
 
     assert "UTC" in in_zone(datetime(2026, 8, 21, 15, 46, tzinfo=UTC), "Mars/Olympus")
+
+
+# ---- one person is one person --------------------------------------------
+
+
+def test_someone_on_both_lists_is_told_once_and_named_once(monkeypatch):
+    """A contact can hold both admission-alert and care-circle consent. They
+    are still one human being.
+
+    Sending twice wastes the seconds that matter, and "We have alerted Karthik
+    and Karthik" reads as a broken system at the exact moment it most needs to
+    be believed.
+    """
+    from anbu_care.comms import consent, transport
+    from anbu_care.tools import onboarding_tools
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        transport, "send",
+        lambda to, body, mode=None, media_url=None: (
+            sent.append(to),
+            transport.DeliveryResult(delivered=True, channel="spy", detail="ok"),
+        )[1],
+    )
+
+    pid = onboarding_tools.create_parent_profile(
+        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_insurance_policy(
+        pid, insurer="Star Health", policy_number="SH-1", sum_insured_inr=500_000,
+        network_hospitals=["Sacred Heart Hospital"], cashless_eligible=True,
+    )
+    # Both consents, one person.
+    onboarding_tools.record_family_contact(
+        parent_id=pid, name="Karthik", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Los_Angeles",
+        is_primary=True,
+        consent_purposes=[consent.ADMISSION_ALERTS, consent.OUTBOUND_NOTIFY],
+    )
+
+    entry = wb.record(pid, "self-reported", "crushing chest pain, can't breathe")
+    out = handler.handle(entry, pid)
+
+    assert out.escalated is True
+    assert out.alerted == ["Karthik"], f"named more than once: {out.alerted}"
+    assert sent.count("+16692167706") == 1, "the same person was messaged twice"
+
+    reply = handler.esc.reply_text(
+        handler.esc.assess("crushing chest pain"), out.alerted,
+    )
+    assert "Karthik and Karthik" not in reply
+
+
+def test_a_separate_care_circle_contact_still_gets_their_notice(monkeypatch):
+    """Deduping must not silence the neighbour."""
+    from anbu_care.comms import consent, transport
+    from anbu_care.tools import onboarding_tools
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        transport, "send",
+        lambda to, body, mode=None, media_url=None: (
+            sent.append(to),
+            transport.DeliveryResult(delivered=True, channel="spy", detail="ok"),
+        )[1],
+    )
+
+    pid = onboarding_tools.create_parent_profile(
+        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_insurance_policy(
+        pid, insurer="Star Health", policy_number="SH-1", sum_insured_inr=500_000,
+        network_hospitals=["Sacred Heart Hospital"], cashless_eligible=True,
+    )
+    onboarding_tools.record_family_contact(
+        parent_id=pid, name="Karthik", relationship="son", whatsapp_e164="+16692167706",
+        timezone_name="America/Los_Angeles", is_primary=True,
+        consent_purposes=[consent.ADMISSION_ALERTS],
+    )
+    onboarding_tools.record_family_contact(
+        parent_id=pid, name="Meena", relationship="neighbour", whatsapp_e164="+919000000101",
+        timezone_name="Asia/Kolkata", is_primary=False,
+        consent_purposes=[consent.OUTBOUND_NOTIFY],
+    )
+
+    entry = wb.record(pid, "self-reported", "crushing chest pain, can't breathe")
+    out = handler.handle(entry, pid)
+
+    assert sorted(out.alerted) == ["Karthik", "Meena"]
+    assert sorted(sent) == ["+16692167706", "+919000000101"]
