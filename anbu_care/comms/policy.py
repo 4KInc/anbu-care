@@ -251,7 +251,8 @@ def gate_message(
     )
 
 
-def render_template(template_name: str, params: dict[str, str]) -> str:
+def render_template(template_name: str, params: dict[str, str],
+                    case_id: str | None = None) -> str:
     template = TEMPLATES.get(template_name)
     if template is None:
         raise KeyError(f"unknown template '{template_name}'")
@@ -260,8 +261,11 @@ def render_template(template_name: str, params: dict[str, str]) -> str:
     if missing:
         raise ValueError(f"template '{template_name}' missing params: {sorted(missing)}")
     # The link is injected here, not passed in: a caller must not be able to
-    # point a family member at an address of its choosing.
-    return str(template["body"]).format(**{**params, "dashboard_url": DASHBOARD_URL})
+    # point a family member at an address of its choosing. It may name which
+    # case to open, so the link lands on the episode the message is about
+    # rather than on an empty dashboard.
+    url = f"{DASHBOARD_URL}?case={case_id}" if case_id else DASHBOARD_URL
+    return str(template["body"]).format(**{**params, "dashboard_url": url})
 
 
 def consent_ok(consents: dict[str, datetime], purpose: str) -> bool:

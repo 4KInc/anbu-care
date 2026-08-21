@@ -634,6 +634,14 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Enter" && e.target && e.target.id==="cid"){ e.preventDefault(); useCase(); }
 });
 
+// A family member arrives from a WhatsApp alert, on a phone, at 2am. The link
+// names the case; landing them on an empty page and asking them to paste an id
+// would be the product failing at the only moment it matters.
+function caseFromLink(){
+  try { return new URLSearchParams(location.search).get("case"); }
+  catch { return null; }
+}
+
 async function load(){
   if(S.caseId){
     S.trail=await api(`/api/cases/${S.caseId}/trail`,{auth:true});
@@ -661,6 +669,18 @@ function render(){
 }
 document.querySelectorAll("nav button").forEach(b=>
   b.addEventListener("click",()=>{S.view=b.dataset.v; render();}));
+
+// Open the case the link names, and show it in the box so it is obvious which
+// episode is on screen rather than appearing by magic.
+(function openLinkedCase(){
+  const linked = caseFromLink();
+  if(!linked) return;
+  S.caseId = linked;
+  const box = document.getElementById("cid");
+  if(box) box.value = linked;
+  load();
+})();
+
 render();
 </script>
 </body>

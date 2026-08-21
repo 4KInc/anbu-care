@@ -232,3 +232,46 @@ def test_a_rendered_template_still_passes_the_gate():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
         gate = gate_message(body, spec["message_class"], template_name=name)  # type: ignore[arg-type]
         assert gate.allowed is True, f"{name} now trips the gate: {gate.reason}"
+
+
+# ---- the link has to land somewhere useful -------------------------------
+
+
+def test_the_family_link_opens_the_case_it_is_about():
+    """A family member arrives from an alert, on a phone, at 2am. Landing them
+    on an empty dashboard and asking them to paste a case id would be the
+    product failing at the only moment it matters."""
+    body = render_template(
+        "urgent_family_alert",
+        {"parent_name": "Rajeswari", "timestamp": "1:03 AM", "said": "chest pain",
+         "words_note": "Those are her own words.\n", "understood_as": "",
+         "hospital_name": "Sacred Heart", "distance_km": "2.2",
+         "why_hospital": "In network.", "cashless_status": "Cashless applies"},
+        case_id="case-abc123",
+    )
+    assert "/app?case=case-abc123" in body
+
+
+def test_the_host_is_still_not_caller_supplied():
+    """The caller may name which of its own cases to open. It may not name
+    where the link points."""
+    from anbu_care.comms.policy import DASHBOARD_URL
+
+    body = render_template(
+        "claim_stage",
+        {"parent_name": "Amma", "stage": "approved", "amount": "30,000",
+         "dashboard_url": "https://not-us.example.com"},
+        case_id="case-abc123",
+    )
+    assert DASHBOARD_URL in body
+    assert "not-us.example.com" not in body
+
+
+def test_a_case_id_is_optional():
+    """Templates sent outside a case context still render."""
+    body = render_template(
+        "billing_summary",
+        {"parent_name": "Amma", "total": "1,20,000", "line_count": "14"},
+    )
+    assert "?case=" not in body
+    assert "/app" in body
