@@ -191,7 +191,7 @@ still blocked — the gate classifies the *content*, not the caller's claim abou
 it — and the blocked attempt is written to the receipt chain as
 `comms.blocked`.
 
-**4c — the phone.** With `ANBU_WHATSAPP_MODE=twilio`, send the *logistics*
+**4c — the phone.** With `ANBU_WHATSAPP_MODE=meta`, send the *logistics*
 message and let it land on your handset on camera. Hold the phone up: the
 permitted message arrives, and the disguised clinical one from 4b never did.
 Real delivery and the boundary, in the same beat.
@@ -200,14 +200,17 @@ Say the acceptance honestly too, if asked whether it "delivered": the API
 confirms Twilio **accepted** the message; handset confirmation arrives over a
 status callback this demo does not run. The receipt says acceptance, not receipt.
 
-Say the reach honestly, once: **"this is the Twilio WhatsApp sandbox — real
-delivery to a number that opted in. Reaching any number needs Meta business
-verification and template approval, about ten to fifteen business days."** Do not
-imply production reach.
+Say the reach honestly, once: **"this is Meta's Cloud API test sender — real
+delivery to a verified test number. Reaching any number needs business
+verification and template approval, about ten to fifteen business days."** Do
+not imply production reach.
 
-Pre-flight for this beat: send `join <your-code>` to **+1 415 523 8886** from the
-handset, confirm the reply, and do a throwaway send *before* recording — the
-sandbox opt-in expires and the 24-hour freeform window has to be open.
+Pre-flight for this beat, in order, *before* recording:
+1. Confirm the access token is still valid — the generated one expires.
+2. `uv run python scripts/open_window.py <your-number>` sends `hello_world`.
+3. **Reply to it on the handset.** That opens the 24-hour freeform window;
+   without a reply the logistics send will be rejected.
+4. Do one throwaway gated send to confirm the whole path is live.
 
 > Line to say: *"An agent that is merely told not to leak a lab value is not a
 > control. This holds when the model is not the thing enforcing it."*
