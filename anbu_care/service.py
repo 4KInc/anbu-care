@@ -167,6 +167,19 @@ def list_adjudications(case_id: str, store: Store | None = None) -> list[Adjudic
     return [Adjudication.model_validate(_clean(r)) for r in rows]
 
 
+def latest_adjudication(case_id: str, store: Store | None = None) -> Adjudication | None:
+    """The most recent assessment for a case, by attempt then time.
+
+    A case can be adjudicated more than once — a QUERY answered with the
+    missing document produces a second attempt — and anything derived from an
+    adjudication must reflect the latest one, not the first.
+    """
+    rows = list_adjudications(case_id, store)
+    if not rows:
+        return None
+    return max(rows, key=lambda a: (a.attempt, a.adjudicated_at))
+
+
 def sla_deadline(kind: str, start: datetime | None = None) -> datetime:
     start = start or _now()
     window = SLA_CASHLESS_PREAUTH if kind == "cashless_preauth" else SLA_REIMBURSEMENT

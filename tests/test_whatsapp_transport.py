@@ -40,7 +40,7 @@ def spy(monkeypatch):
     """
     calls: list[tuple[str, str]] = []
 
-    def fake_send(to_e164: str, body: str, mode: str | None = None):
+    def fake_send(to_e164: str, body: str, mode: str | None = None, media_url=None):
         calls.append((to_e164, body))
         return transport.DeliveryResult(
             delivered=True, channel="spy", detail="spy accepted", provider_id="SM-spy")
@@ -142,7 +142,7 @@ def test_a_permitted_message_is_carried_once(parent_id, spy):
 
 
 def test_a_transport_error_does_not_crash_and_does_not_claim_a_send(parent_id, monkeypatch):
-    def exploding(to_e164, body, mode=None):
+    def exploding(to_e164, body, mode=None, media_url=None):
         raise RuntimeError("network is down")
 
     monkeypatch.setattr(transport, "send", exploding)
@@ -152,7 +152,7 @@ def test_a_transport_error_does_not_crash_and_does_not_claim_a_send(parent_id, m
 
 def test_a_rejected_send_is_recorded_as_not_delivered(parent_id, monkeypatch):
     """Twilio said no. The message was permitted and did not arrive."""
-    monkeypatch.setattr(transport, "send", lambda to, body, mode=None:
+    monkeypatch.setattr(transport, "send", lambda to, body, mode=None, media_url=None:
                         transport.DeliveryResult(
                             delivered=False, channel="twilio", http_status=400,
                             detail="Twilio rejected the message, nothing was delivered: not opted in"))

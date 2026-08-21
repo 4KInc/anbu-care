@@ -36,6 +36,33 @@ def _bucket_name() -> str | None:
     return value.strip() if value else None
 
 
+def _signing_kwargs() -> dict[str, str]:
+    """How to sign, given whatever credentials we happen to be running under.
+
+    A service account with a private key can sign locally. Application Default
+    Credentials from `gcloud auth application-default login` cannot — they are
+    a bare token with no key — so signing goes through the IAM SignBlob API
+    instead, which needs the signer named explicitly. Cloud Run supplies its
+    own service account, so this resolves without configuration there.
+    """
+    import google.auth
+    import google.auth.transport.requests
+
+    creds, _ = google.auth.default()
+    email = getattr(creds, "service_account_email", None) or os.getenv("ANBU_SIGNER_SERVICE_ACCOUNT")
+    if getattr(creds, "signer", None) is not None and email:
+        return {}  # has a private key; the library signs directly
+
+    if not email:
+        raise RuntimeError(
+            "cannot sign: credentials carry no private key and no signer is named. "
+            "Set ANBU_SIGNER_SERVICE_ACCOUNT to a service account you may impersonate."
+        )
+    if not creds.valid:
+        creds.refresh(google.auth.transport.requests.Request())
+    return {"service_account_email": email, "access_token": creds.token}
+
+
 def store(filename: str, data: bytes, content_type: str = "application/pdf") -> StoredArtifact:
     """Upload and return a short-lived signed URL, or say plainly that it did not.
 
@@ -57,7 +84,7 @@ def store(filename: str, data: bytes, content_type: str = "application/pdf") -> 
         blob = client.bucket(bucket_name).blob(f"artifacts/{filename}")
         blob.upload_from_string(data, content_type=content_type)
         url = blob.generate_signed_url(
-            version="v4", expiration=SIGNED_URL_TTL, method="GET",
+            version="v4", expiration=SIGNED_URL_TTL, method="GET", **_signing_kwargs(),
         )
     except Exception as exc:  # noqa: BLE001 - any failure means "no link"
         return StoredArtifact(

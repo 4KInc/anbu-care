@@ -145,3 +145,121 @@ def test_storage_failure_does_not_produce_a_url(monkeypatch):
     assert result.stored is False
     assert result.url is None
     assert "no link exists" in result.detail
+
+
+# ---- the attachment cannot get past the gate either -----------------------
+
+
+@pytest.fixture
+def seeded_case(monkeypatch):
+    """A case with an adjudication, and a family contact who consented."""
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools
+
+    parent_id = onboarding_tools.create_parent_profile(
+        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        chronic_conditions=["Hypertension"], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin", relationship="son",
+        whatsapp_e164="+14155550142", timezone_name="America/Los_Angeles",
+        is_primary=True,
+        consent_purposes=["admission_alerts", "status_updates", "billing_updates",
+                          "claim_updates"],
+    )
+    case = service.open_case(parent_id)
+    service.save_adjudication(_adjudication(case_id=case.case_id))
+    return parent_id, case.case_id
+
+
+def _send(parent_id, case_id, status, attach):
+    from anbu_care.tools import whatsapp_tools
+
+    return whatsapp_tools.send_family_update(
+        case_id=case_id, parent_id=parent_id, to_e164="+14155550142",
+        template_name="status_update",
+        template_params={"parent_name": "Amma", "status": status,
+                         "hospital_name": "Sacred Heart Hospital", "timestamp": "4:12 PM"},
+        message_class="status", attach_claim_summary=attach,
+    )
+
+
+def test_a_blocked_message_attaches_nothing(seeded_case, monkeypatch):
+    """The gate returns before the artifact is ever built.
+
+    If a blocked message could still trigger an upload, a clinical case's
+    paperwork would be sitting behind a live signed URL despite the send being
+    refused.
+    """
+    from anbu_care.comms import artifacts
+
+    built: list[str] = []
+    real_build = artifacts.build
+    monkeypatch.setattr(
+        artifacts, "build",
+        lambda kind, adj: (built.append(kind), real_build(kind, adj))[1],
+    )
+
+    parent_id, case_id = seeded_case
+    result = _send(parent_id, case_id,
+                   "stable, troponin I 0.94 ng/mL and ECG shows ST elevation", attach=True)
+
+    assert result["allowed"] is False
+    assert built == [], "an artifact was built for a message the gate blocked"
+
+
+def test_no_bucket_means_no_attachment_and_no_false_claim(seeded_case, monkeypatch):
+    """Storage unavailable must degrade to a plain message, not a broken one."""
+    monkeypatch.delenv("ANBU_ARTIFACT_BUCKET", raising=False)
+    parent_id, case_id = seeded_case
+    result = _send(parent_id, case_id, "resting comfortably", attach=True)
+
+    assert result["allowed"] is True
+    attachment = result.get("attachment") or {}
+    assert attachment.get("attached") is False
+    assert "nothing was uploaded" in attachment.get("reason", "")
+    assert "url" not in attachment
+
+
+def test_a_case_with_no_adjudication_attaches_nothing(monkeypatch):
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools
+
+    parent_id = onboarding_tools.create_parent_profile(
+        name="No Claim", age=70, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Child", relationship="son",
+        whatsapp_e164="+14155550142", timezone_name="Asia/Kolkata", is_primary=True,
+        consent_purposes=["status_updates"],
+    )
+    case = service.open_case(parent_id)
+    result = _send(parent_id, case.case_id, "resting comfortably", attach=True)
+
+    assert result["allowed"] is True
+    assert (result.get("attachment") or {}).get("attached") is False
+    assert "no adjudication" in (result.get("attachment") or {}).get("reason", "")
+
+
+def test_not_asking_for_an_attachment_leaves_the_message_untouched(seeded_case):
+    parent_id, case_id = seeded_case
+    result = _send(parent_id, case_id, "resting comfortably", attach=False)
+    assert result["allowed"] is True
+    assert result.get("attachment") is None
+
+
+def test_latest_adjudication_wins(seeded_case):
+    """A QUERY answered later must not be represented by the first attempt."""
+    from anbu_care import service
+
+    _, case_id = seeded_case
+    service.save_adjudication(
+        _adjudication(case_id=case_id, adjudication_id="adj-2", attempt=2,
+                      outcome=AdjudicationOutcome.PASS, total_allowed_inr=96000,
+                      total_disallowed_inr=0)
+    )
+    latest = service.latest_adjudication(case_id)
+    assert latest is not None
+    assert latest.adjudication_id == "adj-2"
+    assert latest.outcome is AdjudicationOutcome.PASS

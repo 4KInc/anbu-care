@@ -58,6 +58,7 @@ def send_family_update(
     template_name: str,
     template_params: dict[str, str],
     message_class: str,
+    attach_claim_summary: bool = False,
 ) -> dict[str, Any]:
     """Send a templated WhatsApp update to a family member.
 
@@ -69,6 +70,12 @@ def send_family_update(
         template_params: Values for that template's parameters.
         message_class: One of: logistics, status, billing. Never "clinical" —
             clinical content is blocked before send regardless of what is claimed.
+        attach_claim_summary: Request that the case's claim summary PDF ride
+            along. This is a request, not an instruction: the document is built
+            from adjudicator output by code, its text is classified like any
+            other message, and it is dropped if it cannot be built, classified
+            clean, and stored. You cannot choose which document is attached and
+            you cannot attach a clinical one.
 
     Returns:
         Whether the message was sent, and if not, exactly why it was blocked.
@@ -109,9 +116,13 @@ def send_family_update(
         return _record(case_id, to_e164, gate.message_class, template_name, body,
                        allowed=False, reason=gate.reason)
 
-    delivery = _deliver(to_e164, body, template_name)
+    attachment = _attach(case_id) if attach_claim_summary else None
+    media_url = attachment.pop("url", None) if attachment else None
+
+    delivery = _deliver(to_e164, body, template_name, media_url=media_url)
     return _record(case_id, to_e164, gate.message_class, template_name, body,
-                   allowed=True, reason=gate.reason, delivery=delivery)
+                   allowed=True, reason=gate.reason, delivery=delivery,
+                   attachment=attachment)
 
 
 def check_message_allowed(body: str, message_class: str) -> dict[str, Any]:
@@ -141,7 +152,39 @@ def check_message_allowed(body: str, message_class: str) -> dict[str, Any]:
     }
 
 
-def _deliver(to_e164: str, body: str, template_name: str) -> dict[str, Any]:
+def _attach(case_id: str) -> dict[str, Any]:
+    """Build, classify and store the claim summary. Never raise into the send.
+
+    A failure here must degrade to "no attachment", not to a failed message and
+    not to a claim that something was attached. The refusal reason is kept and
+    written to the chain, because "the gate refused the document" is evidence
+    worth having.
+    """
+    from anbu_care.comms import artifacts, storage
+
+    adjudication = service.latest_adjudication(case_id)
+    if adjudication is None:
+        return {"attached": False, "reason": "no adjudication on this case yet; nothing to attach."}
+
+    try:
+        artifact = artifacts.build("claim_summary", adjudication)
+    except artifacts.ArtifactRefused as exc:
+        return {"attached": False, "reason": str(exc)}
+
+    stored = storage.store(artifact.filename, artifact.pdf)
+    if not stored.stored:
+        return {"attached": False, "reason": stored.detail, **artifact.as_receipt_payload()}
+
+    return {
+        "attached": True,
+        "url": stored.url,
+        "expires_in_seconds": stored.expires_in_seconds,
+        **artifact.as_receipt_payload(),
+    }
+
+
+def _deliver(to_e164: str, body: str, template_name: str,
+             media_url: str | None = None) -> dict[str, Any]:
     """Carry a message the gate has already permitted.
 
     This is only ever reached after `gate_message` returned allowed. A blocked
@@ -154,7 +197,7 @@ def _deliver(to_e164: str, body: str, template_name: str) -> dict[str, Any]:
     """
     from anbu_care.comms.transport import send
 
-    result = send(to_e164, body).as_dict()
+    result = send(to_e164, body, media_url=media_url).as_dict()
     result["template"] = template_name
     return result
 
@@ -169,6 +212,7 @@ def _record(
     allowed: bool,
     reason: str,
     delivery: dict[str, Any] | None = None,
+    attachment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write every send attempt to the chain, including the blocked ones.
 
@@ -201,8 +245,14 @@ def _record(
               else "comms.sent" if was_delivered
               else "comms.not_delivered"),
         actor="whatsapp_agent",
+        # The attachment goes in the chain too, refusals included: "the gate
+        # would not release the document" is evidence worth keeping. The signed
+        # URL is deliberately absent — it expires, and a receipt that records a
+        # dead link reads as proof of something it cannot support. The sha256
+        # is what proves which bytes were sent.
         payload={**message.model_dump(mode="json"), "gate_reason": reason,
-                 "delivery": delivery, "delivered": was_delivered},
+                 "delivery": delivery, "delivered": was_delivered,
+                 "attachment": attachment},
     )
     return {
         "status": ("blocked" if not allowed else "ok" if was_delivered else "not_delivered"),
@@ -211,5 +261,6 @@ def _record(
         "reason": reason,
         "message": message.model_dump(mode="json"),
         "delivery": delivery,
+        "attachment": attachment,
         "receipt_id": receipt.receipt_id,
     }
