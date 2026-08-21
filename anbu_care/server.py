@@ -28,6 +28,7 @@ from anbu_care.tools import (
     onboarding_tools,
     provenance_tools,
     triage_tools,
+    whatsapp_tools,
 )
 from anbu_care.webauth import require_family_session
 
@@ -176,7 +177,10 @@ def demo_seed() -> dict[str, Any]:
         parent_id,
         name="Karthik Manickam",
         relationship="son",
-        whatsapp_e164="+14155550142",
+        # Overridable so a recorded demo can point at a real opted-in handset.
+        # Defaults to a Twilio test number, which accepts sends and delivers
+        # nothing, so an unconfigured deploy cannot message a real person.
+        whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164", "+14155550142"),
         timezone_name="America/Los_Angeles",
         is_primary=True,
         consent_purposes=["admission_alerts", "status_updates", "billing_updates", "claim_updates"],
@@ -266,6 +270,57 @@ def case_verify(case_id: str) -> dict[str, Any]:
     check for them.
     """
     return provenance_tools.verify_case_chain(case_id)
+
+
+@app.post("/api/cases/{case_id}/notify-claim")
+def notify_claim(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Send the family the claim outcome, with the assessment attached.
+
+    Credentialed, because it causes a message to leave the platform. The
+    recipient is read from the parent's registered family contact, never from
+    the request, so this cannot be pointed at an arbitrary number by anyone who
+    holds the session token.
+
+    Everything else is the ordinary gated path: the classifier decides whether
+    the message may go, the artifact is built from adjudicator output by code,
+    and a refusal at either point is recorded rather than smoothed over.
+    """
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+
+    profile = service.load_profile(case.parent_id)
+    if profile is None or not profile.family_contacts:
+        raise HTTPException(status_code=404, detail="no family contact on this parent")
+    contact = next((c for c in profile.family_contacts if c.is_primary), profile.family_contacts[0])
+
+    adjudication = service.latest_adjudication(case_id)
+    if adjudication is None:
+        raise HTTPException(status_code=409, detail="this case has not been adjudicated yet")
+
+    stage = {"PASS": "approved", "PARTIAL": "partially approved",
+             "QUERY": "under query", "DENY": "declined"}[adjudication.outcome.value]
+    # An unpriced outcome has no payable figure. "not yet known" is the honest
+    # value; a zero here would state a decision the adjudicator never made.
+    amount = (_inr_plain(adjudication.total_allowed_inr)
+              if adjudication.outcome.value in {"PASS", "PARTIAL"} else "not yet known")
+
+    return whatsapp_tools.send_family_update(
+        case_id=case_id,
+        parent_id=case.parent_id,
+        to_e164=contact.whatsapp_e164,
+        template_name="claim_stage",
+        template_params={"parent_name": profile.name.split()[0],
+                         "stage": stage, "amount": amount},
+        message_class="billing",
+        attach_claim_summary=True,
+    )
+
+
+def _inr_plain(amount: int) -> str:
+    from anbu_care.comms.artifacts import _inr
+
+    return _inr(amount)
 
 
 @app.get("/api/cases/{case_id}")

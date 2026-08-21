@@ -214,3 +214,50 @@ def test_dashboard_ships_no_third_party_code(client):
     html = client.get("/app").text.lower()
     for pattern in ("http://", "cdn.", "unpkg", "jsdelivr", "googleapis.com/ajax"):
         assert pattern not in html, f"dashboard reaches outside: {pattern!r}"
+
+
+# ---- the endpoint that causes a message to leave --------------------------
+
+
+def test_notify_claim_is_denied_without_a_credential(client, seeded):
+    """It sends a real message. It must not be reachable anonymously."""
+    _, case_id = seeded
+    assert client.post(f"/api/cases/{case_id}/notify-claim").status_code == 401
+
+
+def test_notify_claim_refuses_a_case_with_no_adjudication(client, seeded):
+    """No assessment means there is nothing truthful to tell the family."""
+    parent_id, case_id = seeded
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Child", relationship="son",
+        whatsapp_e164="+14155550142", timezone_name="Asia/Kolkata", is_primary=True,
+        consent_purposes=["claim_updates", "billing_updates"],
+    )
+    headers = {"Authorization": f"Bearer {DEMO_TOKEN}"}
+    response = client.post(f"/api/cases/{case_id}/notify-claim", headers=headers)
+    assert response.status_code == 409
+    assert "not been adjudicated" in response.json()["detail"]
+
+
+def test_notify_claim_refuses_a_parent_with_no_family_contact(client, seeded):
+    """Nobody to tell is a refusal, not a silent success."""
+    _, case_id = seeded
+    headers = {"Authorization": f"Bearer {DEMO_TOKEN}"}
+    response = client.post(f"/api/cases/{case_id}/notify-claim", headers=headers)
+    assert response.status_code == 404
+    assert "no family contact" in response.json()["detail"]
+
+
+def test_notify_claim_does_not_take_the_recipient_from_the_caller(client):
+    """The number comes from the parent's registered contact.
+
+    Anyone holding the demo token could otherwise use the deployed service to
+    send WhatsApp messages to numbers of their choosing.
+    """
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.notify_claim)
+    assert "contact.whatsapp_e164" in source
+    assert "request" not in inspect.signature(server.notify_claim).parameters
