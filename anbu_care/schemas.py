@@ -152,8 +152,20 @@ class Hospital(BaseModel):
     open_24x7: bool = True
     # Which insurers this hospital is empanelled with. Empanelment varies
     # hospital by hospital and changes — treat the seeded values as a snapshot.
+    # This is the part a mapping provider cannot verify, which is why the
+    # dashboard's caveat now names empanelment specifically rather than
+    # disclaiming the whole record.
     empanelled_insurers: list[str] = Field(default_factory=list)
     source_note: str | None = None
+    # Where the identity and coordinates came from. Carried so the dashboard
+    # can say "verified against Google Places on this date" rather than asking
+    # anyone to take the location on trust — and so re-verification is visible
+    # when it happens.
+    place_id: str | None = None
+    verified_name: str | None = None
+    address: str | None = None
+    location_source: str | None = None
+    location_verified_on: str | None = None
 
 
 class HospitalScore(BaseModel):

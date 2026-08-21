@@ -3,6 +3,8 @@ have to hold on every run — not most runs."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from anbu_care.kb.hospitals import load_hospitals
@@ -126,10 +128,19 @@ def test_explanation_names_the_term_that_actually_differed(parent):
         parent,
     )
     assert "farther" in decision.explanation
-    # Capability is tied between the two cardiac centres, so the explanation must
-    # cite the network difference and not claim a capability edge that is not there.
     assert "empanelled" in decision.explanation
-    assert "capability scored" not in decision.explanation
+
+    # The original bug this guards: claiming a capability edge that does not
+    # exist. Asserted as an invariant rather than a fixed scenario, so it
+    # survives the hospital coordinates being corrected against Google Places
+    # — which changed which hospital is nearest, and therefore whether
+    # capability genuinely differs.
+    match = re.search(r"capability scored ([\d.]+) there versus ([\d.]+)",
+                      decision.explanation)
+    if match:
+        assert match.group(1) != match.group(2), (
+            "explanation cites a capability edge between two equal scores"
+        )
 
 
 def test_every_ranked_hospital_carries_its_reasons(parent):
@@ -182,7 +193,9 @@ def test_ranking_is_deterministic(parent):
 
 
 def test_haversine_matches_a_known_short_distance():
-    # Sacred Heart to Idhayalaya, both in Thoothukudi — roughly 1.4 km apart.
+    # Two fixed points about 1.4 km apart. Deliberately not tied to any
+    # hospital's coordinates: this tests the arithmetic, and should not break
+    # when the knowledge base is re-verified against a mapping provider.
     km = haversine_km(8.7833, 78.1345, 8.7712, 78.1401)
     assert 1.0 < km < 2.0
 
@@ -199,3 +212,25 @@ def test_specialty_requirement_beats_a_merely_listed_service():
     with_unit = [s for s in ranked if s.hospital.cardiac_icu]
     without_unit = [s for s in ranked if not s.hospital.cardiac_icu]
     assert min(s.capability_score for s in with_unit) > max(s.capability_score for s in without_unit)
+
+
+def test_hospital_locations_carry_their_source(parent):
+    """A coordinate nobody can trace is a coordinate nobody should trust. The
+    seeded values were out by up to five kilometres, which changed which
+    hospital was nearest and therefore what the routing explanation said."""
+    for h in load_hospitals():
+        assert h.location_source == "google_places", f"{h.name} has unverified coordinates"
+        assert h.place_id, f"{h.name} has no place id to re-check against"
+        assert h.location_verified_on
+
+
+def test_empanelment_is_still_marked_as_seeded():
+    """Google can confirm a hospital exists and where. It cannot say who it
+    bills. That distinction is why the caveat was narrowed, not dropped."""
+    import inspect
+
+    from anbu_care import schemas
+
+    source = inspect.getsource(schemas.Hospital)
+    assert "snapshot" in source
+    assert "cannot verify" in source

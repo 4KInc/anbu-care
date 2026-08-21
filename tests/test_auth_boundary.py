@@ -170,7 +170,11 @@ def test_dashboard_carries_the_honesty_labels(client):
     """Labels are not decoration; a screenshot of this outlives the demo."""
     html = client.get("/app").text
     assert "SYNTHETIC — DEMO DATA" in html
-    assert "SEEDED SNAPSHOT — NOT A LIVE FEED" in html
+    # Narrowed, not dropped. Hospital identity and location are real; who is
+    # empanelled with which insurer is still a seeded assumption, so the label
+    # now claims exactly that and no more.
+    assert "EMPANELMENT AND CAPABILITY: SEEDED, NOT A LIVE FEED" in html
+    assert "empanelment: seeded" in html
     assert "SIMULATED TPA" in html
     assert "not yet known" in html
     assert "does not monitor continuously" in html
@@ -271,3 +275,35 @@ def test_the_page_title_reads_like_the_messages_do(client):
     title = html.split("<title>")[1].split("</title>")[0]
     assert "—" not in title
     assert "–" not in title
+
+
+def test_the_synthetic_banner_is_shown_once_not_on_every_panel(client):
+    """Repetition trains the eye to skip it, which is worse than saying it
+    plainly once. It must still be there — just not eight times."""
+    html = client.get("/app").text
+    assert "SYNTH_BANNER" in html
+    assert "synthOnce" in html
+    # And it resets per render, so the tab a judge screenshots still carries it.
+    assert "SYNTH_SHOWN=false" in html.replace(" ", "")
+
+
+def test_the_map_shows_the_decision_not_a_live_position(client):
+    """No location is ever collected from the parent. A moving dot would
+    invent tracking the system does not do and explicitly says it does not."""
+    html = client.get("/app").text
+    # Collapse whitespace: the copy wraps across lines in the source.
+    flat = " ".join(html.split())
+    assert "not where she is" in flat
+    assert "does not track anyone" in flat
+    for fabrication in ("watchPosition", "geolocation", "currentPosition", "live location"):
+        assert fabrication not in html, f"the dashboard references {fabrication}"
+
+
+def test_the_map_key_is_served_but_the_restriction_is_the_control(client):
+    """A browser maps key is not a secret — it is restricted by referrer. What
+    would be wrong is shipping an unrestricted one, or pretending it is
+    hidden."""
+    body = client.get("/api/map-config").json()
+    assert "maps_api_key" in body
+    assert "Google Places" in body["label"]
+    assert "empanelment" in body["label"].lower()

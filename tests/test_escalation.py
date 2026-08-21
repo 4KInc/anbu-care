@@ -11,6 +11,8 @@ load bearing and assert that it cannot become so.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from anbu_care.schemas import Severity
@@ -536,7 +538,9 @@ def test_the_fallback_keeps_everything_that_was_never_the_problem(monkeypatch):
     )
     body = sent[0][1]
     assert "Sacred Heart Hospital" in body
-    assert "2.2 km" in body
+    # A distance, not a specific one. The hospital coordinates are verified
+    # against Google Places and will move again if they are re-verified.
+    assert re.search(r"\d+\.\d+ km away", body), "the alert lost the distance"
     assert "cashless" in body.lower()
     assert "Call her now" in body
     assert "108" in body

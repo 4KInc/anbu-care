@@ -65,6 +65,52 @@ def _hospital_name(triage: Receipt | None) -> tuple[str | None, FactSource]:
     return None, _unknown("triage ran but recorded no recommended hospital")
 
 
+def _what_is_already_known(profile: ParentProfile | None, triage: Receipt | None) -> list[ArrivalFact]:
+    """Cover, distance and who is nearby — known long before any claim exists."""
+    out: list[ArrivalFact] = []
+
+    policy = getattr(profile, "policy", None) if profile else None
+    if policy is not None:
+        out.append(_fact(
+            "Insurance", f"{policy.insurer}, policy {policy.policy_number}",
+            FactSource(kind="profile", field="policy"),
+        ))
+        out.append(_fact(
+            "Cover available", f"INR {policy.sum_insured_inr:,}",
+            FactSource(kind="profile", field="sum_insured_inr"),
+        ))
+        out.append(_fact(
+            "Cashless",
+            ("Available at network hospitals" if policy.cashless_eligible
+             else "Not available; this admission is reimbursement only"),
+            FactSource(kind="profile", field="cashless_eligible"),
+        ))
+    else:
+        out.append(_unknown_fact("Insurance", "no policy is recorded for this parent"))
+
+    if triage is not None:
+        recommended = triage.payload.get("recommended_hospital_id")
+        for entry in triage.payload.get("ranked") or []:
+            if entry.get("hospital_id") == recommended:
+                out.append(_fact(
+                    "Distance", f"{entry.get('distance_km', 0):.1f} km from home",
+                    _from_receipt(triage, "ranked"),
+                ))
+                out.append(_fact(
+                    "In her insurer's network",
+                    "Yes" if entry.get("network_match") else "No",
+                    _from_receipt(triage, "ranked"),
+                ))
+                break
+
+    if profile is not None and profile.family_contacts:
+        names = ", ".join(c.name for c in profile.family_contacts)
+        out.append(_fact("People who can be notified", names,
+                         FactSource(kind="profile", field="family_contacts")))
+
+    return out
+
+
 def _latest_check_in(parent_id: str) -> ArrivalFact:
     """The most recent wellbeing check-in, quoted verbatim.
 
@@ -136,6 +182,12 @@ def compose_brief(case_id: str) -> ArrivalBrief:
         _fact("Why that hospital", triage.payload.get("explanation") if triage else None,
               _from_receipt(triage, "explanation") if triage else _unknown("triage has not run yet"))
     )
+
+    # Facts the system already holds and was simply not showing. Every
+    # "not yet known" that could have been answered is a worse unknown than
+    # one that genuinely cannot be: it makes the record look emptier than it
+    # is, and a family reading it cannot tell which is which.
+    brief.facts.extend(_what_is_already_known(profile, triage))
 
     # Admission and discharge dates come from the claim packet, which is the only
     # place they are recorded as structured fields.

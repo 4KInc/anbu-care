@@ -225,10 +225,21 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
             record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null,
+            hospitals:null,
             notified:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-const SYNTH = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
+// Shown once, on the first screen a person lands on. Repeating it on every
+// tab trains the eye to skip it, which is worse than saying it plainly once.
+const SYNTH_BANNER = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
+let SYNTH_SHOWN = false;
+function synthOnce(){
+  if(SYNTH_SHOWN) return "";
+  SYNTH_SHOWN = true;
+  return SYNTH_BANNER;
+}
+// Every view still calls for it; only the first one to render gets it.
+const SYNTH = "";
 const title = (h, p) => `<div class="title"><h1>${esc(h)}</h1><p>${esc(p)}</p></div>`;
 
 async function api(path, {auth=false} = {}) {
@@ -307,7 +318,7 @@ function vNow(){
   if(S.trail.__denied) return denied(S.trail.detail,"The case timeline");
   const t=last("triage.decision"), sig=last("intake.signal_received");
   const sev=t?t.payload.severity:null;
-  return `${SYNTH}
+  return `${synthOnce()}
   ${title("What is happening now","Every entry below is a signed receipt you can verify yourself.")}
   <div class="card hero ${sev==="HIGH"?"edge-red":"edge-teal"}">
     <div class="lbl">Severity assessed</div>
@@ -316,7 +327,7 @@ function vNow(){
        <div class="hosp">${esc(hospitalName(t))}</div>
        <div class="pills">
          <span class="pill p-teal">${(t.payload.ranked||[]).find(h=>h.hospital_id===t.payload.recommended_hospital_id)?.distance_km ?? "—"} km · cashless network</span>
-         <span class="pill p-slate">seeded snapshot</span>
+         <span class="pill p-slate">empanelment: seeded</span>
        </div>`
       :`<div class="sev ok"><b>—</b></div><div class="why">${unknown("triage has not run on this case")}</div>`}
   </div>
@@ -401,7 +412,7 @@ function vBrief(){
 
   const f=x=>row(x.label, x.known?esc(human(x.value)):unknown(x.source?.note),
                  (x.value||"").length>60 ? "stack" : "");
-  return `${SYNTH}
+  return `${synthOnce()}
   ${title("Arrival brief","What is waiting when you land, and what is not yet known.")}
   <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
     A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
@@ -428,14 +439,22 @@ function vRouting(){
   if(!S.trail) return vOpen();
   if(S.trail.__denied) return denied(S.trail.detail,"The routing decision");
   const t=last("triage.decision");
-  if(!t) return `${SYNTH}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
+  if(!t) return `${synthOnce()}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
   const p=t.payload;
-  return `${SYNTH}
+  return `${synthOnce()}
   ${title("Routing rationale","Why this hospital, and what was traded to get there.")}
   <div class="card edge-teal">
     <h2>Why this hospital</h2>
     <p style="font-size:15px;line-height:1.6">${esc(p.explanation)}</p>
-    <div class="pills" style="margin-top:12px"><span class="pill p-amber">SEEDED SNAPSHOT — NOT A LIVE FEED</span></div>
+    <div class="pills" style="margin-top:12px"><span class="pill p-amber">EMPANELMENT AND CAPABILITY: SEEDED, NOT A LIVE FEED</span></div>
+  </div>
+  <div class="card">
+    <h2>Where these hospitals are</h2>
+    <div id="map" style="height:340px;border-radius:12px;background:#eef1f4"></div>
+    <p class="mute" style="margin-top:10px">
+      Locations verified against Google Places. This shows where she is being
+      directed, not where she is: Anbu Care has no location from her and does
+      not track anyone.</p>
   </div>
   <div class="card"><h2>How each option scored</h2>
     ${(p.ranked||[]).map(h=>`<div class="row">
@@ -455,7 +474,7 @@ function vRecord(){
   if(S.record?.__denied) return denied(S.record.detail,"The health record");
   if(!S.record) return `<div class="card"><p class="mute">Reading the record…</p></div>`;
   const docs=S.record.documents||[], pr=S.record.profile||{};
-  return `${SYNTH}
+  return `${synthOnce()}
   ${title("Health record","Parsed from uploaded documents. New readings are compared with the baseline.")}
   <span class="lock">🔒 Credentialed access</span>
   <div class="strip note">This is the clinical view. It is the reason the WhatsApp gate can refuse to
@@ -504,10 +523,10 @@ function vClaim(){
   if(!S.trail) return vOpen();
   if(S.trail.__denied) return denied(S.trail.detail,"The claim status");
   const adjs=kinds("claim.adjudicated"), sub=last("claim.submitted");
-  if(!adjs.length && !sub) return `${SYNTH}<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`;
+  if(!adjs.length && !sub) return `${synthOnce()}<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`;
   const a=adjs.length?adjs[adjs.length-1].payload:null;
   const priced=a && ["PASS","PARTIAL"].includes(a.outcome);
-  return `${SYNTH}
+  return `${synthOnce()}
   ${title("Claim status","What the insurer allowed, what it did not, and why.")}
   <div class="pills" style="margin-bottom:12px"><span class="pill p-violet">SIMULATED TPA</span></div>
   <div class="strip note">No production insurer API is integrated. The packet, the policy arithmetic,
@@ -582,7 +601,7 @@ function vblock(v){
 }
 
 function vOpen(){
-  return `${SYNTH}
+  return `${synthOnce()}
   <div class="card">
     <h2>Open a case</h2>
     <p class="mute">Every screen is bound to the live API. Seed a synthetic episode, or paste a case id.</p>
@@ -643,7 +662,76 @@ document.addEventListener("keydown",e=>{
 // A family member arrives from a WhatsApp alert, on a phone, at 2am. The link
 // names the case; landing them on an empty page and asking them to paste an id
 // would be the product failing at the only moment it matters.
-function caseFromLink(){
+// A real map of the routing decision. Deliberately NOT a live position: no
+// location is ever collected from the parent, and drawing a moving dot would
+// invent tracking this system does not do and says it does not do.
+let MAP_LOADED = false;
+
+async function drawMap(){
+  const el = document.getElementById("map");
+  if(!el || !S.trail) return;
+  const t = last("triage.decision");
+  if(!t) return;
+
+  const cfg = await api("/api/map-config");
+  if(!cfg?.maps_api_key){
+    el.innerHTML = `<p class="mute" style="padding:16px">${unknown("no maps key is configured")}</p>`;
+    return;
+  }
+
+  if(!MAP_LOADED){
+    await new Promise((ok, fail) => {
+      const sc = document.createElement("script");
+      sc.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(cfg.maps_api_key)}`;
+      sc.onload = ok; sc.onerror = fail;
+      document.head.appendChild(sc);
+    }).catch(()=>{});
+    MAP_LOADED = !!(window.google && window.google.maps);
+  }
+  if(!window.google || !window.google.maps){
+    el.innerHTML = `<p class="mute" style="padding:16px">${unknown("the map could not be loaded")}</p>`;
+    return;
+  }
+
+  const ranked = t.payload.ranked || [];
+  const chosen = t.payload.recommended_hospital_id;
+  const home = t.payload.report || {};
+  const map = new google.maps.Map(el, {
+    center: {lat: home.lat ?? ranked[0]?.lat ?? 8.7642, lng: home.lon ?? 78.14},
+    zoom: 12, mapTypeControl:false, streetViewControl:false, fullscreenControl:false,
+  });
+  const bounds = new google.maps.LatLngBounds();
+
+  if(home.lat && home.lon){
+    const at = {lat: home.lat, lng: home.lon};
+    new google.maps.Marker({map, position: at, title: "Where she was when she messaged",
+      label: {text:"H", color:"#fff"},
+      icon:{path:google.maps.SymbolPath.CIRCLE, scale:12, fillColor:"#1f6f5c",
+            fillOpacity:1, strokeColor:"#fff", strokeWeight:2}});
+    bounds.extend(at);
+  }
+
+  (S.hospitals || []).forEach(h => {
+    const scored = ranked.find(r => r.hospital_id === h.hospital_id);
+    const isChosen = h.hospital_id === chosen;
+    const at = {lat: h.lat, lng: h.lon};
+    new google.maps.Marker({map, position: at, title: h.name,
+      icon:{path:google.maps.SymbolPath.CIRCLE, scale: isChosen ? 11 : 7,
+            fillColor: isChosen ? "#b3261e" : "#94a3b8", fillOpacity:1,
+            strokeColor:"#fff", strokeWeight:2}});
+    const info = new google.maps.InfoWindow({content:
+      `<div style="font:13px system-ui"><b>${esc(h.name)}</b><br>` +
+      (scored ? `${scored.distance_km?.toFixed(1)} km · ` +
+                `${scored.network_match ? "in network" : "not in network"}` : "") +
+      (isChosen ? "<br><b>chosen</b>" : "") + "</div>"});
+    info.open(map, new google.maps.Marker({map, position: at, visible:false}));
+    bounds.extend(at);
+  });
+
+  if(!bounds.isEmpty()) map.fitBounds(bounds, 60);
+}
+
+function caseFromLink(){function caseFromLink(){
   try { return new URLSearchParams(location.search).get("case"); }
   catch { return null; }
 }
@@ -654,6 +742,7 @@ function tokenFromLink(){
 }
 
 async function load(){
+  if(!S.hospitals) S.hospitals = (await api("/api/hospitals"))?.hospitals || [];
   if(S.caseId){
     S.trail=await api(`/api/cases/${S.caseId}/trail`,{auth:true});
     S.brief=await api(`/api/cases/${S.caseId}/brief`,{auth:true});
@@ -677,9 +766,10 @@ function render(){
     : "snapshot";
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===S.view));
   window.scrollTo(0,0);
+  if(S.view === "routing") drawMap();
 }
 document.querySelectorAll("nav button").forEach(b=>
-  b.addEventListener("click",()=>{S.view=b.dataset.v; render();}));
+  b.addEventListener("click",()=>{S.view=b.dataset.v; SYNTH_SHOWN=false; render();}));
 
 // Open the case the link names, and show it in the box so it is obvious which
 // episode is on screen rather than appearing by magic.

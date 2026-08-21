@@ -121,6 +121,21 @@ def healthz() -> dict[str, Any]:
     }
 
 
+@app.get("/api/map-config")
+def map_config() -> dict[str, Any]:
+    """What the dashboard needs to draw a real map.
+
+    The key is referrer-restricted to this service, so publishing it here is
+    how a browser key is meant to work — it is not a secret, the restriction
+    is the control. Absent, the map degrades to a list rather than breaking.
+    """
+    return {
+        "maps_api_key": os.getenv("ANBU_MAPS_API_KEY", ""),
+        "label": ("Hospital identity and location verified against Google Places. "
+                  "Insurer empanelment and capability remain seeded."),
+    }
+
+
 @app.get("/api/hospitals")
 def hospitals() -> dict[str, Any]:
     """The seeded knowledge base, served with its provenance attached."""
