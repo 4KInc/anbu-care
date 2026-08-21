@@ -146,7 +146,8 @@ def assess(text: str, chronic_conditions: list[str] | None = None) -> Escalation
     )
 
 
-def reply_text(escalation: Escalation, alerted: list[str]) -> str:
+def reply_text(escalation: Escalation, alerted: list[str],
+               called: list[str] | None = None) -> str:
     """What to say back, promising only what actually happened.
 
     The "we have alerted" sentence appears only when a notification was really
@@ -161,8 +162,13 @@ def reply_text(escalation: Escalation, alerted: list[str]) -> str:
         f"This sounds urgent. If it is an emergency, call {EMERGENCY_NUMBER} now.",
     ]
     if alerted:
-        lines.append("We have alerted " + " and ".join(alerted) + ".")
-    else:
+        lines.append("We have messaged " + " and ".join(alerted) + ".")
+    if called:
+        # "Calling", not "spoke to". Twilio returns queued; whether the phone
+        # was answered is not known yet, and saying otherwise could stop
+        # somebody making the call themselves.
+        lines.append("We are also calling " + " and ".join(called) + " now.")
+    if not alerted and not called:
         lines.append(
             "We could not reach anyone in your care circle, so please call someone yourself."
         )

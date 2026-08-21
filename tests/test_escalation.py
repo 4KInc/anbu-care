@@ -117,10 +117,11 @@ def test_the_reply_claims_an_alert_only_when_one_was_delivered(model):
     verdict = esc.assess("crushing chest pain, can't breathe")
 
     reached = esc.reply_text(verdict, alerted=["Meena", "Ravi"])
-    assert "We have alerted Meena and Ravi." in reached
+    assert "We have messaged Meena and Ravi." in reached
 
     nobody = esc.reply_text(verdict, alerted=[])
-    assert "alerted" not in nobody.replace("could not reach", "")
+    assert "messaged" not in nobody
+    assert "calling" not in nobody
     assert "call someone yourself" in nobody
     assert "108" in nobody
 
@@ -584,3 +585,112 @@ def test_the_model_earns_its_place_on_wording_the_table_misses(model):
 
     model(["chest pain", "shortness of breath"])   # with normalisation
     assert esc.assess(said).escalate is True
+
+
+# ---- ringing a phone, and saying only that ------------------------------
+
+
+def test_the_reply_says_calling_not_answered(model):
+    """Twilio returns "queued". Whether anyone picked up is not known here, and
+    "we spoke to Karthik" could stop a family member calling themselves."""
+    model([])
+    verdict = esc.assess("crushing chest pain, can't breathe")
+    reply = esc.reply_text(verdict, alerted=["Karthik"], called=["Karthik"])
+
+    assert "We are also calling Karthik now." in reply
+    for overclaim in ("answered", "spoke to", "picked up", "is on the way", "reached"):
+        assert overclaim not in reply.lower()
+
+
+def test_voice_is_off_unless_configured():
+    """A call costs money and rings a real person at an hour they did not
+    choose. An unconfigured deployment must not be able to make one."""
+    from anbu_care.comms import voice
+
+    result = voice.place_call("+919000000101", "test", mode="off")
+    assert result.placed is False
+    assert "no call was placed" in result.detail
+
+
+def test_voice_without_a_caller_id_refuses_rather_than_failing_obscurely(monkeypatch):
+    """The WhatsApp sandbox cannot place calls; voice needs a purchased number.
+    Say that, rather than returning a bare provider error."""
+    from anbu_care.comms import voice
+
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+    monkeypatch.delenv("TWILIO_VOICE_FROM", raising=False)
+    monkeypatch.delenv("TWILIO_API_KEY_SID", raising=False)
+
+    result = voice.place_call("+919000000101", "test", mode="twilio")
+    assert result.placed is False
+    assert "purchased Twilio number" in result.detail
+
+
+def test_a_refused_call_is_never_reported_as_placed(monkeypatch):
+    from anbu_care.comms import voice
+
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("TWILIO_VOICE_FROM", "+15550001111")
+    monkeypatch.delenv("TWILIO_API_KEY_SID", raising=False)
+
+    class Resp:
+        status_code, ok, text = 400, False, '{"message":"unverified number"}'
+
+        def json(self):
+            return {"message": "unverified number"}
+
+    import requests
+
+    monkeypatch.setattr(requests, "post", lambda *a, **k: Resp())
+    result = voice.place_call("+919000000101", "test", mode="twilio")
+    assert result.placed is False
+    assert "nothing was placed" in result.detail
+
+
+def test_the_spoken_line_says_it_did_not_call_an_ambulance(monkeypatch):
+    """The same refusal that is in the message, said out loud."""
+    from anbu_care.comms import voice
+
+    captured = {}
+
+    class Resp:
+        status_code, ok = 201, True
+
+        def json(self):
+            return {"sid": "CA1", "status": "queued"}
+
+    import requests
+
+    def fake_post(url, **kw):
+        captured.update(kw.get("data", {}))
+        return Resp()
+
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("TWILIO_VOICE_FROM", "+15550001111")
+    monkeypatch.delenv("TWILIO_API_KEY_SID", raising=False)
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    spoken = ("This is Anbu Care. Rajeswari has sent an urgent message and may need help now. "
+              "Please call her. Anbu Care has not called an ambulance and cannot.")
+    result = voice.place_call("+919000000101", spoken, mode="twilio")
+
+    assert result.placed is True
+    assert result.provider_status == "queued"
+    assert "has not called an ambulance" in captured["Twiml"]
+    # Said twice: someone woken at 2am misses the first sentence.
+    assert captured["Twiml"].count("<Say") == 2
+
+
+def test_the_spoken_line_carries_no_symptoms(monkeypatch):
+    """Voice is a channel like any other. A second, ungated route "because it
+    is only a phone call" is how a diagnosis eventually escapes."""
+    import inspect
+
+    from anbu_care.wellbeing import handler
+
+    source = inspect.getsource(handler._ring_them)
+    assert "classify_message" in source, "the spoken line is not gated"
+    assert "entry.text" not in source, "her words are read out over the phone"

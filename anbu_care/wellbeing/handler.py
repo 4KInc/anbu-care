@@ -34,6 +34,7 @@ class Handled:
     case_id: str | None = None
     alerted: list[str] = field(default_factory=list)
     not_alerted: list[str] = field(default_factory=list)
+    called: list[str] = field(default_factory=list)
 
 
 def handle(entry: WellbeingEntry, parent_id: str) -> Handled:
@@ -60,12 +61,19 @@ def handle(entry: WellbeingEntry, parent_id: str) -> Handled:
     alerted = _unique(family_alerted + circle_alerted)
     not_alerted = [n for n in _unique(family_failed + circle_failed) if n not in alerted]
 
+    # A message arriving while someone sleeps is a message that did not happen.
+    # The call goes out WITH it, not after a timer: Cloud Run cannot hold one
+    # reliably, and for crushing chest pain a two minute wait is the wrong
+    # behaviour regardless.
+    called = _ring_them(case_id, parent_id)
+
     return Handled(
-        reply=esc.reply_text(verdict, alerted),
+        reply=esc.reply_text(verdict, alerted, called=called),
         escalated=True,
         case_id=case_id,
         alerted=alerted,
         not_alerted=not_alerted,
+        called=called,
     )
 
 
@@ -115,6 +123,59 @@ def _open_and_triage(entry: WellbeingEntry, parent_id: str, verdict: esc.Escalat
         case_id=case.case_id,
     )
     return case.case_id
+
+
+def _ring_them(case_id: str, parent_id: str) -> list[str]:
+    """Ring the family first, then the neighbour. Report who was actually dialled.
+
+    The ladder is ordered by who can do most: the family decision maker holds
+    the dashboard and the insurer relationship, the neighbour can be at the
+    door in four minutes. Both are called, because at 2am the question is not
+    who is best placed but who picks up.
+
+    Spoken content goes through the same content gate as everything else. A
+    second, ungated route "because it is only a phone call" is how a diagnosis
+    eventually escapes.
+    """
+    from anbu_care.comms import consent, voice
+    from anbu_care.comms.policy import classify_message, consent_ok
+    from anbu_care.schemas import MessageClass
+
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return []
+
+    first = profile.name.split()[0] if profile.name else "your parent"
+    spoken = (
+        f"This is Anbu Care. {first} has sent an urgent message and may need help now. "
+        "Please call her. Anbu Care has not called an ambulance and cannot."
+    )
+
+    actual, hits = classify_message(spoken, MessageClass.LOGISTICS)
+    if actual is MessageClass.CLINICAL:
+        logger.warning("spoken alert blocked as clinical (%s); no call placed", hits)
+        return []
+
+    called: list[str] = []
+    for contact in profile.family_contacts:
+        may_call = (consent_ok(contact.consents, consent.ADMISSION_ALERTS)
+                    or consent_ok(contact.consents, consent.OUTBOUND_NOTIFY))
+        if not may_call:
+            continue
+
+        result = voice.place_call(contact.whatsapp_e164, spoken)
+        service.append_receipt(
+            case_id,
+            kind="voice.placed" if result.placed else "voice.not_placed",
+            actor="wellbeing_intake",
+            payload={"contact_name": contact.name, **result.as_dict(),
+                     "spoken": spoken,
+                     "note": ("A placed call is not an answered call. Whether anyone "
+                              "picked up is not known here.")},
+        )
+        if result.placed:
+            called.append(contact.name)
+    return called
 
 
 def _unique(names: list[str]) -> list[str]:
