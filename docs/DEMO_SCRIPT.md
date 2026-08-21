@@ -1,335 +1,352 @@
-# Demo script — ~4 minutes, unedited
+# Demo script — ~5 minutes, unedited
 
-One take, one terminal, one browser tab. Every beat below is produced by
-`./scripts/demo_run.sh`, which is idempotent: it seeds fresh synthetic cases each
-run and never mutates a chain from a previous run.
+One take. A phone on camera, one terminal, one browser tab.
 
 **Live URL:** https://anbu-care-37j4eofpwq-el.a.run.app
 
+The arc changed with W1/W2. It used to open with a simulated intake signal
+arriving from outside. It now opens with **a seventy-one year old sending a
+voice note in Tamil at 2am**, because that is the actual product and the
+machinery underneath is more convincing once you have seen why it matters.
+
 ---
 
-## Pre-flight — run this on the actual recording machine
+## The one thing to say early, or a judge will spot it
 
-Do the whole thing as a human dry-run, not a skim. Every bug that has bitten this
-project late was found by someone actually clicking, not by a test.
+The demo handset is registered as **Karthik, the son**. So when you send a
+message, you are playing the mother, and the alerts come back to the same
+thread. Say it out loud once:
 
-### 1. Credentials (they expire fast on this org)
+> "One phone is doing two jobs here — she sends, and the family contact
+> receives. In production those are different handsets."
+
+Trying to hide it looks worse than naming it, and the single thread actually
+lets a viewer see the whole loop without cutting away.
+
+---
+
+## Pre-flight — on the actual recording machine
+
+Every bug that bit this project late was found by someone clicking, not by a
+test. Do this as a dry run, not a skim.
+
+### 1. Credentials (this org expires them fast)
 
 ```bash
 gcloud auth login
 gcloud auth application-default login
-make verify-stack          # all five checks must be green
+make verify-stack
 ```
 
-`.env` pins `GOOGLE_CLOUD_QUOTA_PROJECT`, so an ADC re-login resetting the quota
-project to your personal default no longer breaks anything. Verify anyway.
+- [ ] **Signing key reports stable, not ephemeral.** An ephemeral key makes the
+      whole verify beat meaningless.
+- [ ] **Re-run `gcloud auth application-default login` immediately before you
+      record.** Beat 3 reads Firestore live, mid-take. This org expires ADC
+      aggressively and it has died between one command and the next during this
+      build — a stack trace on camera is the worst possible way to find out.
 
-- [ ] `verify-stack` green, and **signing key reports stable** — an ephemeral key
-      makes the whole verify beat meaningless.
-
-### 2. The service is up and public
+### 2. Service up, both auth proofs
 
 ```bash
 URL=https://anbu-care-37j4eofpwq-el.a.run.app
-curl -s $URL/api/healthz                     # 200, model gemini-3.5-flash
-curl -s -o /dev/null -w '%{http_code}\n' $URL/app   # 200
+curl -s $URL/api/healthz
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/parents/whatever          # 401
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/whatever/verify     # 200
 ```
 
-- [ ] Liveness is **`/api/healthz`**. The bare `/healthz` is reserved by Google
-      Front End and 404s in Cloud Run — **do not put it on camera.**
+- [ ] Liveness is **`/api/healthz`**. Bare `/healthz` is reserved by Google
+      Front End and 404s — **do not put it on camera.**
+- [ ] 401 and 200. If either is wrong, **stop.**
 
-### 3. Both auth proofs, from the terminal you will actually use
+### 3. WhatsApp is actually live
+
+This is the beat that cannot be faked, so prove it before you roll.
+
+- [ ] Twilio sandbox webhook points at
+      `$URL/api/wellbeing/inbound`, method POST
+      (Console → Messaging → Try it out → Send a WhatsApp message → Sandbox settings)
+- [ ] Re-send **`join school-rate`** to **+1 415 523 8886** from the handset.
+      The sandbox session expires after 3 days and the 24-hour freeform window
+      has to be open. Do this even if you joined yesterday.
+- [ ] Send one throwaway `slept well` and confirm you get
+      **"Thanks, that's noted."** back. If you get a Twilio demo echo instead,
+      the webhook URL did not save.
+
+### 4. Fresh state
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' $URL/api/parents/whatever    # expect 401
-curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/whatever/verify # expect 200
+curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
 ```
 
-- [ ] 401 and 200. If either is wrong, **stop** — beat 8 is the phase's centrepiece.
-
-### 4. Fresh state, seeded before you record
-
-```bash
-./scripts/demo_run.sh --reset      # clear anything a previous run left
-./scripts/demo_run.sh              # full 8 beats; must exit 0
-```
-
-- [ ] Exit code 0 and all eight beats printed.
-- [ ] **Do NOT run `--reset` again before or during the take.** It deletes the
-      cases a judge might verify from the video afterwards.
-- [ ] Note the two case ids it prints at the end — the valid one and the tampered
-      one. Read them out or show them; they stay live-verifiable.
-- [ ] The canonical case already staged for this take is **case-da1c2cb6db** (tampered
-      twin **case-a7cf9fa613**). The screenshots in docs/design/mobile and the curls in
-      docs/takes/backup-take-spine.txt all use that same id. If you re-seed,
-      update those three together or they will disagree on camera.
-- [ ] On the Claim tab, the line between QUERY and PARTIAL should read
-      "discharge summary added to the record at HH:MM, then resubmitted as
-      attempt 2". That is what stops Record and Claim looking contradictory.
-- [ ] On the Record tab, only **HbA1c** should read "new and abnormal". The
-      other analytes moved inside the 10% band and read as variation.
+- [ ] The canonical judge-facing pair is **case-da1c2cb6db** (valid, 8 receipts)
+      and **case-a7cf9fa613** (tampered, `broken_at_seq: 1`). Both stay live
+      after the recording so anyone can re-verify from the video. Do not delete
+      them.
 
 ### 5. Walk the dashboard by hand
 
-Open `$URL/app` in the browser you will record, at the window size you will
-record.
+Open `$URL/app` at the window size you will record.
 
-- [ ] "Seed a synthetic episode" works.
 - [ ] Before signing in, a content tab shows **401 THE CASE TRAIL IS CREDENTIALED**.
-- [ ] Sign in; Now / Arrival / Routing / Record / Claim / Audit all render.
-- [ ] **Scroll a long tab (Record) and confirm the nav is still reachable** — a
+- [ ] Sign in with `anbu-demo-family-token`; every tab renders.
+- [ ] **Scroll the Record tab and confirm the nav is still reachable** — a
       sticky-positioning bug lived exactly there.
-- [ ] Audit tab → **"Prove the gate"** prints `401 / 200`.
+- [ ] Check-ins panel shows your throwaway message, labelled
+      **SELF-REPORTED — NOT A MEASURED VITAL**.
 - [ ] `SYNTHETIC — DEMO DATA` visible on every clinical view.
-- [ ] Ingest both lab reports if you want the Record tab populated:
-      `uv run python scripts/demo_support.py ingest-doc $URL <parent_id> assets/synthetic/lab_report_mar2026.png`
-      (and `…aug2026.png`) — then confirm LDL reads *consistent with baseline*.
 
 ### 6. Recording hygiene
 
-- [ ] Terminal font large enough that hashes and HTTP codes are legible on playback.
-- [ ] Say **"synthetic"**, **"simulated"** and **"seeded snapshot"** out loud at
-      least once each. The honesty framing is part of the architecture case, not a
-      disclaimer to rush.
-- [ ] Say **"received"**, never "detected", when the intake signal arrives.
-- [ ] Never say STEP_UP "prevents denials" — it is pre-submission enrichment.
-- [ ] Nothing about Gemma or a second model. It is not running.
+- [ ] Say **"synthetic"**, **"simulated"** and **"seeded snapshot"** at least
+      once each. The honesty framing is the architecture case, not a disclaimer.
+- [ ] Say **"received"**, never "detected".
+- [ ] Say **"recognised"** or **"matched"**, never "diagnosed".
+- [ ] Do not claim an ambulance is called, or could be.
+- [ ] Voice calls are **built but switched off** (no Twilio number purchased).
+      If you mention the ladder, say it is off.
 
 ### 7. Backup take
 
-Record a **second pass immediately after the first**, before changing anything.
-
-Beats 3, 5, 7, 8, 9 and 10 are deterministic and identical every run — only the
-beat-6 agent call goes through a model and can phrase things differently or run
-slow. If that beat misbehaves, cut to the backup rather than re-seeding.
-
-`docs/takes/backup-take-spine.txt` is the always-submittable transcript fallback
-if recording fails entirely.
+Record a second pass immediately, before changing anything. Everything except
+the Gemini transcription and extraction is deterministic;
+`docs/takes/backup-take-spine.txt` is the fallback if recording fails outright.
 
 ---
 
 ## Beat sheet
 
-| Time | Beat | Command | Point at |
-|---|---|---|---|
-| 0:00–0:20 | **The question** | — | "If something happens to my parent right now, who makes sure the right decisions get made?" Every incumbent answers with a human coordinator. |
-| 0:20–0:35 | **Onboarding** | `curl -sX POST $URL/api/demo/seed` | A synthetic Thoothukudi parent. Say **"synthetic"**. |
-| 0:35–1:15 | **Multimodal living record** ⭐ | `demo_support.py ingest-doc … mar2026.png` then `…aug2026.png` | LDL unchanged → *consistent with baseline*; HbA1c 7.1→8.4 → *new and abnormal*. Then the **ground-truth stored count**. |
-| 1:15–1:35 | **A signal ARRIVES** | `curl -sX POST $URL/api/intake-signal` | `SIMULATED INTAKE SIGNAL — received from an external channel, not detected by Anbu Care`. Say **received**, never *detected*. |
-| 1:35–2:15 | **HIGH holds vs "just gas"** ⭐ | (same response) | Severity HIGH; 2.2 km Sacred Heart over 0.8 km Idhayalaya, cited on **cashless network**. `SEEDED SNAPSHOT — NOT A LIVE FEED` on screen. |
-| 2:15–2:50 | **WhatsApp boundary** ⭐ | agent `/run`, then `demo_support.py block-receipt` | Agent refuses; then bypass the agent and the **code** blocks it anyway. |
-| 2:50–3:25 | **Claim QUERY → resolved → PARTIAL** ⭐ | `demo_support.py claim-flow $CASE $PARENT` | **₹66,000** told now, not at settlement. Say **SIMULATED**. |
-| 3:25–3:50 | **Public where it proves, private where it reveals** ⭐ | the two curls | `/api/parents/{id}` → **401** · `/api/cases/{id}/verify` → **200**. |
-| 3:50–4:20 | **Tamper** ⭐ | `demo_support.py tamper $THROW` | `verified: false, broken_at_seq: 1`; the judge-facing case stays true. |
-| 4:20–4:30 | **Not process memory** | `demo_support.py reload-verify $CASE` | Fresh OS process, straight from Firestore. |
-| 4:30–4:40 | **Close** | — | What is real, what is simulated. Say both. |
+| Time | Beat | Point at |
+|---|---|---|
+| 0:00–0:20 | **The question** | "If something happens to my mother tonight, who makes sure the right decisions get made?" Every incumbent answers: a human coordinator. |
+| 0:20–1:20 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. |
+| 1:20–2:00 | **What decided that** ⭐ | Gemini translated. A table in code decided. |
+| 2:00–2:40 | **The boundary** ⭐ | Clinical detail refused — and the family still told. |
+| 2:40–3:20 | **The claim** ⭐ | QUERY → resolved → PARTIAL. ₹66,000, told now. |
+| 3:20–3:50 | **Public where it proves, private where it reveals** ⭐ | 401 and 200, same case. |
+| 3:50–4:20 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
+| 4:20–4:50 | **The honest wall** | What it does not do, said out loud. |
+
+**If you must cut:** drop the claim beat (2:40–3:20). It is the strongest
+*business* beat but the weakest *architecture* beat, and the PDF can be shown as
+a still in the writeup.
 
 ---
 
-## The beats that carry the score
+## Beat 2 (0:20–1:20) — she sends a voice note ⭐⭐
 
-### Beat 3 (0:35–1:15) — multimodal into a *living* record
+**On the handset**, record a WhatsApp voice note to the sandbox number saying,
+in Tamil:
 
-Two synthetic lab reports five months apart. Gemini vision extracts every
-analyte with its unit and flag — say out loud that nothing is typed in by hand.
+> மார்பு வலிக்கிறது, மூச்சு விட முடியவில்லை
+> *(maarbu vali, moochu vaanga mudiyala — "my chest hurts, I can't catch my breath")*
 
-The line to land is not "it read the image". It is what the record does with the
-second reading:
+Hold the phone up. Within seconds, three things come back.
 
-```
-LDL Cholesterol=165 : unchanged from a previous reading — consistent with baseline
-HbA1c=8.4           : changed from 7.1 and flagged abnormal — new and abnormal
-```
+**Say, while they arrive:**
 
-Both are flagged "high" on the page. Only one of them is news. That distinction
-is what makes it a health *record* rather than a pile of parsed documents, and
-it is the Best Multimodal UX argument.
+> "She is seventy-one, she is in Thoothukudi, and she cannot breathe. She is not
+> going to type. She holds the button and speaks, in Tamil, because that is what
+> comes first at two in the morning."
 
-**Then point at the ground-truth line:**
+**What lands, and what to point at:**
 
-```
-GROUND TRUTH — documents actually stored for this parent: 2
-reported status 'ingested' vs stored count 2: consistent
-```
+1. **The alert to the family** — read the first four lines aloud:
+   - her voice note, transcribed, *in Tamil script*
+   - **"That is what Anbu Care heard in her voice note. It may be imperfect, so
+     listen to the recording in the dashboard."**
+   - **"Understood as: chest pain, difficulty breathing."**
+   - the timestamp in **both clocks**: "11:58 AM your time, 12:28 AM in Thoothukudi"
 
-That count is read back from the service, not from what the agent said. An
-earlier build had an agent announce "successfully ingested into her health
-record" while storing nothing — this line is what makes such a claim visibly
-false on camera, and it is why the agents are now instructed never to report an
-ingest without a `status: "ingested"` tool result.
+2. **The routing** — Sacred Heart, 2.2 km, *1.4 km further than the nearest
+   hospital*, chosen because it is empanelled with Star Health so the admission
+   stays cashless.
 
+3. **The care-circle notice** — the neighbour is asked to call. **No symptoms.
+   No link into her record.**
 
+**The line to land:**
 
-### Beat 5 (1:35–2:15) — routing that explains itself
+> "Nobody diagnosed anything. It recognised words, applied a rule, and told two
+> people who can act — and it told them different things, on purpose."
 
-The caller says **"she says it's probably just gas."** Severity still returns
-`HIGH`, because the rule that escalates a red flag is Python, not a prompt.
+**Do not say:** "it detected", "it diagnosed", "it knew she was having a heart
+attack".
 
-Then the routing: it recommends **Sacred Heart at 2.2 km over Idhayalaya at
-0.8 km** — and the explanation cites **only the term that actually differed**:
+---
 
-> "The extra distance was accepted because Sacred Heart Hospital is empanelled
-> with Star Health and Idhayalaya Heart Centre is not, so this keeps the
-> admission cashless."
+## Beat 3 (1:20–2:00) — what actually decided that ⭐
 
-**Point at what it does not say.** Capability is tied at 1.00 between those two
-hospitals, and the explanation does not claim a capability edge. An explanation
-that lists a tie as a reason has stopped being an explanation.
-
-Also on screen: `"knowledge_base": "SEEDED SNAPSHOT — NOT A LIVE FEED"`. Say it
-out loud. It is returned on every triage call, not added for the demo.
-
-### Beat 6 (2:15–2:50) — the guardrail is code, not a prompt
-
-Two halves, and the second is the one that matters.
-
-**4a.** Ask the deployed agent to relay `"troponin I is 0.94 ng/mL"` framed as
-"just logistics". The agent calls `check_message_allowed` and refuses.
-
-**4b.** Now bypass the agent entirely and call the send tool directly. It is
-still blocked — the gate classifies the *content*, not the caller's claim about
-it — and the blocked attempt is written to the receipt chain as
-`comms.blocked`.
-
-**4c — the phone.** With `ANBU_WHATSAPP_MODE=meta`, send the *logistics*
-message and let it land on your handset on camera. Hold the phone up: the
-permitted message arrives, and the disguised clinical one from 4b never did.
-Real delivery and the boundary, in the same beat.
-
-Say the acceptance honestly too, if asked whether it "delivered": the API
-confirms Twilio **accepted** the message; handset confirmation arrives over a
-status callback this demo does not run. The receipt says acceptance, not receipt.
-
-Say the reach honestly, once: **"this is Meta's Cloud API test sender — real
-delivery to a verified test number. Reaching any number needs business
-verification and template approval, about ten to fifteen business days."** Do
-not imply production reach.
-
-Pre-flight for this beat, in order, *before* recording:
-1. Confirm the access token is still valid — the generated one expires.
-2. `uv run python scripts/open_window.py <your-number>` sends `hello_world`.
-3. **Reply to it on the handset.** That opens the 24-hour freeform window;
-   without a reply the logistics send will be rejected.
-4. Do one throwaway gated send to confirm the whole path is live.
-
-> Line to say: *"An agent that is merely told not to leak a lab value is not a
-> control. This holds when the model is not the thing enforcing it."*
-
-### Beat 7 (2:50–3:25) — the claim comes back queried, and the query gets resolved
-
-Everything before this is the system *proceeding*. This is the only beat where
-something comes back that the agent has to think about.
-
-```
-[1] SUBMITTED   -> QUERY    (SIMULATED — deterministic local rules, not an insurer)
-    · required document not attached: discharge summary
-    original SLA: 59 min remaining; query response clock started, both now running
-[2] The agent reacts: looking for the queried document on file…
-    found and attached: doc-33f3678e8b (kind=discharge_summary)
-[3] RESUBMITTED -> PARTIAL
-    · cardiac_icu_room: claimed INR 96,000, allowed INR 30,000, disallowed INR 66,000
-      (sub-limit: 2% of sum insured per day = INR 10,000/day x 3 day(s) = INR 30,000)
-
-    DISALLOWED INR 66,000   <- family told now, not at settlement
-```
-
-**Say the arithmetic out loud and invite the check.** Sum insured ₹5,00,000; the
-conventional ICU cap is 2% per day = ₹10,000/day; the stay is 19–22 Aug = 3 days;
-so ₹30,000 of a ₹96,000 ICU bill is payable and **₹66,000 is not**. Nothing is
-seeded to produce that number — it falls out of the convention applied to the
-policy on screen. A judge can do it in their head, and it ties out.
-
-**The product line:** the family hears about ₹66,000 of exposure from their own
-coordinator, now — not from a settlement letter later.
-
-**Say SIMULATED.** The counterparty is not real and the payload says so on every
-line. What *is* real: the packet, the policy arithmetic, the SLA clocks, and the
-receipts.
-
-**One thing to be precise about on camera.** This beat runs at the tool layer so
-every take is identical. The insurer-liaison agent makes exactly these calls
-itself — say "this is the same sequence the agent performs, replayed so the take
-is reproducible", not "watch the agent react". If a judge wants to see the agent
-do it live:
+Terminal. This is where the architecture argument lands.
 
 ```bash
-# coordinator → insurer_liaison → evidence → submit(QUERY)
-#   → onboarding (finds the document) → respond_to_query(PARTIAL) → SLA
-curl -s -X POST $URL/apps/anbu_care/users/demo/sessions -H 'content-type: application/json' -d '{}'
-# then POST /run with the discharge instruction — see scripts/ for the shape
+uv run python - <<'PY'
+from anbu_care import service
+from anbu_care.comms import inbound
+from anbu_care.provenance.store import PARENT_SUBJECT
+s = inbound.resolve_sender("+16692167706")
+chain = service.get_chain(s.parent_id, subject=PARENT_SUBJECT)
+esc = [r for r in chain.receipts if r.kind == "wellbeing.escalated"][-1]
+for k in ("model_terms", "matched_rules", "severity"):
+    print(k, "=", esc.payload[k])
+PY
 ```
 
-Two things worth pointing at if a judge is engaged:
-
-- `./scripts/demo_run.sh --branches` shows **all four outcomes live** — PASS,
-  PARTIAL, QUERY, DENY — not three plus a unit test.
-- The agent will not invent the missing document. If the discharge summary is
-  genuinely not on file, it says the query cannot be resolved. That is the same
-  guarantee as the ingestion ground-truth count, on a different path.
-
-### Beat 8 (3:25–3:50) — public where it proves, private where it reveals
-
-The line that makes the WhatsApp gate credible. If clinical data "lives somewhere
-protected", that place has to actually refuse people.
+Expect:
 
 ```
-/api/parents/{id}        -> HTTP 401   (denied — this is where lab values live)
-/api/cases/{id}/verify   -> HTTP 200   (open by design)
+model_terms  = ['chest pain', 'difficulty breathing']
+matched_rules = ["matched 'chest pain': chest pain — possible acute coronary syndrome", ...]
+severity     = HIGH
 ```
 
-**Say why the second one is open**, because it is the non-obvious half:
-verification proves the record was not altered *without revealing what it says*.
-It returns hashes, a boolean and a failure mode. A receipt chain only means
-something if someone can check it without asking our permission.
+**Say:**
 
-The dashboard has a **"Prove the gate"** button on the Audit tab that runs both
-calls in-page and prints `401 / 200`. Use that if you are on screen rather than in
-a terminal.
+> "Gemini did the translation. It turned Tamil into two English symptom terms.
+> It did not decide anything. The decision came from a table of seventy-six
+> phrases in the source tree, sourced from NHS and ambulance-service guidance,
+> that a clinician could review line by line.
+>
+> The receipt records *which phrase matched which rule* — not a conclusion.
+> That is the difference between a guarantee and a prompt."
 
-If a judge asks about the credential: it is published in the README on purpose.
-Secrecy is not the claim — server-side enforcement is. They can lift the token out
-of the page and removing it still produces a 401.
+**The killer follow-up.** Show that the model cannot quieten anything:
 
-### Beat 9 (3:50–4:20) — tamper
-
-Uses a **separate throwaway case**, so the case you just showed a judge stays
-valid on `/verify` — check both on screen.
-
-The edit rewrites `payload.severity` from `HIGH` to `LOW` and leaves the hash
-and signature untouched, which is what a silent after-the-fact edit looks like.
-The unauthenticated endpoint reports:
-
-```json
-{ "verified": false, "broken_at_seq": 1,
-  "reason": "payload does not hash to the recorded hash — content was altered" }
+```bash
+uv run pytest tests/test_escalation.py -k "junk" -q      # 5 passed
 ```
 
-The verifier distinguishes **four** failure modes, because in a dispute they
-mean different things: sequence gap (a receipt was dropped), `prev_hash`
-mismatch (the chain was re-linked), hash mismatch (a payload was edited),
-signature mismatch (re-signed with another key). This beat shows the third.
+> "Five tests feed the extractor rubbish — empty output, 'patient is fine',
+> even 'ignore previous instructions'. Every one still escalates, because the
+> raw text always reaches the table regardless. The model can only widen what
+> we recognise. It can never suppress a red flag."
 
 ---
 
-## Closing lines (say both)
+## Beat 4 (2:00–2:40) — the boundary ⭐
 
-**Real and demonstrable:** multimodal document parsing, severity classification
-and hospital routing, the WhatsApp compliance boundary, claim packet assembly
-with coverage and sub-limit checks, SLA tracking against the IRDAI 2024 Master
-Circular's 1-hour cashless and 30-day reimbursement clocks, and the signed
-tamper-evident receipt chain.
+Two halves. The refusal, then the thing most people forget.
 
-**Simulated, and labelled everywhere it appears:** the insurer/TPA response
-(no production API exists in this window), the hospital knowledge base (a dated
-seeded snapshot, not a live capability feed), and WhatsApp delivery (sandbox —
-production template approval takes 10–15 business days).
+**Half one — clinical detail does not travel over WhatsApp.**
+
+From the handset, send:
+
+> `stable, troponin I 0.94 ng/mL, ECG shows ST elevation`
+
+Show the dashboard Audit tab: `comms.blocked`, with the reason naming *why* —
+"names a lab or diagnostic result, carries a clinical measurement".
+
+> "The classifier reads the message content, not the caller's claim about it.
+> An agent cannot talk its way past this, because it is not asking an agent."
+
+**Half two — and the family is still told.**
+
+This is the half that makes it a design rather than a wall. The chain shows
+**two** receipts:
+
+```
+comms.blocked   → urgent_family_alert            (quoted version, refused)
+comms.sent      → urgent_family_alert_withheld   (no quote, still delivered)
+```
+
+> "Her son still gets the alert. It says a medical detail was in the message, so
+> it is not repeated here, and here is where to read it. The gate refuses to
+> send something and then says where it lives. If it did not, being more
+> clinically precise would make her harder to help."
+
+---
+
+## Beat 5 (2:40–3:20) — the claim ⭐
+
+```bash
+uv run python scripts/demo_support.py claim-flow $CASE $PARENT
+```
+
+QUERY first — a required document is missing, so nothing is priced. Then the
+document arrives, resubmission, **PARTIAL**.
+
+> "₹66,000 is the shortfall: ICU at 2% of a five-lakh policy per day, over three
+> days. That number is derived from the policy, not typed into a slide. And the
+> family is told **now**, not at settlement — that is the whole point.
+>
+> This is a **simulated** TPA. Deterministic local rules. No insurer is
+> contacted."
+
+If you want the attachment on screen, trigger the notify endpoint and show the
+PDF landing on the phone. Its `sha256` matches the receipt chain — you can
+download it and hash it.
+
+---
+
+## Beat 6 (3:20–3:50) — public where it proves, private where it reveals ⭐
+
+Same case id, two URLs, no credentials:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/case-da1c2cb6db          # 401
+curl -s $URL/api/cases/case-da1c2cb6db/verify                                    # 200
+```
+
+> "Anyone can prove this case has not been altered. Nobody can read it. The
+> verification endpoint proves integrity without revealing content — which is
+> the only reason the DPDP argument holds. If the record were readable by anyone
+> with the URL, refusing to send it over WhatsApp would be theatre."
+
+---
+
+## Beat 7 (3:50–4:20) — tamper ⭐
+
+```bash
+curl -s $URL/api/cases/case-a7cf9fa613/verify
+```
+
+```
+verified: false
+broken_at_seq: 1
+reason: payload does not hash to the recorded hash — content was altered
+```
+
+> "Same endpoint, a case where one payload was edited after the fact. It names
+> the exact link where the chain breaks. And the judge-facing case is still
+> true — go and check it yourself after this video."
+
+---
+
+## Beat 8 (4:20–4:50) — the honest wall
+
+Do not skip this. It is the strongest beat in the demo, because everyone else's
+demo skips it.
+
+> "What this does not do.
+>
+> It does not detect anything. Nothing is sensed, nothing is monitored. Every
+> episode starts because a person sent something.
+>
+> It does not diagnose. It recognises phrases from a reviewable table. That
+> table is public first-aid guidance and it has **not** been reviewed by a
+> clinician — a real deployment needs that done.
+>
+> It does not call an ambulance, and it says so in the message itself. Twilio's
+> emergency calling does not cover India, and a recording cannot answer a
+> dispatcher asking whether she is conscious. So it wakes people who can act,
+> and tells them to ring 108.
+>
+> No hospital is integrated. No doctor is in the loop. The care circle are
+> notified parties, not partners.
+>
+> Every figure on screen is synthetic. The TPA is simulated. And when the
+> transport fails, the record says `not_delivered` — it never claims a message
+> it did not send."
+
+**Close:**
+
+> "The thesis is one line: the guarantees are code, not prompts. The severity
+> table, the content classifier, the hash chain — a model can widen what the
+> system understands, and it never decides what the system promises."
 
 ---
 
 ## After the take
 
-```bash
-./scripts/demo_run.sh --reset     # leaves no half-seeded state
-```
-
-Judges can still reproduce everything themselves from the README quick-start.
+- [ ] Do not delete **case-da1c2cb6db** or **case-a7cf9fa613**.
+- [ ] Revoke the Twilio API key if the demo account is going idle.
+- [ ] The sandbox opt-in expires in 3 days — re-join before any re-shoot.
