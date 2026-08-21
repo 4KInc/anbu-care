@@ -358,7 +358,7 @@ Cloud Run, inject them as secrets rather than plain env vars.
 ANBU_WHATSAPP_MODE=meta
 WHATSAPP_ACCESS_TOKEN=...        # "Generate access token" — temporary, expires
 WHATSAPP_PHONE_NUMBER_ID=...     # the numeric ID, not the phone number
-WHATSAPP_API_VERSION=v23.0
+WHATSAPP_API_VERSION=v25.0
 ```
 
 No conversation window exists until the recipient has written to you, so the

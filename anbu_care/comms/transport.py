@@ -40,8 +40,10 @@ SANDBOX_LABEL = (
 # of these terminal states in the same body.
 TERMINAL_FAILURE = {"failed", "undelivered", "canceled"}
 
-# Meta's current Graph version for the /messages endpoint.
-GRAPH_VERSION = "v23.0"
+# Meta's current Graph version for the /messages endpoint. Taken from the
+# curl sample in the app's own API Setup panel, which is ahead of the
+# get-started docs page (v23.0).
+GRAPH_VERSION = "v25.0"
 
 
 @dataclass(frozen=True)
