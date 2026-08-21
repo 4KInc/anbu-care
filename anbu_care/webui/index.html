@@ -224,7 +224,8 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 <script>
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
-            record:null, verify:null, wellbeing:null, view:"now" };
+            record:null, verify:null, wellbeing:null, careCircle:null,
+            notified:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 const SYNTH = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
@@ -341,6 +342,36 @@ function vBrief(){
   if(S.brief.__denied) return denied(S.brief.detail,"The arrival brief");
   const b=S.brief.brief;
   // Prose gets a stacked row; short facts keep the label/value pairing.
+  // Notified parties, never "providers". Nobody here is integrated with
+  // anything, and the wording must not imply a loop back.
+  function careCircle(){
+    const c = S.careCircle;
+    if(!c || !c.contacts) return "";
+    if(!c.contacts.length){
+      return `<div class="card"><h2>Care circle</h2>
+        <p class="mute">${unknown("nobody has consented to be notified yet")}</p></div>`;
+    }
+    const last = S.notified || {};
+    const state = n => {
+      const r = (last.results||[]).find(x=>x.to_e164===n);
+      if(!r) return `<span class="pill">not notified on this case</span>`;
+      if(!r.consented) return `<span class="pill p-amber">no consent — nothing sent</span>`;
+      if(r.delivered) return `<span class="pill p-green">notified</span>`;
+      return `<span class="pill p-red">not delivered</span>`;
+    };
+    return `<div class="card"><h2>Care circle</h2>
+      <div class="pills" style="margin-bottom:12px">
+        <span class="pill p-amber">NOTIFIED PARTIES — NOT INTEGRATED PROVIDERS</span></div>
+      ${c.contacts.map(x=>`
+        <div class="row">
+          <div class="k">${esc(x.name)} · ${esc(x.relationship)}</div>
+          <div class="v">${state(x.to_e164)}</div>
+        </div>`).join("")}
+      <p class="mute" style="margin-top:12px">
+        Anbu Care notifies these people. It does not integrate with any hospital or
+        clinician, and nobody here can reply into the system.</p></div>`;
+  }
+
   // Check-ins are quoted, never summarised. Paraphrasing a self-report is the
   // first step towards presenting it as an assessment.
   function checkIns(){
@@ -370,6 +401,7 @@ function vBrief(){
     A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
   <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
   ${checkIns()}
+  ${careCircle()}
   <div class="card"><h2>What has been done</h2>
     ${(b.actions_taken||[]).length ? `<div class="tl">
       ${b.actions_taken.map(x=>`<div class="ev on">
@@ -612,6 +644,7 @@ async function load(){
   if(S.parentId && S.token){
     S.record=await api(`/api/parents/${S.parentId}`,{auth:true});
     S.wellbeing=await api(`/api/parents/${S.parentId}/wellbeing`,{auth:true});
+    S.careCircle=await api(`/api/parents/${S.parentId}/care-circle`,{auth:true});
   }
   render();
 }

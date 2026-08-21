@@ -16,11 +16,13 @@ import base64
 import hashlib
 import hmac
 import urllib.parse
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from anbu_care import service
+from anbu_care.comms import consent
 from anbu_care.schemas import WellbeingEntry
 from anbu_care.tools import onboarding_tools
 from anbu_care.webauth import DEMO_TOKEN
@@ -59,7 +61,7 @@ def parent():
     onboarding_tools.record_family_contact(
         parent_id=parent_id, name="Meena", relationship="neighbour",
         whatsapp_e164=CAREGIVER_NUMBER, timezone_name="Asia/Kolkata",
-        is_primary=False, consent_purposes=["status_updates"],
+        is_primary=False, consent_purposes=[consent.INBOUND_WELLBEING],
     )
     return parent_id
 
@@ -361,3 +363,88 @@ def test_the_inbound_endpoint_cannot_reach_triage():
 
     for forbidden in ("run_triage", "triage_tools", "open_case", "severity"):
         assert forbidden not in body, f"the webhook body references {forbidden}"
+
+
+# ---- the conflation that was live, pinned shut ---------------------------
+
+
+def test_a_contact_consented_only_to_receive_updates_cannot_file_reports(client, parent):
+    """The W1 defect, as a test. It would have PASSED before the fix.
+
+    "status_updates" is the purpose for SENDING someone status messages. It was
+    briefly also the purpose checked for accepting wellbeing check-ins, so
+    agreeing to hear about your parent silently made you eligible to file
+    reports about them. Two agreements, opposite directions, one flag.
+
+    Old consents are deliberately not accepted as a fallback: dual-accepting
+    would restore the conflation. A contact holding only the old purpose is
+    refused until re-registered.
+    """
+    profile = service.load_profile(parent)
+    for contact in profile.family_contacts:
+        contact.consents = {"status_updates": contact.consents.get(
+            consent.INBOUND_WELLBEING) or datetime.now(UTC)}
+    service.save_profile(profile)
+
+    response = _signed(client, {"From": f"whatsapp:{CAREGIVER_NUMBER}",
+                                "Body": "she seems brighter today"})
+    assert response.status_code == 204
+    assert wellbeing_store.list_entries(parent) == [], (
+        "a contact holding only the outbound status_updates purpose was allowed "
+        "to write into the parent's record"
+    )
+
+
+def test_the_two_directions_are_different_agreements(parent):
+    """Neither purpose implies the other."""
+    from anbu_care.comms.consent import INBOUND_WELLBEING, OUTBOUND_PURPOSES
+
+    assert INBOUND_WELLBEING not in OUTBOUND_PURPOSES
+    assert "status_updates" != INBOUND_WELLBEING
+
+
+# ---- the URL Twilio signed, not the one this process received ------------
+
+
+def test_the_signed_url_is_rebuilt_from_forwarded_headers():
+    """Behind Cloud Run the request arrives from a proxy over http, while
+    Twilio signed the public https address. Without this the check fails on
+    every legitimate message — closed, which is safe, but useless."""
+    from anbu_care.comms.inbound import public_url
+
+    class FakeURL:
+        scheme, path, query = "http", "/api/wellbeing/inbound", ""
+
+    class FakeRequest:
+        url = FakeURL()
+        headers = {"x-forwarded-proto": "https", "host": "anbu-care.example.app"}
+
+    assert public_url(FakeRequest()) == "https://anbu-care.example.app/api/wellbeing/inbound"
+
+
+def test_a_spoofed_forwarded_header_cannot_redirect_verification():
+    """Scheme and host come from the proxy, the path never does."""
+    from anbu_care.comms.inbound import public_url
+
+    class FakeURL:
+        scheme, path, query = "http", "/api/wellbeing/inbound", ""
+
+    class FakeRequest:
+        url = FakeURL()
+        headers = {"x-forwarded-proto": "https", "host": "evil.example.com",
+                   "x-original-path": "/somewhere/else"}
+
+    assert public_url(FakeRequest()).endswith("/api/wellbeing/inbound")
+
+
+def test_a_proxy_chain_uses_the_first_scheme_and_host():
+    from anbu_care.comms.inbound import public_url
+
+    class FakeURL:
+        scheme, path, query = "http", "/api/wellbeing/inbound", ""
+
+    class FakeRequest:
+        url = FakeURL()
+        headers = {"x-forwarded-proto": "https, http", "host": "front.example, back.internal"}
+
+    assert public_url(FakeRequest()) == "https://front.example/api/wellbeing/inbound"

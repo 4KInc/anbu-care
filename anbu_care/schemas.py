@@ -78,6 +78,11 @@ class FamilyContact(BaseModel):
     whatsapp_e164: str
     timezone: str = "UTC"
     is_primary: bool = False
+    # Display only: "family" or "care_circle". Nothing reads this to decide
+    # whether a message may be sent. Membership of the care circle is the set
+    # of contacts holding outbound_notify consent, so the roster cannot drift
+    # away from what people actually agreed to.
+    role: str = "family"
     # DPDP requires purpose-specific, timestamped consent. A blanket checkbox
     # is not sufficient, so consent is recorded per purpose.
     consents: dict[str, datetime] = Field(default_factory=dict)
@@ -376,6 +381,23 @@ class ArrivalFact(BaseModel):
     value: str | None = None
     known: bool = False
     source: FactSource
+
+
+class NotificationResult(BaseModel):
+    """What happened for ONE care-circle contact.
+
+    Per contact, never aggregated. A fan-out where one number is unreachable
+    is two deliveries and one failure, not "the care circle was notified".
+    """
+
+    contact_name: str
+    to_e164: str
+    role: str = "care_circle"
+    consented: bool = False
+    allowed: bool = False
+    delivered: bool = False
+    reason: str = ""
+    receipt_id: str | None = None
 
 
 class WellbeingEntry(BaseModel):

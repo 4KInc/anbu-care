@@ -79,6 +79,18 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "The itemised breakdown is here: {dashboard_url}",
         "params": ["parent_name", "total", "line_count"],
     },
+    "care_circle_notice": {
+        "message_class": MessageClass.LOGISTICS,
+        # Where, when, and whether the bill is covered. There is no slot for a
+        # reason, a finding or a condition, so the commonest way clinical
+        # detail reaches a template — someone filling a free-text field — does
+        # not exist here.
+        "body": "Anbu Care: {parent_name} has been taken to {hospital_name}, {timestamp}. "
+                "{cashless_status}. "
+                "You are receiving this as a listed contact. No reply is needed, "
+                "and no medical details are shared here.",
+        "params": ["parent_name", "hospital_name", "timestamp", "cashless_status"],
+    },
     "doctor_assigned": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: Dr. {doctor_name} from {department} is now looking after {parent_name} "

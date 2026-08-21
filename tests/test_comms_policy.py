@@ -126,6 +126,7 @@ def test_every_template_renders_and_passes_its_own_gate():
         "status": "admitted", "timestamp": "4:12 PM", "stage": "under review",
         "amount": "358500", "total": "358500", "line_count": "4",
         "doctor_name": "Ravi", "department": "Cardiology",
+        "cashless_status": "Cashless approval is in progress",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -165,11 +166,28 @@ def test_templates_read_like_a_person_wrote_them():
         assert ";" not in body, f"{name} uses a semicolon"
 
 
-def test_every_template_links_to_the_dashboard():
+# The dashboard link goes to the parent's credentialed record. Family get it.
+# A care-circle contact is a notified party, not someone entitled to read the
+# record, so their notice carries no link at all.
+LINKLESS = {"care_circle_notice"}
+
+
+def test_every_family_template_links_to_the_dashboard():
     """The gate refuses to send clinical detail. The least it can do is say
     where that detail lives, in the same message, as something tappable."""
     for name, spec in TEMPLATES.items():
+        if name in LINKLESS:
+            continue
         assert "{dashboard_url}" in str(spec["body"]), f"{name} has no dashboard link"
+
+
+def test_the_care_circle_notice_does_not_link_into_the_record():
+    """A neighbour told where someone was taken has not thereby been granted
+    access to their medical record. Handing them a link to it would be a
+    disclosure the consent never covered."""
+    body = str(TEMPLATES["care_circle_notice"]["body"])
+    assert "{dashboard_url}" not in body
+    assert "http" not in body
 
 
 def test_the_link_cannot_be_supplied_by_the_caller():
@@ -194,6 +212,8 @@ def test_a_rendered_template_still_passes_the_gate():
         "hospital_area": "Palayamkottai", "reason_short": "a fall at home",
         "stage": "approved", "amount": "66,000", "total": "1,20,000",
         "line_count": "14", "doctor_name": "Iyer", "department": "Cardiology",
+        "cashless_status": "Cashless approval is in progress",
+        "cashless_status": "Cashless approval is in progress",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]

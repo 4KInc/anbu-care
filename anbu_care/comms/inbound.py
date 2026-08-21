@@ -26,12 +26,43 @@ import hashlib
 import hmac
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from anbu_care import service
+from anbu_care.comms import consent
 from anbu_care.wellbeing.store import SELF_REPORTED
 
 # The consent purpose a contact must hold before anything they send is stored.
-WELLBEING_PURPOSE = "status_updates"
+#
+# This was "status_updates" until it was noticed that "status_updates" is an
+# OUTBOUND purpose: consenting to receive updates about a parent was silently
+# making someone eligible to file reports about them. Old consents are NOT
+# accepted as a fallback — dual-accepting the old flag would restore exactly
+# the conflation being removed. Contacts must be re-registered.
+WELLBEING_PURPOSE = consent.INBOUND_WELLBEING
+
+
+def public_url(request: Any) -> str:
+    """The URL Twilio actually signed, not the one this process received.
+
+    Twilio signs the public HTTPS address it posted to. Behind Cloud Run the
+    request arrives from a proxy, so request.url reports the internal scheme
+    and the signature never matches — the check fails closed, which is the safe
+    direction, but it fails on every legitimate message too.
+
+    The forwarded headers carry what the caller saw. Only the scheme and host
+    are taken from them: the path comes from the request itself, so a spoofed
+    header cannot redirect verification at a different endpoint.
+    """
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if not host:
+        return str(request.url)
+    # Twilio signs the first proto when a chain of proxies appends several.
+    scheme = scheme.split(",")[0].strip()
+    host = host.split(",")[0].strip()
+    url = f"{scheme}://{host}{request.url.path}"
+    return f"{url}?{request.url.query}" if request.url.query else url
 
 
 class SignatureRejected(Exception):

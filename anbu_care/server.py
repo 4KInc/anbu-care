@@ -21,7 +21,8 @@ from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
 from anbu_care import service
-from anbu_care.comms import inbound
+from anbu_care.care_circle import notify as care_notify
+from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.provenance.signing import load_signer
@@ -189,7 +190,12 @@ def demo_seed() -> dict[str, Any]:
         whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164", "+14155550142"),
         timezone_name="America/Los_Angeles",
         is_primary=True,
-        consent_purposes=["admission_alerts", "status_updates", "billing_updates", "claim_updates"],
+        consent_purposes=[
+            "admission_alerts", "status_updates", "billing_updates", "claim_updates",
+            # Named explicitly. Inbound and outbound are separate agreements and
+            # neither is implied by the four above.
+            consent.INBOUND_WELLBEING, consent.OUTBOUND_NOTIFY,
+        ],
     )
     return {
         "status": "seeded",
@@ -255,7 +261,7 @@ async def wellbeing_inbound(request: Request) -> Response:
 
     try:
         inbound.verify_twilio_signature(
-            str(request.url), form, request.headers.get("X-Twilio-Signature")
+            inbound.public_url(request), form, request.headers.get("X-Twilio-Signature")
         )
     except inbound.SignatureRejected as exc:
         # One answer for missing, malformed and wrong. A caller learns only
@@ -392,6 +398,95 @@ def _inr_plain(amount: int) -> str:
     from anbu_care.comms.artifacts import _inr
 
     return _inr(amount)
+
+
+@app.post("/api/cases/{case_id}/notify-care-circle")
+def notify_care_circle(
+    case_id: str, _session: str = Depends(require_family_session)
+) -> dict[str, Any]:
+    """Tell the listed contacts where the parent was taken.
+
+    Outbound only. These are notified parties, not integrated providers: no
+    channel opens back, nothing waits for a reply, and no clinician is "in the
+    system".
+
+    Credentialed, because it sends real messages. Triage never calls this — a
+    notification is a decision someone takes, not something the guarantee layer
+    does on its own.
+
+    Logistics are read from the triage receipt, so the notice can only say what
+    the chain already recorded.
+    """
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+
+    triage = next(
+        (r for r in reversed(service.get_chain(case_id).receipts)
+         if r.kind == "triage.decision"), None,
+    )
+    if triage is None:
+        raise HTTPException(
+            status_code=409,
+            detail="triage has not run on this case; there is no hospital to name yet",
+        )
+
+    hospital = triage.payload.get("recommended_hospital_name") or _hospital_from(triage)
+    cashless = _cashless_line(case.parent_id)
+
+    results = care_notify.notify(
+        case_id=case_id,
+        parent_id=case.parent_id,
+        hospital_name=hospital,
+        timestamp=triage.created_at.strftime("%d %b, %H:%M UTC"),
+        cashless_status=cashless,
+    )
+    return {
+        "case_id": case_id,
+        "label": "Notified parties. Anbu Care does not integrate with any provider.",
+        # Counted, never collapsed: a caller must not be able to read this as
+        # "the care circle was notified" when one of them was not.
+        "sent": sum(1 for r in results if r.delivered),
+        "not_delivered": sum(1 for r in results if r.consented and not r.delivered),
+        "skipped_no_consent": sum(1 for r in results if not r.consented),
+        "results": [r.model_dump(mode="json") for r in results],
+    }
+
+
+def _hospital_from(triage: Any) -> str:
+    ranked = triage.payload.get("ranked") or []
+    recommended = triage.payload.get("recommended_hospital_id")
+    for entry in ranked:
+        if entry.get("hospital_id") == recommended:
+            return str(entry.get("name") or "the hospital")
+    return "the hospital"
+
+
+def _cashless_line(parent_id: str) -> str:
+    """Whether the policy says cashless, in plain words. No claim outcome here."""
+    profile = service.load_profile(parent_id)
+    policy = getattr(profile, "policy", None) if profile else None
+    if policy is None:
+        return "Insurance details are not on record"
+    return ("Cashless is available at network hospitals"
+            if policy.cashless_eligible else "This admission is reimbursement only")
+
+
+@app.get("/api/parents/{parent_id}/care-circle")
+def parent_care_circle(
+    parent_id: str, _session: str = Depends(require_family_session)
+) -> dict[str, Any]:
+    """Who would be notified. Derived from consent, not from a stored roster."""
+    contacts = care_notify.care_circle(parent_id)
+    return {
+        "parent_id": parent_id,
+        "label": "Notified parties, not integrated providers.",
+        "contacts": [
+            {"name": c.name, "relationship": c.relationship, "role": c.role,
+             "to_e164": c.whatsapp_e164}
+            for c in contacts
+        ],
+    }
 
 
 @app.get("/api/cases/{case_id}")

@@ -59,6 +59,7 @@ def send_family_update(
     template_params: dict[str, str],
     message_class: str,
     attach_claim_summary: bool = False,
+    purpose_override: str = "",
 ) -> dict[str, Any]:
     """Send a templated WhatsApp update to a family member.
 
@@ -70,6 +71,14 @@ def send_family_update(
         template_params: Values for that template's parameters.
         message_class: One of: logistics, status, billing. Never "clinical" —
             clinical content is blocked before send regardless of what is claimed.
+        purpose_override: Demand a different consent purpose than the message
+            class implies. A care-circle notice is logistics, but requires
+            outbound_notify rather than admission_alerts, because being told
+            once as a listed contact is not the same agreement as receiving the
+            family's case feed. This changes ONLY which consent is required. It
+            does not touch the content gate, and it is not a bypass: a message
+            carrying clinical detail is blocked with an override set exactly as
+            it is without one.
         attach_claim_summary: Request that the case's claim summary PDF ride
             along. This is a request, not an instruction: the document is built
             from adjudicator output by code, its text is classified like any
@@ -98,7 +107,7 @@ def send_family_update(
     if contact is None:
         return {"status": "error", "error": f"{to_e164} is not a registered family contact"}
 
-    purpose = PURPOSE_BY_CLASS.get(declared)
+    purpose = purpose_override or PURPOSE_BY_CLASS.get(declared)
     if purpose and not consent_ok(contact.consents, purpose):
         blocked = _record(
             case_id, to_e164, declared, template_name, body,
