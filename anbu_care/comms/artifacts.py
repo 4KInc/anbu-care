@@ -81,11 +81,10 @@ def render_claim_summary(adj: Adjudication) -> str:
     cannot disagree with the audit trail.
     """
     lines = [
-        "ANBU CARE — CLAIM SUMMARY",
+        "ANBU CARE CLAIM SUMMARY",
         "SIMULATED TPA. Deterministic local rules, not an insurer.",
         "",
         f"Case: {adj.case_id}",
-        f"Submission: {adj.submission_id}",
         f"Outcome: {adj.outcome.value}",
         "",
     ]
@@ -106,8 +105,14 @@ def render_claim_summary(adj: Adjudication) -> str:
         lines.append("Payable amount: not yet known at this stage.")
     else:
         lines.append(f"Total claimed: INR {_inr(adj.total_claimed_inr)}")
-        lines.append(f"Total allowed: INR {_inr(adj.total_allowed_inr)}")
-        lines.append(f"Total disallowed: INR {_inr(adj.total_disallowed_inr)}")
+        lines.append(f"Covered by the policy: INR {_inr(adj.total_allowed_inr)}")
+        lines.append(f"Not covered: INR {_inr(adj.total_disallowed_inr)}")
+        if adj.total_disallowed_inr > 0:
+            lines.append("")
+            lines.append(
+                f"The family is expected to pay INR {_inr(adj.total_disallowed_inr)}. "
+                "That is the claimed amount minus what the policy covers."
+            )
     lines.append("")
 
     if adj.reasons:
@@ -120,7 +125,7 @@ def render_claim_summary(adj: Adjudication) -> str:
         lines.extend(f"  {d}" for d in adj.missing_documents)
         lines.append("")
 
-    lines.append(f"Assessed at: {adj.adjudicated_at.isoformat()}")
+    lines.append(f"Assessed on {adj.adjudicated_at.strftime('%d %B %Y at %H:%M UTC')}.")
     lines.append("Clinical detail is not included here. It is in the secure dashboard.")
     return "\n".join(lines)
 

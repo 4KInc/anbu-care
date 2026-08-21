@@ -263,3 +263,36 @@ def test_latest_adjudication_wins(seeded_case):
     assert latest is not None
     assert latest.adjudication_id == "adj-2"
     assert latest.outcome is AdjudicationOutcome.PASS
+
+
+def test_the_document_is_written_like_the_messages_are():
+    """Same rule as the templates. A family reads both."""
+    art = artifacts.build("claim_summary", _adjudication())
+    assert "—" not in art.text
+    assert "–" not in art.text
+
+
+def test_the_document_says_what_the_family_will_pay():
+    """The figure a family actually wants is the shortfall, and it was already
+    in the adjudicator output. Reporting claimed and allowed while leaving the
+    reader to subtract is a worse document, not a more careful one."""
+    art = artifacts.build("claim_summary", _adjudication())
+    assert "expected to pay INR 66,000" in art.text
+
+
+def test_a_fully_covered_claim_does_not_ask_for_money():
+    art = artifacts.build(
+        "claim_summary",
+        _adjudication(outcome=AdjudicationOutcome.PASS, total_allowed_inr=96000,
+                      total_disallowed_inr=0,
+                      lines=[LineAssessment(item="ICU bed", claimed_inr=96000,
+                                            allowed_inr=96000, disallowed_inr=0,
+                                            rule="within sub-limit")]),
+    )
+    assert "expected to pay" not in art.text
+
+
+def test_the_timestamp_is_readable():
+    art = artifacts.build("claim_summary", _adjudication())
+    assert "T" not in art.text.split("Assessed on ")[1][:20]  # not ISO-8601
+    assert "UTC" in art.text
