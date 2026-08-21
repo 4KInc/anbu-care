@@ -71,6 +71,11 @@ This is the beat that cannot be faked, so prove it before you roll.
 - [ ] Send one throwaway `slept well` and confirm you get
       **"Thanks, that's noted."** back. If you get a Twilio demo echo instead,
       the webhook URL did not save.
+- [ ] Send one throwaway **voice note** and confirm it comes back transcribed,
+      not as "could not make out what she said". Voice takes about ten seconds
+      against a Twilio ceiling of roughly fifteen, so a cold start is the thing
+      most likely to bite. **Send a warm-up voice note a minute before you
+      roll** so the instance is already up.
 
 ### 4. Fresh state
 
@@ -104,6 +109,9 @@ Open `$URL/app` at the window size you will record.
 - [ ] Do not claim an ambulance is called, or could be.
 - [ ] Voice calls are **built but switched off** (no Twilio number purchased).
       If you mention the ladder, say it is off.
+- [ ] Say **"the table decides, the model can add"**. Never "the AI decides".
+- [ ] A voice note takes ~10s. Do not fill the silence with hedging; say what
+      is happening ("it is transcribing, then matching") and let it land.
 
 ### 7. Backup take
 
@@ -119,9 +127,9 @@ the Gemini transcription and extraction is deterministic;
 |---|---|---|
 | 0:00–0:20 | **The question** | "If something happens to my mother tonight, who makes sure the right decisions get made?" Every incumbent answers: a human coordinator. |
 | 0:20–1:20 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. |
-| 1:20–2:00 | **What decided that** ⭐ | Gemini translated. A table in code decided. |
-| 2:00–2:40 | **The boundary** ⭐ | Clinical detail refused — and the family still told. |
-| 2:40–3:20 | **The claim** ⭐ | QUERY → resolved → PARTIAL. ₹66,000, told now. |
+| 1:20–2:10 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
+| 2:10–2:50 | **The boundary** ⭐ | Clinical detail refused — and the family still told. |
+| 2:50–3:20 | **The claim** ⭐ | QUERY → resolved → PARTIAL. ₹66,000, told now. |
 | 3:20–3:50 | **Public where it proves, private where it reveals** ⭐ | 401 and 200, same case. |
 | 3:50–4:20 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
 | 4:20–4:50 | **The honest wall** | What it does not do, said out loud. |
@@ -150,6 +158,10 @@ Hold the phone up. Within seconds, three things come back.
 
 **What lands, and what to point at:**
 
+Three messages arrive in about ten seconds. Do not narrate over the wait — let
+the phone buzz.
+
+
 1. **The alert to the family** — read the first four lines aloud:
    - her voice note, transcribed, *in Tamil script*
    - **"That is what Anbu Care heard in her voice note. It may be imperfect, so
@@ -164,19 +176,31 @@ Hold the phone up. Within seconds, three things come back.
 3. **The care-circle notice** — the neighbour is asked to call. **No symptoms.
    No link into her record.**
 
+4. **Tap the link.** It opens straight into the case — no sign-in, no pasting a
+   token. The alert carries a signed link scoped to this case and this parent,
+   valid for a day. Say: *"that link reads her record and nothing else, and it
+   cannot make the system message anyone."*
+
 **The line to land:**
 
 > "Nobody diagnosed anything. It recognised words, applied a rule, and told two
 > people who can act — and it told them different things, on purpose."
+
+**If the transcript is imperfect, point at it rather than past it.** On one real
+run it heard *மார்பகம்* (breast) for *மார்பு* (chest) and still escalated
+correctly, because the terms it extracted were right. That is exactly why the
+message says "it may be imperfect, so listen to the recording" — the design
+admitted the weakness before the weakness showed up.
 
 **Do not say:** "it detected", "it diagnosed", "it knew she was having a heart
 attack".
 
 ---
 
-## Beat 3 (1:20–2:00) — what actually decided that ⭐
+## Beat 3 (1:20–2:10) — what actually decided that ⭐
 
-Terminal. This is where the architecture argument lands.
+Terminal. This is where the architecture argument lands, and it now has two
+halves: what the model did, and what it was not allowed to do.
 
 ```bash
 uv run python - <<'PY'
@@ -185,44 +209,57 @@ from anbu_care.comms import inbound
 from anbu_care.provenance.store import PARENT_SUBJECT
 s = inbound.resolve_sender("+16692167706")
 chain = service.get_chain(s.parent_id, subject=PARENT_SUBJECT)
-esc = [r for r in chain.receipts if r.kind == "wellbeing.escalated"][-1]
-for k in ("model_terms", "matched_rules", "severity"):
-    print(k, "=", esc.payload[k])
+r = [x for x in chain.receipts if x.kind == "wellbeing.escalated"][-1]
+for k in ("decided_by", "model_terms", "matched_rules", "severity"):
+    print(k, "=", r.payload[k])
 PY
 ```
 
-Expect:
+**Say, pointing at `decided_by`:**
 
-```
-model_terms  = ['chest pain', 'difficulty breathing']
-matched_rules = ["matched 'chest pain': chest pain — possible acute coronary syndrome", ...]
-severity     = HIGH
-```
-
-**Say:**
-
-> "Gemini did the translation. It turned Tamil into two English symptom terms.
-> It did not decide anything. The decision came from a table of seventy-six
-> phrases in the source tree, sourced from NHS and ambulance-service guidance,
-> that a clinician could review line by line.
+> "Gemini did the translation. It turned Tamil into English symptom terms. The
+> decision came from a table of seventy-six phrases in the source tree, sourced
+> from NHS and ambulance-service guidance, that a clinician could review line by
+> line.
 >
-> The receipt records *which phrase matched which rule* — not a conclusion.
-> That is the difference between a guarantee and a prompt."
+> And the receipt says which of them decided. `rule` means a named phrase
+> matched. `model` means nothing matched and the model alone judged it urgent.
+> `both` means they agreed independently."
 
-**The killer follow-up.** Show that the model cannot quieten anything:
+### The two messages to show side by side
+
+This is the beat. Send these one after the other, from the handset, and read the
+receipts:
+
+| she says | `decided_by` | why |
+|---|---|---|
+| "தலை சுத்துற மாதிரி இருக்குது… ஹாஸ்பிடல் போனும்" *(dizzy, need hospital)* | **both** | table: dizziness is MEDIUM, but her hypertension makes it HIGH for cardiology. model: she asked to go to hospital. |
+| "முட்டி ரொம்ப வலிக்குது… ஹாஸ்பிடல் போகணும்" *(knee pain, need hospital)* | **model** | no rule covers knee pain. The model escalated it anyway. |
+
+> "Same speaker, same request, different symptom. One was caught by a rule and
+> a model independently. The other by no rule at all — and the receipt says
+> **NO RULE MATCHED** in capitals, because a clinician reading this later needs
+> to know which presentations the table is missing. Those are the rules to add
+> next."
+
+### Then show what the model cannot do
 
 ```bash
-uv run pytest tests/test_escalation.py -k "junk" -q      # 5 passed
+uv run pytest tests/test_escalation.py -k "junk or quieten or silent" -q
 ```
 
-> "Five tests feed the extractor rubbish — empty output, 'patient is fine',
-> even 'ignore previous instructions'. Every one still escalates, because the
-> raw text always reaches the table regardless. The model can only widen what
-> we recognise. It can never suppress a red flag."
+> "The model can raise an alarm the table missed. It can never lower one. These
+> tests feed it 'patient is fine', 'ignore previous instructions', and an
+> explicit 'not urgent' next to a message saying crushing chest pain — every
+> one still escalates, because the raw words always reach the table regardless.
+>
+> So the honest sentence is this: no model can stop someone being woken, and
+> when a model alone decides to wake them, the record says so."
 
----
+**Do not say** "the AI decides" or "the AI knows". Say **the table decides, and
+the model can add**.
 
-## Beat 4 (2:00–2:40) — the boundary ⭐
+## Beat 4 (2:10–2:50) — the boundary ⭐
 
 Two halves. The refusal, then the thing most people forget.
 
@@ -255,7 +292,7 @@ comms.sent      → urgent_family_alert_withheld   (no quote, still delivered)
 
 ---
 
-## Beat 5 (2:40–3:20) — the claim ⭐
+## Beat 5 (2:50–3:20) — the claim ⭐
 
 ```bash
 uv run python scripts/demo_support.py claim-flow $CASE $PARENT
