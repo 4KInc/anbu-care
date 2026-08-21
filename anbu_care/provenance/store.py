@@ -134,16 +134,30 @@ def set_store(store: Store) -> None:
 # --------------------------------------------------------------------------
 
 
-def load_receipts(case_id: str, store: Store | None = None) -> list[Receipt]:
+# A chain is a sequence of receipts about one subject. Almost always that
+# subject is a case, but not always: a wellbeing check-in belongs to a parent
+# and usually arrives with no case open at all, which is the healthy state.
+# The chain core never knew what a case was — seq, prev_hash and verification
+# carry no case knowledge — so a second subject is a partition key, not a
+# refactor.
+CASE_SUBJECT = "CASE#"
+PARENT_SUBJECT = "PARENT#"
+
+
+def load_receipts(
+    subject_id: str, store: Store | None = None, subject: str = CASE_SUBJECT
+) -> list[Receipt]:
     store = store or get_store()
-    rows = store.query_prefix(f"CASE#{case_id}", "RECEIPT#")
+    rows = store.query_prefix(f"{subject}{subject_id}", "RECEIPT#")
     return [Receipt.model_validate(_strip_keys(r)) for r in rows]
 
 
-def save_receipt(receipt: Receipt, store: Store | None = None) -> None:
+def save_receipt(
+    receipt: Receipt, store: Store | None = None, subject: str = CASE_SUBJECT
+) -> None:
     store = store or get_store()
     store.put(
-        f"CASE#{receipt.case_id}",
+        f"{subject}{receipt.case_id}",
         receipt_sk(receipt.seq),
         receipt.model_dump(mode="json"),
     )

@@ -13,7 +13,13 @@ from typing import Any
 
 from anbu_care.config import settings
 from anbu_care.provenance.chain import Receipt, ReceiptChain, VerificationResult
-from anbu_care.provenance.store import Store, get_store, load_receipts, save_receipt
+from anbu_care.provenance.store import (
+    CASE_SUBJECT,
+    Store,
+    get_store,
+    load_receipts,
+    save_receipt,
+)
 from anbu_care.schemas import (
     Adjudication,
     Case,
@@ -101,6 +107,37 @@ def update_case(case: Case, store: Store | None = None) -> None:
 # --------------------------------------------------------------------------
 
 
+def _number_key(number: str) -> str:
+    """Index on digits only, so whatsapp:+1669… and +1669… are one number."""
+    return "".join(ch for ch in number if ch.isdigit())
+
+
+def register_whatsapp_number(number: str, parent_id: str, contact_name: str | None) -> None:
+    """Point a WhatsApp number at the parent whose record it may write to.
+
+    The store has no scan across partitions, so an inbound message cannot be
+    matched by walking every profile. This index makes the lookup a single get.
+
+    Deliberately records only ownership, never consent: consent is checked
+    against the live profile when a message arrives, so revoking it takes
+    effect immediately rather than whenever this row was last written.
+    """
+    key = _number_key(number)
+    if not key:
+        return
+    get_store().put(
+        f"WANUMBER#{key}", "OWNER",
+        {"parent_id": parent_id, "contact_name": contact_name},
+    )
+
+
+def lookup_whatsapp_number(number: str) -> dict[str, Any] | None:
+    key = _number_key(number)
+    if not key:
+        return None
+    return get_store().get(f"WANUMBER#{key}", "OWNER")
+
+
 def append_receipt(
     case_id: str,
     *,
@@ -108,6 +145,7 @@ def append_receipt(
     actor: str,
     payload: dict[str, Any],
     store: Store | None = None,
+    subject: str = CASE_SUBJECT,
 ) -> Receipt:
     """Append one link to a case's chain and persist it.
 
@@ -115,14 +153,16 @@ def append_receipt(
     actually stored, not from an in-process guess.
     """
     store = store or get_store()
-    chain = ReceiptChain(case_id, load_receipts(case_id, store))
+    chain = ReceiptChain(case_id, load_receipts(case_id, store, subject))
     receipt = chain.append(kind=kind, actor=actor, payload=payload)
-    save_receipt(receipt, store)
+    save_receipt(receipt, store, subject)
     return receipt
 
 
-def get_chain(case_id: str, store: Store | None = None) -> ReceiptChain:
-    return ReceiptChain(case_id, load_receipts(case_id, store or get_store()))
+def get_chain(
+    case_id: str, store: Store | None = None, subject: str = CASE_SUBJECT
+) -> ReceiptChain:
+    return ReceiptChain(case_id, load_receipts(case_id, store or get_store(), subject))
 
 
 def verify_case(case_id: str, store: Store | None = None) -> VerificationResult:

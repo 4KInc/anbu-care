@@ -9,16 +9,19 @@ family or insurer can call without going through an agent.
 
 from __future__ import annotations
 
+import logging
 import os
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
 from anbu_care import service
+from anbu_care.comms import inbound
 from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.provenance.signing import load_signer
@@ -31,6 +34,9 @@ from anbu_care.tools import (
     whatsapp_tools,
 )
 from anbu_care.webauth import require_family_session
+from anbu_care.wellbeing import store as wellbeing_store
+
+logger = logging.getLogger(__name__)
 
 # ADK discovers agents by directory. The repo root holds the `anbu_care`
 # package, whose agent.py exposes `root_agent`.
@@ -230,6 +236,71 @@ def intake_signal(request: IntakeSignalRequest) -> dict[str, Any]:
             case_id=signal["case_id"],
         )
     return response
+
+
+@app.post("/api/wellbeing/inbound")
+async def wellbeing_inbound(request: Request) -> Response:
+    """Twilio's inbound webhook: a check-in arriving over WhatsApp.
+
+    Unauthenticated by necessity — Twilio cannot carry a bearer token — so the
+    signature is the entire access control on a write path. It is checked
+    against the parameters exactly as they arrived, parsed once from the raw
+    body and never re-serialised.
+
+    This endpoint has no route to triage. It cannot open a case and cannot set
+    a severity. Whatever the words are, they are stored as words.
+    """
+    raw = await request.body()
+    form = urllib.parse.parse_qsl(raw.decode("utf-8", "replace"), keep_blank_values=True)
+
+    try:
+        inbound.verify_twilio_signature(
+            str(request.url), form, request.headers.get("X-Twilio-Signature")
+        )
+    except inbound.SignatureRejected as exc:
+        # One answer for missing, malformed and wrong. A caller learns only
+        # that it was refused.
+        logger.warning("wellbeing inbound rejected: %s", exc)
+        raise HTTPException(status_code=403, detail="signature verification failed") from exc
+
+    fields = dict(form)
+    body = (fields.get("Body") or "").strip()
+    sender = inbound.resolve_sender(fields.get("From") or "")
+
+    if sender is None or not body:
+        # Unknown number, withdrawn consent, or an empty message. Nothing is
+        # stored, and Twilio is told the webhook succeeded so it does not retry
+        # a message we will never accept.
+        logger.info("wellbeing inbound not stored: unregistered sender or empty body")
+        return Response(status_code=204)
+
+    entry = wellbeing_store.record(sender.parent_id, sender.source, body)
+    logger.info("wellbeing recorded %s for %s", entry.entry_id, sender.parent_id)
+
+    # Fixed text. It echoes none of their words, so a message containing
+    # clinical detail cannot be reflected back out over WhatsApp by this reply,
+    # and it promises nothing the system will not do.
+    return Response(
+        content=(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response><Message>Thanks, that's noted.</Message></Response>"
+        ),
+        media_type="application/xml",
+    )
+
+
+@app.get("/api/parents/{parent_id}/wellbeing")
+def parent_wellbeing(
+    parent_id: str, _session: str = Depends(require_family_session)
+) -> dict[str, Any]:
+    """Check-ins for a parent. Credentialed, because it returns what was said."""
+    entries = wellbeing_store.list_entries(parent_id)
+    return {
+        "parent_id": parent_id,
+        "count": len(entries),
+        "label": "Self-reported. Not a clinical assessment and not a measured vital.",
+        "entries": [e.model_dump(mode="json") for e in entries],
+    }
 
 
 @app.get("/api/intake-channels")

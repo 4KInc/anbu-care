@@ -47,7 +47,7 @@ gcloud run deploy "${SERVICE}" \
   --cpu 1 \
   --timeout 600 \
   --set-env-vars "^@^GOOGLE_GENAI_USE_VERTEXAI=TRUE@GOOGLE_CLOUD_PROJECT=${PROJECT_ID}@GOOGLE_CLOUD_LOCATION=global@ANBU_MODEL=${MODEL}@ANBU_STORE_BACKEND=firestore@ANBU_TPA_MODE=simulated@ANBU_WHATSAPP_MODE=${ANBU_WHATSAPP_MODE:-off}@ANBU_PUBSUB_ENABLED=${ANBU_PUBSUB_ENABLED:-false}@ANBU_DEMO_TOKEN=${ANBU_DEMO_TOKEN:-anbu-demo-family-token}@ANBU_SIGNING_KEY_B64=${ANBU_SIGNING_KEY_B64}@ANBU_ARTIFACT_BUCKET=${ANBU_ARTIFACT_BUCKET:-}@ANBU_DEMO_FAMILY_E164=${ANBU_DEMO_FAMILY_E164:-+14155550142}@TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}@TWILIO_API_KEY_SID=${TWILIO_API_KEY_SID:-}@TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM:-}" \
-  --set-secrets "TWILIO_API_KEY_SECRET=twilio-api-key-secret:latest"
+  --set-secrets "TWILIO_API_KEY_SECRET=twilio-api-key-secret:latest,TWILIO_AUTH_TOKEN=twilio-auth-token:latest"
 
 URL=$(gcloud run services describe "${SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')
 echo

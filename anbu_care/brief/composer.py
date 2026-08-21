@@ -65,6 +65,32 @@ def _hospital_name(triage: Receipt | None) -> tuple[str | None, FactSource]:
     return None, _unknown("triage ran but recorded no recommended hospital")
 
 
+def _latest_check_in(parent_id: str) -> ArrivalFact:
+    """The most recent wellbeing check-in, quoted verbatim.
+
+    Quoted, because paraphrasing a self-report is the first step towards
+    turning it into an assessment. If there is none, the brief says so: a
+    missing check-in is not evidence that anything is well.
+    """
+    from anbu_care.wellbeing.store import latest
+
+    if not parent_id:
+        return _unknown_fact("Latest check-in", "no parent on this case")
+
+    entry = latest(parent_id)
+    if entry is None:
+        return _unknown_fact("Latest check-in", "no check-in yet")
+
+    when = entry.received_at.strftime("%H:%M")
+    return ArrivalFact(
+        label="Latest check-in",
+        value=f'"{entry.text}", {when} — {entry.source}',
+        known=True,
+        source=FactSource(kind="wellbeing", field=entry.entry_id,
+                          note="self-reported words, not a clinical assessment"),
+    )
+
+
 def compose_brief(case_id: str) -> ArrivalBrief:
     """Compose the brief for a case. Pure read — writes nothing."""
     chain = service.get_chain(case_id)
@@ -96,6 +122,11 @@ def compose_brief(case_id: str) -> ArrivalBrief:
 
     name, source = _hospital_name(triage)
     brief.facts.append(_fact("Hospital", name, source))
+
+    # What the parent or a caregiver SAID, quoted and labelled. It is not a
+    # vital, it is not a triage input, and no part of the brief derives
+    # anything from it. Absent reads as absent, never as "fine".
+    brief.facts.append(_latest_check_in(parent_id))
 
     brief.facts.append(
         _fact("Severity assessed", triage.payload.get("severity") if triage else None,

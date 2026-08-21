@@ -65,6 +65,9 @@ class ParentProfile(BaseModel):
     medications: list[Medication] = Field(default_factory=list)
     policy: InsurancePolicy | None = None
     family_contacts: list[FamilyContact] = Field(default_factory=list)
+    # The parent's own WhatsApp number, if they have one. Only used to label a
+    # check-in as coming from the registered parent number.
+    whatsapp_e164: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -373,6 +376,29 @@ class ArrivalFact(BaseModel):
     value: str | None = None
     known: bool = False
     source: FactSource
+
+
+class WellbeingEntry(BaseModel):
+    """What someone SAID, not what anyone measured.
+
+    Deliberately has no severity, no mood, no score, and no derived state. A
+    check-in is a sentence a human typed on a phone; turning it into a health
+    assessment would be inference dressed as a reading, and the whole point of
+    this record is that it never becomes one.
+
+    `source` is a provenance label, not an identity claim. "self-reported"
+    means the message arrived from the number registered to the parent. It does
+    not prove who was holding the phone, and nothing downstream may treat it as
+    proof.
+    """
+
+    entry_id: str
+    parent_id: str
+    # "self-reported" | "caregiver:<name>"
+    source: str
+    text: str
+    received_at: datetime = Field(default_factory=utcnow)
+    channel: str = "whatsapp"
 
 
 class ArrivalBrief(BaseModel):

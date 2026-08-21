@@ -224,7 +224,7 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 <script>
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
-            record:null, verify:null, view:"now" };
+            record:null, verify:null, wellbeing:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 const SYNTH = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
@@ -341,6 +341,27 @@ function vBrief(){
   if(S.brief.__denied) return denied(S.brief.detail,"The arrival brief");
   const b=S.brief.brief;
   // Prose gets a stacked row; short facts keep the label/value pairing.
+  // Check-ins are quoted, never summarised. Paraphrasing a self-report is the
+  // first step towards presenting it as an assessment.
+  function checkIns(){
+    const e = S.wellbeing;
+    if(!e) return "";
+    if(!e.entries || !e.entries.length){
+      return `<div class="card"><h2>Check-ins</h2>
+        <p class="mute">${unknown("no check-in yet")}</p>
+        <p class="mute">A missing check-in is not evidence that anything is well.</p></div>`;
+    }
+    return `<div class="card"><h2>Check-ins</h2>
+      <div class="pills" style="margin-bottom:12px">
+        <span class="pill p-amber">SELF-REPORTED — NOT A MEASURED VITAL</span></div>
+      ${e.entries.slice(0,8).map(x=>`
+        <div class="row stack">
+          <div class="k">${esc(new Date(x.received_at).toLocaleString())} · ${esc(x.source)}</div>
+          <div class="v">&ldquo;${esc(x.text)}&rdquo;</div>
+        </div>`).join("")}
+      <p class="mute" style="margin-top:12px">${esc(e.label)}</p></div>`;
+  }
+
   const f=x=>row(x.label, x.known?esc(human(x.value)):unknown(x.source?.note),
                  (x.value||"").length>60 ? "stack" : "");
   return `${SYNTH}
@@ -348,6 +369,7 @@ function vBrief(){
   <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
     A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
   <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
+  ${checkIns()}
   <div class="card"><h2>What has been done</h2>
     ${(b.actions_taken||[]).length ? `<div class="tl">
       ${b.actions_taken.map(x=>`<div class="ev on">
@@ -587,7 +609,10 @@ async function load(){
     S.verify=await api(`/api/cases/${S.caseId}/verify`);
     if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
-  if(S.parentId && S.token) S.record=await api(`/api/parents/${S.parentId}`,{auth:true});
+  if(S.parentId && S.token){
+    S.record=await api(`/api/parents/${S.parentId}`,{auth:true});
+    S.wellbeing=await api(`/api/parents/${S.parentId}/wellbeing`,{auth:true});
+  }
   render();
 }
 function render(){

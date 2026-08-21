@@ -156,6 +156,8 @@ def record_family_contact(
     )
     profile.family_contacts.append(contact)
     service.save_profile(profile)
+    # So an inbound message from this number can be matched to this parent.
+    service.register_whatsapp_number(whatsapp_e164, parent_id, contact.name)
     return {"status": "recorded", "contact": contact.model_dump(mode="json")}
 
 
