@@ -99,6 +99,49 @@ def verify_twilio_signature(url: str, form: list[tuple[str, str]], header: str |
 
 
 @dataclass(frozen=True)
+class InboundMedia:
+    """A voice note as it arrived."""
+
+    audio: bytes
+    mime_type: str
+
+
+def media_from(form: dict[str, str]) -> InboundMedia | None:
+    """Fetch the attached audio, if there is any.
+
+    Twilio's media URLs are not public: they need the account credentials, the
+    same ones used to send. So a voice note cannot be read by anyone who merely
+    guesses the URL, and it also means an unconfigured deployment gets None
+    rather than a broken download.
+    """
+    if int(form.get("NumMedia") or 0) < 1:
+        return None
+
+    url = form.get("MediaUrl0")
+    mime = (form.get("MediaContentType0") or "audio/ogg").split(";")[0].strip()
+    if not url or not mime.startswith("audio"):
+        return None
+
+    account = os.getenv("TWILIO_ACCOUNT_SID")
+    key_sid, key_secret = os.getenv("TWILIO_API_KEY_SID"), os.getenv("TWILIO_API_KEY_SECRET")
+    auth = ((key_sid, key_secret) if key_sid and key_secret
+            else (account, os.getenv("TWILIO_AUTH_TOKEN")))
+    if not account or not auth[1]:
+        return None
+
+    import requests
+
+    try:
+        response = requests.get(url, auth=auth, timeout=20)
+        if not response.ok:
+            return None
+    except Exception:  # noqa: BLE001 - no audio is a handled outcome
+        return None
+
+    return InboundMedia(audio=response.content, mime_type=mime)
+
+
+@dataclass(frozen=True)
 class Sender:
     parent_id: str
     source: str

@@ -130,6 +130,7 @@ def test_every_template_renders_and_passes_its_own_gate():
         "said": "I cannot catch my breath", "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "understood_as": "Understood as: chest pain.\n",
+        "words_note": "Those are her own words, not a medical assessment.\n",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -172,7 +173,7 @@ def test_templates_read_like_a_person_wrote_them():
 # The dashboard link goes to the parent's credentialed record. Family get it.
 # A care-circle contact is a notified party, not someone entitled to read the
 # record, so their notice carries no link at all.
-LINKLESS = {"care_circle_notice"}
+LINKLESS = {"care_circle_notice", "care_circle_unclear"}
 
 
 def test_every_family_template_links_to_the_dashboard():
@@ -184,13 +185,14 @@ def test_every_family_template_links_to_the_dashboard():
         assert "{dashboard_url}" in str(spec["body"]), f"{name} has no dashboard link"
 
 
-def test_the_care_circle_notice_does_not_link_into_the_record():
+def test_no_care_circle_template_links_into_the_record():
     """A neighbour told where someone was taken has not thereby been granted
     access to their medical record. Handing them a link to it would be a
     disclosure the consent never covered."""
-    body = str(TEMPLATES["care_circle_notice"]["body"])
-    assert "{dashboard_url}" not in body
-    assert "http" not in body
+    for name in ("care_circle_notice", "care_circle_unclear"):
+        body = str(TEMPLATES[name]["body"])
+        assert "{dashboard_url}" not in body, name
+        assert "http" not in body, name
 
 
 def test_the_link_cannot_be_supplied_by_the_caller():
@@ -219,10 +221,12 @@ def test_a_rendered_template_still_passes_the_gate():
         "said": "I cannot catch my breath", "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "understood_as": "Understood as: chest pain.\n",
+        "words_note": "Those are her own words, not a medical assessment.\n",
         "cashless_status": "Cashless approval is in progress",
         "said": "I cannot catch my breath", "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "understood_as": "Understood as: chest pain.\n",
+        "words_note": "Those are her own words, not a medical assessment.\n",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]

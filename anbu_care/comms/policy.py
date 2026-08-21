@@ -87,7 +87,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # covered, what do I do — and then a way to see the rest.
         "body": "Anbu Care, urgent. {parent_name} sent this at {timestamp}:\n"
                 "\"{said}\"\n"
-                "Those are her own words, not a medical assessment.\n"
+                "{words_note}"
                 "{understood_as}"
                 "\nShe is being directed to {hospital_name}, {distance_km} km away. "
                 "{why_hospital}\n"
@@ -95,7 +95,8 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "Call her now. If you cannot reach her, call 108, the ambulance "
                 "line in India. Anbu Care has not called an ambulance and cannot.\n"
                 "Everything known so far: {dashboard_url}",
-        "params": ["parent_name", "timestamp", "said", "understood_as", "hospital_name",
+        "params": ["parent_name", "timestamp", "said", "words_note", "understood_as",
+                   "hospital_name",
                    "distance_km", "why_hospital", "cashless_status"],
     },
     "urgent_family_alert_withheld": {
@@ -117,6 +118,31 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "Her exact words and everything else: {dashboard_url}",
         "params": ["parent_name", "timestamp", "understood_as", "hospital_name",
                    "distance_km", "why_hospital", "cashless_status"],
+    },
+    "voice_note_unclear": {
+        "message_class": MessageClass.STATUS,
+        # A case is opened, but no triage has run and no hospital was chosen,
+        # so this template names neither. Claiming a routing decision that was
+        # never made would be a worse failure than the one it is reporting.
+        "body": "Anbu Care, urgent. {parent_name} sent a voice note at {timestamp}.\n"
+                "Anbu Care could not make out what she said. No symptoms have been "
+                "identified and nothing has been assessed.\n\n"
+                "Please listen to the recording and call her now. If you cannot reach "
+                "her, call 108, the ambulance line in India. Anbu Care has not called "
+                "an ambulance and cannot.\n"
+                "Listen to it here: {dashboard_url}",
+        "params": ["parent_name", "timestamp"],
+    },
+    "care_circle_unclear": {
+        "message_class": MessageClass.LOGISTICS,
+        # The neighbour is asked to go round. No hospital is named because none
+        # was chosen, and no recording is shared because they are a notified
+        # party, not someone with access to her record.
+        "body": "Anbu Care: {parent_name} sent a voice message at {timestamp} that "
+                "could not be understood. Please check on her or call her now. "
+                "You are receiving this as a listed contact. No medical details are "
+                "shared here.",
+        "params": ["parent_name", "timestamp"],
     },
     "care_circle_notice": {
         "message_class": MessageClass.LOGISTICS,

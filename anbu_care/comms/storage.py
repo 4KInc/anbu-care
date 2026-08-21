@@ -29,6 +29,7 @@ class StoredArtifact:
     url: str | None
     detail: str
     expires_in_seconds: int | None = None
+    object_name: str | None = None
 
 
 def _bucket_name() -> str | None:
@@ -123,7 +124,7 @@ def store(filename: str, data: bytes, content_type: str = "application/pdf") -> 
         )
 
     return StoredArtifact(
-        stored=True, url=url,
+        stored=True, url=url, object_name=f"artifacts/{filename}",
         detail=(
             f"uploaded to gs://{bucket_name}/artifacts/{filename} and signed for "
             f"{int(SIGNED_URL_TTL.total_seconds() // 60)} minutes"

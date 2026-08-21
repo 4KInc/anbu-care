@@ -27,7 +27,8 @@ def entry_sk(received_at_iso: str, entry_id: str) -> str:
     return f"WELLBEING#{received_at_iso}#{entry_id}"
 
 
-def record(parent_id: str, source: str, text: str, channel: str = "whatsapp") -> WellbeingEntry:
+def record(parent_id: str, source: str, text: str, channel: str = "whatsapp",
+           source_kind: str = "text", audio_object: str | None = None) -> WellbeingEntry:
     """Store a check-in and receipt it.
 
     The receipt carries a hash of the text, never the text. Chain verification
@@ -42,6 +43,8 @@ def record(parent_id: str, source: str, text: str, channel: str = "whatsapp") ->
         source=source,
         text=text,
         channel=channel,
+        source_kind=source_kind,
+        audio_object=audio_object,
     )
     get_store().put(
         f"PARENT#{parent_id}",
@@ -59,6 +62,10 @@ def record(parent_id: str, source: str, text: str, channel: str = "whatsapp") ->
             "received_at": entry.received_at.isoformat(),
             "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
             "text_length": len(text),
+            "source_kind": source_kind,
+            # Named, never the URL: a signed link expires and a receipt holding
+            # a dead link reads as proof of something it cannot support.
+            "audio_object": audio_object,
             # Said explicitly so nothing downstream mistakes this for a finding.
             "note": "self-reported words, not a clinical assessment",
         },

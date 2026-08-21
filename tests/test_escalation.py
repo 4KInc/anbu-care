@@ -179,6 +179,7 @@ def _urgent_body(**over):
                          "empanelled with Star Health, so this keeps the admission cashless."),
         "cashless_status": "Cashless should apply at this hospital",
         "understood_as": "Understood as: chest pressure, shortness of breath.\n",
+        "words_note": "Those are her own words, not a medical assessment.\n",
     }
     params.update(over)
     return render_template("urgent_family_alert", params)
@@ -820,6 +821,7 @@ def test_the_understood_line_is_still_gated(monkeypatch):
 
     body = render_template("urgent_family_alert", {
         "parent_name": "Rajeswari", "timestamp": "02:14 UTC", "said": "chest hurts",
+        "words_note": "Those are her own words, not a medical assessment.\n",
         "understood_as": "Understood as: troponin 0.94 ng/mL.\n",
         "hospital_name": "Sacred Heart", "distance_km": "2.2",
         "why_hospital": "It is in network.", "cashless_status": "Cashless applies",

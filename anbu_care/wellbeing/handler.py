@@ -19,9 +19,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from anbu_care import service
-from anbu_care.comms import localtime
+from anbu_care.comms import consent, localtime
 from anbu_care.provenance.store import PARENT_SUBJECT
-from anbu_care.schemas import WellbeingEntry
+from anbu_care.schemas import MessageClass, WellbeingEntry
 from anbu_care.wellbeing import escalation as esc
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,95 @@ class Handled:
     alerted: list[str] = field(default_factory=list)
     not_alerted: list[str] = field(default_factory=list)
     called: list[str] = field(default_factory=list)
+
+
+def handle_unclear_voice(entry: WellbeingEntry, parent_id: str) -> Handled:
+    """A voice note nobody could make out.
+
+    A case IS opened. She recorded something urgent enough to send, and the
+    failure to understand it does not make the event less real — it makes it
+    less legible, which is a reason to involve people rather than fewer.
+
+    But no triage runs and no severity is set, because nothing was recognised.
+    The case exists with no triage decision, which the dashboard already reads
+    as "triage has not run on this case". Inventing a severity to justify the
+    case would be exactly the inference this whole path refuses to make.
+    """
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return Handled(reply="Thanks, that's noted.")
+
+    first = profile.name.split()[0] if profile.name else "your parent"
+    case = service.open_case(parent_id)
+
+    service.append_receipt(
+        parent_id,
+        kind="wellbeing.unclear",
+        actor="wellbeing_intake",
+        payload={
+            "entry_id": entry.entry_id, "case_id": case.case_id,
+            "source_kind": entry.source_kind,
+            "note": ("A voice note arrived and could not be transcribed. A case was "
+                     "opened so a human listens to it. No symptom was identified, no "
+                     "severity was assessed, and no diagnosis exists."),
+        },
+        subject=PARENT_SUBJECT,
+    )
+
+    when = localtime.for_reader(
+        entry.received_at, "UTC", getattr(profile, "timezone", "Asia/Kolkata"), profile.city,
+    )
+    alerted, failed, reached = _tell_unclear(
+        case.case_id, parent_id, profile, first, entry, "voice_note_unclear",
+        consent.ADMISSION_ALERTS, MessageClass.STATUS,
+    )
+    circle_alerted, circle_failed, _ = _tell_unclear(
+        case.case_id, parent_id, profile, first, entry, "care_circle_unclear",
+        consent.OUTBOUND_NOTIFY, MessageClass.LOGISTICS, skip=reached,
+    )
+
+    everyone = _unique(alerted + circle_alerted)
+    reply = ("We could not make out your voice note. "
+             + ("We have asked " + " and ".join(everyone) + " to call you now."
+                if everyone else
+                "We could not reach anyone, so please call someone yourself.")
+             + f" If this is an emergency, call {esc.EMERGENCY_NUMBER} now.")
+    return Handled(
+        reply=reply, escalated=True, case_id=case.case_id,
+        alerted=everyone,
+        not_alerted=[n for n in _unique(failed + circle_failed) if n not in everyone],
+    )
+
+
+def _tell_unclear(case_id, parent_id, profile, first, entry, template, purpose, klass,
+                  skip: set[str] | None = None):
+    """Send one of the unclear templates to everyone holding `purpose`."""
+    from anbu_care.comms.policy import consent_ok
+    from anbu_care.tools import whatsapp_tools
+
+    already = skip or set()
+    alerted: list[str] = []
+    failed: list[str] = []
+    reached: set[str] = set()
+    for contact in profile.family_contacts:
+        if contact.whatsapp_e164 in already or not consent_ok(contact.consents, purpose):
+            continue
+        reached.add(contact.whatsapp_e164)
+        sent = whatsapp_tools.send_family_update(
+            case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+            template_name=template,
+            template_params={
+                "parent_name": first,
+                "timestamp": localtime.for_reader(
+                    entry.received_at, contact.timezone,
+                    getattr(profile, "timezone", "Asia/Kolkata"), profile.city,
+                ),
+            },
+            message_class=klass.value,
+            purpose_override=purpose,
+        )
+        (alerted if sent.get("delivered") else failed).append(contact.name)
+    return alerted, failed, reached
 
 
 def handle(entry: WellbeingEntry, parent_id: str) -> Handled:
@@ -300,6 +389,15 @@ def _tell_the_family(
                 "why_hospital": why,
                 "cashless_status": cashless,
                 "understood_as": _understood_as(verdict),
+                # A transcript is what a model heard, not what she said.
+                # Quoting it as her words would put words in her mouth, and her
+                # son would act on them.
+                "words_note": (
+                    "That is what Anbu Care heard in her voice note. It may be "
+                    "imperfect, so listen to the recording in the dashboard.\n"
+                    if entry.source_kind == "voice" else
+                    "Those are her own words, not a medical assessment.\n"
+                ),
         }
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,

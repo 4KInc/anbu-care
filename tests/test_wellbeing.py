@@ -149,7 +149,11 @@ def test_an_ordinary_check_in_opens_nothing(client, parent):
 def test_the_entry_type_has_nowhere_to_put_a_finding():
     """Field inspection, so this fails the day someone adds `severity: str`."""
     fields = set(WellbeingEntry.model_fields)
-    assert fields == {"entry_id", "parent_id", "source", "text", "received_at", "channel"}
+    # The exact set, so adding anything is a deliberate act that lands here
+    # first. source_kind and audio_object are provenance — how the words got
+    # here and where the recording is — not findings about her.
+    assert fields == {"entry_id", "parent_id", "source", "text", "received_at",
+                      "channel", "source_kind", "audio_object"}
     for forbidden in ("severity", "diagnosis", "mood", "score", "sentiment", "risk", "state"):
         assert forbidden not in fields
 

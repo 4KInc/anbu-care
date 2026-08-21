@@ -275,6 +275,13 @@ async def wellbeing_inbound(request: Request) -> Response:
     body = (fields.get("Body") or "").strip()
     sender = inbound.resolve_sender(fields.get("From") or "")
 
+    # A voice note arrives with an empty Body. Before this it fell straight
+    # through to the "nothing to store" branch and was discarded silently,
+    # which is the input a breathless seventy-one year old actually sends.
+    media = inbound.media_from(fields) if sender is not None else None
+    if sender is not None and media is not None:
+        return _handle_voice_note(sender, media)
+
     if sender is None or not body:
         # Unknown number, withdrawn consent, or an empty message. Nothing is
         # stored, and Twilio is told the webhook succeeded so it does not retry
@@ -296,6 +303,38 @@ async def wellbeing_inbound(request: Request) -> Response:
             '<?xml version="1.0" encoding="UTF-8"?>'
             f"<Response><Message>{escape(alerted.reply)}</Message></Response>"
         ),
+        media_type="application/xml",
+    )
+
+
+def _handle_voice_note(sender: Any, media: Any) -> Response:
+    """Store the recording, transcribe it, and act on whichever we end up with.
+
+    The audio is kept either way. It is the record; the transcript is derived
+    from it, and if a model could not make out the words a human still can.
+    """
+    from anbu_care.comms import storage, transcribe
+
+    stored = storage.store(
+        f"voice/{sender.parent_id}/{service.new_id('vn')}.ogg",
+        media.audio, content_type=media.mime_type,
+    )
+    heard = transcribe.transcribe(media.audio, media.mime_type)
+    logger.info("voice note from %s: %s", sender.parent_id, heard.detail)
+
+    entry = wellbeing_store.record(
+        sender.parent_id, sender.source,
+        heard.text if heard.ok else "(voice note, not transcribed)",
+        source_kind="voice",
+        audio_object=stored.object_name,
+    )
+
+    handled = (wellbeing_escalation.handle(entry, sender.parent_id) if heard.ok
+               else wellbeing_escalation.handle_unclear_voice(entry, sender.parent_id))
+
+    return Response(
+        content=('<?xml version="1.0" encoding="UTF-8"?>'
+                 f"<Response><Message>{escape(handled.reply)}</Message></Response>"),
         media_type="application/xml",
     )
 

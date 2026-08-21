@@ -424,6 +424,14 @@ class WellbeingEntry(BaseModel):
     text: str
     received_at: datetime = Field(default_factory=utcnow)
     channel: str = "whatsapp"
+    # "text" when she typed it, "voice" when a model transcribed a recording.
+    # The distinction is load-bearing: a transcript is what a model heard, not
+    # what she said, and everything downstream is worded accordingly.
+    source_kind: str = "text"
+    # Where the recording itself lives. The audio is the record; the text above
+    # is derived from it. Credentialed, and served through a short-lived
+    # signed URL so her son can hear her voice rather than read a paraphrase.
+    audio_object: str | None = None
 
 
 class ArrivalBrief(BaseModel):
