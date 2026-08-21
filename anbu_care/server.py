@@ -35,7 +35,7 @@ from anbu_care.tools import (
     triage_tools,
     whatsapp_tools,
 )
-from anbu_care.webauth import require_family_session
+from anbu_care.webauth import require_case_access, require_family_session
 from anbu_care.wellbeing import handler as wellbeing_escalation
 from anbu_care.wellbeing import store as wellbeing_store
 
@@ -207,7 +207,7 @@ def demo_seed() -> dict[str, Any]:
 
 
 @app.get("/api/parents/{parent_id}")
-def parent_detail(parent_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
+def parent_detail(parent_id: str, _session: str = Depends(require_case_access)) -> dict[str, Any]:
     """The baseline record and every document ingested for this parent."""
     result = onboarding_tools.get_parent_profile(parent_id)
     if result.get("status") == "error":
@@ -341,7 +341,7 @@ def _handle_voice_note(sender: Any, media: Any) -> Response:
 
 @app.get("/api/parents/{parent_id}/wellbeing")
 def parent_wellbeing(
-    parent_id: str, _session: str = Depends(require_family_session)
+    parent_id: str, _session: str = Depends(require_case_access)
 ) -> dict[str, Any]:
     """Check-ins for a parent. Credentialed, because it returns what was said."""
     entries = wellbeing_store.list_entries(parent_id)
@@ -360,7 +360,7 @@ def intake_channels() -> dict[str, Any]:
 
 
 @app.get("/api/cases/{case_id}/brief")
-def case_brief(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
+def case_brief(case_id: str, _session: str = Depends(require_case_access)) -> dict[str, Any]:
     """The arrival brief: what is waiting when the family lands.
 
     Composed from the signed chain. Every line carries its provenance, and
@@ -374,7 +374,7 @@ def case_brief(case_id: str, _session: str = Depends(require_family_session)) ->
 
 
 @app.get("/api/cases/{case_id}/trail")
-def case_trail(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
+def case_trail(case_id: str, _session: str = Depends(require_case_access)) -> dict[str, Any]:
     """Reconstruct every decision on a case, in order, with its hash links."""
     result = provenance_tools.get_case_trail(case_id)
     if result.get("status") == "error":
@@ -518,7 +518,7 @@ def _cashless_line(parent_id: str) -> str:
 
 @app.get("/api/parents/{parent_id}/care-circle")
 def parent_care_circle(
-    parent_id: str, _session: str = Depends(require_family_session)
+    parent_id: str, _session: str = Depends(require_case_access)
 ) -> dict[str, Any]:
     """Who would be notified. Derived from consent, not from a stored roster."""
     contacts = care_notify.care_circle(parent_id)
@@ -534,7 +534,7 @@ def parent_care_circle(
 
 
 @app.get("/api/cases/{case_id}")
-def case_detail(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
+def case_detail(case_id: str, _session: str = Depends(require_case_access)) -> dict[str, Any]:
     """Case metadata and its current chain head."""
     case = service.load_case(case_id)
     if case is None:

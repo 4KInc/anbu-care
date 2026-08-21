@@ -252,7 +252,7 @@ def gate_message(
 
 
 def render_template(template_name: str, params: dict[str, str],
-                    case_id: str | None = None) -> str:
+                    case_id: str | None = None, parent_id: str | None = None) -> str:
     template = TEMPLATES.get(template_name)
     if template is None:
         raise KeyError(f"unknown template '{template_name}'")
@@ -264,7 +264,19 @@ def render_template(template_name: str, params: dict[str, str],
     # point a family member at an address of its choosing. It may name which
     # case to open, so the link lands on the episode the message is about
     # rather than on an empty dashboard.
-    url = f"{DASHBOARD_URL}?case={case_id}" if case_id else DASHBOARD_URL
+    url = DASHBOARD_URL
+    if case_id:
+        url = f"{url}?case={case_id}"
+        # A signed, expiring credential for this case only, so the person who
+        # was woken at 2am can open the link instead of hunting for a token.
+        # Absent when no signing secret is configured, in which case the link
+        # still works but asks them to sign in.
+        if parent_id:
+            from anbu_care.webauth import make_link_token
+
+            token = make_link_token(parent_id, case_id)
+            if token:
+                url = f"{url}&t={token}"
     return str(template["body"]).format(**{**params, "dashboard_url": url})
 
 

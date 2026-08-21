@@ -224,7 +224,7 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 <script>
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
-            record:null, verify:null, wellbeing:null, careCircle:null,
+            record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null,
             notified:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -233,6 +233,12 @@ const title = (h, p) => `<div class="title"><h1>${esc(h)}</h1><p>${esc(p)}</p></
 
 async function api(path, {auth=false} = {}) {
   const headers = auth && S.token ? { Authorization:`Bearer ${S.token}` } : {};
+  // A signed link stands in for a session. Both ids ride along because a
+  // parent-scoped path has no case in it for the server to check against.
+  if (auth && !S.token && S.linkToken && S.caseId) {
+    const sep = path.includes("?") ? "&" : "?";
+    path = `${path}${sep}t=${encodeURIComponent(S.linkToken)}&case=${encodeURIComponent(S.caseId)}`;
+  }
   const r = await fetch(API + path, { headers });
   if (r.status === 401) return { __denied:true, detail:(await r.json()).detail };
   if (!r.ok) return { __error:`HTTP ${r.status}` };
@@ -642,6 +648,11 @@ function caseFromLink(){
   catch { return null; }
 }
 
+function tokenFromLink(){
+  try { return new URLSearchParams(location.search).get("t"); }
+  catch { return null; }
+}
+
 async function load(){
   if(S.caseId){
     S.trail=await api(`/api/cases/${S.caseId}/trail`,{auth:true});
@@ -676,6 +687,7 @@ document.querySelectorAll("nav button").forEach(b=>
   const linked = caseFromLink();
   if(!linked) return;
   S.caseId = linked;
+  S.linkToken = tokenFromLink();
   const box = document.getElementById("cid");
   if(box) box.value = linked;
   load();

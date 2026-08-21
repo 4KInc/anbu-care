@@ -99,7 +99,8 @@ def send_family_update(
         return {"status": "error", "error": f"unknown message_class '{message_class}'"}
 
     try:
-        body = render_template(template_name, template_params, case_id=case_id)
+        body = render_template(template_name, template_params,
+                               case_id=case_id, parent_id=parent_id)
     except (KeyError, ValueError) as exc:
         return {"status": "error", "error": str(exc)}
 
