@@ -62,6 +62,14 @@ def no_model_calls(monkeypatch, request):
 
     from anbu_care.wellbeing import escalation
 
+    # Patch read(), not extract_symptoms(): assess() calls read() directly, and
+    # patching only the wrapper let the whole suite phone Gemini for real. That
+    # has now happened twice — once for Twilio, once here — so the rule is to
+    # stub the function the code path actually reaches.
+    monkeypatch.setattr(
+        escalation, "read",
+        lambda text: escalation.Reading(note="model disabled in tests"),
+    )
     monkeypatch.setattr(
         escalation, "extract_symptoms",
         lambda text: ([], False, "model disabled in tests"),

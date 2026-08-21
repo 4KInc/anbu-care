@@ -60,7 +60,9 @@ EMERGENCY_NUMBER = "108"
 # Severities that mean a person should be told now.
 ESCALATING = {Severity.HIGH}
 
-_PROMPT = """You normalise informal descriptions of how someone feels into short clinical symptom terms.
+_PROMPT = """You do two jobs on a message from an elderly person or their carer.
+
+FIRST, normalise informal descriptions of how someone feels into short clinical symptom terms.
 
 The message may be in ANY language, or in a language written with English
 letters. Tamil, transliterated Tamil ("maarbu vali", "moochu vaanga
@@ -76,8 +78,18 @@ of breath", "difficulty breathing", "dizziness", "fainting", "confusion",
 Return [] if the message describes ordinary daily life, mood, sleep, appetite
 or general wellbeing with no physical symptom.
 
-Do NOT diagnose. Do NOT infer severity. Do NOT add anything not implied by the
-message. Output the JSON array and nothing else.
+SECOND, say whether the message describes something that needs someone to check
+on this person NOW. Judge only urgency of attention, never a diagnosis. Sudden,
+severe, new, or rapidly worsening things need attention. Ordinary aches, mood,
+sleep, appetite and long-standing complaints do not.
+
+Do NOT diagnose. Do NOT name a condition. Do NOT guess at causes.
+
+Output ONLY this JSON and nothing else:
+{{"symptoms": ["..."], "urgent": true or false, "why": "a short factual phrase"}}
+
+"why" must describe what was said, not what it might be. "sudden loss of vision
+in one eye" is correct. "possible retinal detachment" is not.
 
 Message: {text}"""
 
@@ -98,14 +110,43 @@ class Escalation:
     model_terms: list[str] = field(default_factory=list)
     model_used: bool = False
     model_note: str = ""
+    # "rule" when a named phrase matched, "model" when nothing did and the
+    # model alone judged it urgent, "both" when they agreed. Recorded because
+    # an auditor must be able to tell which decisions came from code and which
+    # from a prompt — and because the model-only ones are the queue for
+    # deciding what rules to add next.
+    decided_by: str = "none"
+    model_urgent: bool = False
+    model_reason: str = ""
+
+
+@dataclass
+class Reading:
+    """What the model made of the message. Advisory on both counts."""
+
+    terms: list[str] = field(default_factory=list)
+    urgent: bool = False
+    why: str = ""
+    used: bool = False
+    note: str = ""
 
 
 def extract_symptoms(text: str) -> tuple[list[str], bool, str]:
-    """Ask Gemini to restate informal wording as symptom terms.
+    """Backwards-compatible view of the terms alone."""
+    reading = read(text)
+    return reading.terms, reading.used, reading.note
 
-    Advisory. The return value is fed to the table as extra symptoms; it can
-    only widen the match. Every failure path returns an empty list, because a
-    model that cannot answer must not be able to quieten anything.
+
+def read(text: str) -> Reading:
+    """Ask Gemini for symptom terms AND whether someone should check now.
+
+    Advisory on both counts. The terms are fed to the table as extra symptoms,
+    where they can only widen a match. The urgency flag can only ADD an
+    escalation, never remove one — the raw text still reaches the table
+    regardless, so a model that says "fine" cannot quieten a red flag.
+
+    Every failure path returns nothing recognised and not urgent, which is the
+    same thing a timeout produces: the deterministic floor still decides.
     """
     try:
         from google import genai
@@ -121,14 +162,27 @@ def extract_symptoms(text: str) -> tuple[list[str], bool, str]:
         # Models like to wrap JSON in a fence whatever the instruction says.
         if raw.startswith("```"):
             raw = raw.split("```")[1].removeprefix("json").strip()
-        terms = json.loads(raw)
+        parsed = json.loads(raw)
+        # Tolerate a bare list from an older prompt shape rather than losing the
+        # terms entirely.
+        if isinstance(parsed, list):
+            terms, urgent, why = parsed, False, ""
+        elif isinstance(parsed, dict):
+            terms = parsed.get("symptoms") or []
+            urgent = bool(parsed.get("urgent"))
+            why = str(parsed.get("why") or "").strip()[:160]
+        else:
+            return Reading(note="model did not return usable JSON; ignored")
         if not isinstance(terms, list):
-            return [], False, "model did not return a list; ignored"
+            return Reading(note="model did not return a symptom list; ignored")
         cleaned = [str(t).strip().lower() for t in terms if str(t).strip()][:6]
-        return cleaned, True, f"model suggested {len(cleaned)} term(s)"
+        return Reading(
+            terms=cleaned, urgent=urgent, why=why, used=True,
+            note=f"model suggested {len(cleaned)} term(s); urgent={urgent}",
+        )
     except Exception as exc:  # noqa: BLE001 - advisory input, never load-bearing
-        logger.warning("symptom extraction unavailable: %s: %s", type(exc).__name__, exc)
-        return [], False, f"model unavailable ({type(exc).__name__}); keyword scan only"
+        logger.warning("symptom reading unavailable: %s: %s", type(exc).__name__, exc)
+        return Reading(note=f"model unavailable ({type(exc).__name__}); keyword scan only")
 
 
 def assess(text: str, chronic_conditions: list[str] | None = None) -> Escalation:
@@ -137,24 +191,50 @@ def assess(text: str, chronic_conditions: list[str] | None = None) -> Escalation
     The raw text goes to the table regardless of what the model said, so the
     model's contribution is strictly additive.
     """
-    model_terms, model_used, note = extract_symptoms(text)
+    reading = read(text)
 
     # free_text is passed through untouched: this is the floor that holds when
     # the model is absent, wrong, or slow.
     result = classify_severity(
-        symptoms=model_terms,
+        symptoms=reading.terms,
         free_text=text,
         chronic_conditions=chronic_conditions or [],
     )
 
+    by_rule = result.severity in ESCALATING
+
+    # A table of phrases cannot enumerate every emergency. Someone saying "I
+    # cannot feel my legs" or "everything went black" deserves a phone call
+    # whether or not those words were foreseen, so the model may raise an
+    # escalation the table missed.
+    #
+    # It may only RAISE one. The raw text still reaches the table regardless,
+    # so a model answering "fine" cannot quieten a red flag, and every
+    # guarantee that held before this still holds.
+    escalate = by_rule or reading.urgent
+    decided_by = ("both" if by_rule and reading.urgent
+                  else "rule" if by_rule
+                  else "model" if reading.urgent
+                  else "none")
+
+    matched = list(result.rationale)
+    if reading.urgent and not by_rule:
+        matched.append(
+            "no rule matched; the model judged this needs attention now"
+            + (f": {reading.why}" if reading.why else "")
+        )
+
     return Escalation(
-        escalate=result.severity in ESCALATING,
+        escalate=escalate,
         severity=result.severity,
-        symptoms=model_terms,
-        matched=list(result.rationale),
-        model_terms=model_terms,
-        model_used=model_used,
-        model_note=note,
+        symptoms=reading.terms,
+        matched=matched,
+        model_terms=reading.terms,
+        model_used=reading.used,
+        model_note=reading.note,
+        decided_by=decided_by,
+        model_urgent=reading.urgent,
+        model_reason=reading.why,
     )
 
 

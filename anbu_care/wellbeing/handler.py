@@ -70,9 +70,6 @@ def handle_unclear_voice(entry: WellbeingEntry, parent_id: str) -> Handled:
         subject=PARENT_SUBJECT,
     )
 
-    when = localtime.for_reader(
-        entry.received_at, "UTC", getattr(profile, "timezone", "Asia/Kolkata"), profile.city,
-    )
     alerted, failed, reached = _tell_unclear(
         case.case_id, parent_id, profile, first, entry, "voice_note_unclear",
         consent.ADMISSION_ALERTS, MessageClass.STATUS,
@@ -190,10 +187,19 @@ def _open_and_triage(entry: WellbeingEntry, parent_id: str, verdict: esc.Escalat
             "model_terms": verdict.model_terms,
             "model_used": verdict.model_used,
             "model_note": verdict.model_note,
+            "decided_by": verdict.decided_by,
+            "model_urgent": verdict.model_urgent,
+            "model_reason": verdict.model_reason,
             "note": (
-                "A deterministic red-flag table matched these phrases and a case was "
-                "opened so a human is involved. This is a routing decision, not a "
-                "clinical assessment, and no diagnosis has been made."
+                ("A deterministic red-flag table matched these phrases and a case "
+                 "was opened so a human is involved."
+                 if verdict.decided_by in {"rule", "both"} else
+                 "NO RULE MATCHED. The model alone judged this needs attention now, "
+                 "and a case was opened on that basis. Recorded as a model decision "
+                 "so it can be reviewed, and so a clinician can decide whether this "
+                 "presentation should become a rule.")
+                + " This is a routing decision, not a clinical assessment, and no "
+                  "diagnosis has been made."
             ),
         },
         subject=PARENT_SUBJECT,

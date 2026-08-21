@@ -20,7 +20,12 @@ from anbu_care.wellbeing import escalation as esc
 @pytest.fixture
 def model(monkeypatch):
     """Replace symptom extraction with something a test controls."""
-    def install(terms, used=True, note="faked"):
+    def install(terms, used=True, note="faked", urgent=False, why=""):
+        monkeypatch.setattr(
+            esc, "read",
+            lambda text: esc.Reading(terms=terms, urgent=urgent, why=why,
+                                     used=used, note=note),
+        )
         monkeypatch.setattr(esc, "extract_symptoms", lambda text: (terms, used, note))
     return install
 
@@ -851,3 +856,80 @@ def test_the_break_survives_when_there_is_nothing_to_translate():
     still be there."""
     body = _urgent_body(understood_as="")
     assert "not a medical assessment.\n\nShe is being directed" in body
+
+
+# ---- the table cannot enumerate every emergency --------------------------
+
+
+def test_the_model_can_escalate_something_no_rule_covers(model):
+    """"I cannot feel my legs" is not in RED_FLAGS and never will be, because
+    the list of ways a person describes a crisis has no end."""
+    said = "I cannot feel my legs and everything went black for a moment"
+
+    model([])                                     # table alone
+    assert esc.assess(said).escalate is False
+
+    model([], urgent=True, why="sudden loss of sensation in both legs")
+    verdict = esc.assess(said)
+    assert verdict.escalate is True
+    assert verdict.decided_by == "model"
+
+
+def test_a_model_only_escalation_says_no_rule_matched(model):
+    """The label is the whole point. An auditor must be able to tell which
+    decisions came from code and which from a prompt."""
+    model([], urgent=True, why="sudden loss of vision in one eye")
+    verdict = esc.assess("everything went dark in my right eye just now")
+
+    assert verdict.decided_by == "model"
+    joined = " ".join(verdict.matched)
+    assert "no rule matched" in joined
+    assert "sudden loss of vision in one eye" in joined
+
+
+def test_a_rule_match_is_still_labelled_as_a_rule(model):
+    model([])
+    verdict = esc.assess("crushing chest pain, can't breathe")
+    assert verdict.decided_by == "rule"
+    assert verdict.model_urgent is False
+
+
+def test_agreement_is_recorded_as_both(model):
+    model(["chest pain"], urgent=True, why="chest pain with breathlessness")
+    verdict = esc.assess("crushing chest pain, can't breathe")
+    assert verdict.decided_by == "both"
+
+
+# ---- and it still cannot quieten anything -------------------------------
+
+
+def test_the_model_calling_it_fine_cannot_stop_an_escalation(model):
+    """The floor is code and a model may not lower it. This is the guarantee
+    that survives adding the model as a second opinion."""
+    model([], urgent=False, why="ordinary tiredness")
+    verdict = esc.assess("crushing chest pain, can't breathe")
+
+    assert verdict.escalate is True
+    assert verdict.decided_by == "rule"
+
+
+def test_a_silent_model_leaves_the_table_in_charge(model):
+    model([], used=False, note="model unavailable", urgent=False)
+    assert esc.assess("crushing chest pain, can't breathe").escalate is True
+    assert esc.assess("slept well, ate breakfast").escalate is False
+
+
+def test_ordinary_life_is_not_escalated_by_either(model):
+    model([], urgent=False)
+    for benign in ("slept well, ate breakfast", "mood is low today",
+                   "went for a short walk", "my knee aches when it rains"):
+        assert esc.assess(benign).escalate is False
+
+
+def test_the_model_reason_describes_what_was_said_not_what_it_might_be(model):
+    """"sudden loss of vision" is an observation. "possible retinal detachment"
+    is a diagnosis nobody is qualified to make here."""
+    prompt = esc._PROMPT
+    assert "never a diagnosis" in prompt
+    assert "Do NOT name a condition" in prompt
+    assert "possible retinal detachment" in prompt      # given as the wrong answer
