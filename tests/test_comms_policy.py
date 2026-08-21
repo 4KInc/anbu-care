@@ -127,6 +127,8 @@ def test_every_template_renders_and_passes_its_own_gate():
         "amount": "358500", "total": "358500", "line_count": "4",
         "doctor_name": "Ravi", "department": "Cardiology",
         "cashless_status": "Cashless approval is in progress",
+        "said": "I cannot catch my breath", "distance_km": "2.2",
+        "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -213,7 +215,11 @@ def test_a_rendered_template_still_passes_the_gate():
         "stage": "approved", "amount": "66,000", "total": "1,20,000",
         "line_count": "14", "doctor_name": "Iyer", "department": "Cardiology",
         "cashless_status": "Cashless approval is in progress",
+        "said": "I cannot catch my breath", "distance_km": "2.2",
+        "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "cashless_status": "Cashless approval is in progress",
+        "said": "I cannot catch my breath", "distance_km": "2.2",
+        "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]

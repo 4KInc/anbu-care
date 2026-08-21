@@ -79,13 +79,31 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "The itemised breakdown is here: {dashboard_url}",
         "params": ["parent_name", "total", "line_count"],
     },
+    "urgent_family_alert": {
+        "message_class": MessageClass.STATUS,
+        # Written for one reader: the son or daughter who wakes at 2am to this.
+        # Everything they will ask in the first thirty seconds, in the order
+        # they will ask it — what happened, where is she, why there, is it
+        # covered, what do I do — and then a way to see the rest.
+        "body": "Anbu Care, urgent. {parent_name} sent this at {timestamp}:\n"
+                "\"{said}\"\n"
+                "Those are her own words, not a medical assessment.\n\n"
+                "She is being directed to {hospital_name}, {distance_km} km away. "
+                "{why_hospital}\n"
+                "{cashless_status}.\n\n"
+                "Call her now. If you cannot reach her, call 108, the ambulance "
+                "line in India. Anbu Care has not called an ambulance and cannot.\n"
+                "Everything known so far: {dashboard_url}",
+        "params": ["parent_name", "timestamp", "said", "hospital_name",
+                   "distance_km", "why_hospital", "cashless_status"],
+    },
     "care_circle_notice": {
         "message_class": MessageClass.LOGISTICS,
         # Where, when, and whether the bill is covered. There is no slot for a
         # reason, a finding or a condition, so the commonest way clinical
         # detail reaches a template — someone filling a free-text field — does
         # not exist here.
-        "body": "Anbu Care: {parent_name} has been taken to {hospital_name}, {timestamp}. "
+        "body": "Anbu Care: {parent_name} is being directed to {hospital_name}, {timestamp}. "
                 "{cashless_status}. "
                 "You are receiving this as a listed contact. No reply is needed, "
                 "and no medical details are shared here.",
