@@ -64,6 +64,7 @@ class DeliveryResult:
     provider_id: str | None = None
     http_status: int | None = None
     provider_status: str | None = None
+    media_url_sent: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +75,7 @@ class DeliveryResult:
             "provider_id": self.provider_id,
             "http_status": self.http_status,
             "provider_status": self.provider_status,
+            "media_url_sent": self.media_url_sent,
         }
 
 
@@ -99,7 +101,7 @@ def _twilio_auth() -> tuple[str, str] | None:
     return (account, token) if token else None
 
 
-def _twilio(to_e164: str, body: str) -> DeliveryResult:
+def _twilio(to_e164: str, body: str, media_url: str | None = None) -> DeliveryResult:
     sid = _env("TWILIO_ACCOUNT_SID")
     auth = _twilio_auth()
     sender = _env("TWILIO_WHATSAPP_FROM") or "whatsapp:+14155238886"
@@ -121,6 +123,7 @@ def _twilio(to_e164: str, body: str) -> DeliveryResult:
                 "From": sender if sender.startswith("whatsapp:") else f"whatsapp:{sender}",
                 "To": f"whatsapp:{to_e164}",
                 "Body": body,
+                **({"MediaUrl": media_url} if media_url else {}),
             },
             timeout=20,
         )
@@ -156,13 +159,14 @@ def _twilio(to_e164: str, body: str) -> DeliveryResult:
         provider_id=payload.get("sid"),
         http_status=response.status_code,
         provider_status=status,
+        media_url_sent=bool(media_url),
         detail=(f"accepted by Twilio for delivery to {to_e164} (status: {status}). "
                 "Handset confirmation would arrive over a status callback, which "
                 "this demo does not run — so this is acceptance, not receipt."),
     )
 
 
-def _meta(to_e164: str, body: str) -> DeliveryResult:
+def _meta(to_e164: str, body: str, media_url: str | None = None) -> DeliveryResult:
     token = _env("WHATSAPP_ACCESS_TOKEN")
     number_id = _env("WHATSAPP_PHONE_NUMBER_ID")
     if not (token and number_id):
@@ -170,14 +174,18 @@ def _meta(to_e164: str, body: str) -> DeliveryResult:
             delivered=False, channel="meta",
             detail="WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID are not set; nothing was sent.",
         )
-    return _meta_post(
-        token, number_id, to_e164,
+    payload: dict = (
+        {"messaging_product": "whatsapp", "to": to_e164, "type": "document",
+         "document": {"link": media_url, "caption": body}}
+        if media_url else
         {"messaging_product": "whatsapp", "to": to_e164,
-         "type": "text", "text": {"body": body}},
+         "type": "text", "text": {"body": body}}
     )
+    return _meta_post(token, number_id, to_e164, payload, media=bool(media_url))
 
 
-def _meta_post(token: str, number_id: str, to_e164: str, payload: dict) -> DeliveryResult:
+def _meta_post(token: str, number_id: str, to_e164: str, payload: dict,
+               media: bool = False) -> DeliveryResult:
     import requests
 
     version = _env("WHATSAPP_API_VERSION") or GRAPH_VERSION
@@ -212,6 +220,7 @@ def _meta_post(token: str, number_id: str, to_e164: str, payload: dict) -> Deliv
         provider_id=messages[0].get("id"),
         http_status=response.status_code,
         provider_status=status,
+        media_url_sent=media,
         detail=(f"accepted by Meta for delivery to {to_e164}"
                 + (f" (status: {status})" if status else "")
                 + ". Handset confirmation would arrive over a webhook, which this "
@@ -241,7 +250,7 @@ def open_session(to_e164: str, template: str = "hello_world",
     )
 
 
-def _off(to_e164: str, body: str) -> DeliveryResult:
+def _off(to_e164: str, body: str, media_url: str | None = None) -> DeliveryResult:
     return DeliveryResult(
         delivered=False, channel="off",
         detail=("No transport is configured, so no message left the platform. The gate "
@@ -252,7 +261,8 @@ def _off(to_e164: str, body: str) -> DeliveryResult:
 TRANSPORTS = {"twilio": _twilio, "meta": _meta, "off": _off}
 
 
-def send(to_e164: str, body: str, mode: str | None = None) -> DeliveryResult:
+def send(to_e164: str, body: str, mode: str | None = None,
+         media_url: str | None = None) -> DeliveryResult:
     """Carry an already-permitted message. Never called for a blocked one."""
     # `mode is not None`, not `mode or ...`: an explicit "" must mean off, not
     # silently inherit whatever the ambient environment happens to say.
@@ -262,4 +272,4 @@ def send(to_e164: str, body: str, mode: str | None = None) -> DeliveryResult:
     # rather than silently starting to send.
     if chosen in {"sandbox", "", "none", "false"}:
         chosen = "off"
-    return TRANSPORTS.get(chosen, _off)(to_e164, body)
+    return TRANSPORTS.get(chosen, _off)(to_e164, body, media_url)
