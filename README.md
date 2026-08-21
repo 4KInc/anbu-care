@@ -76,14 +76,24 @@ This matters more than any feature list, so it comes first.
   is a dated seeded snapshot, not a live capability feed. Capability and
   empanelment values must be spot-checked against current listings before any
   public writeup or recorded narration.
-- **WhatsApp delivery.** Messages the gate permits are carried by the Twilio
-  WhatsApp sandbox, which delivers **real** messages to numbers that have opted
-  in by sending `join <code>` to the sandbox number. That is genuine delivery,
-  not a stub — but it is **not general production reach**: reaching an arbitrary
-  number needs Meta business verification and template approval, roughly 10–15
-  business days, which will not clear inside this window. With no transport
-  configured the system records the gate decision and says plainly that nothing
-  was sent.
+- **WhatsApp delivery.** The gate decision is real and always has been; the
+  transport behind it is real code with real credentials. Whether a message
+  actually leaves depends on the configured provider, and the system never
+  claims a send that did not happen — a permitted-but-undelivered message is
+  recorded as `comms.not_delivered`, with `sent_at` left unset.
+
+  Two providers are wired. **Meta's Cloud API** test sender is free, needs no
+  payment method, and reaches up to five verified recipient numbers — the
+  working path. **Twilio's** sandbox is also implemented, but a Twilio *trial*
+  account cannot send freeform WhatsApp at all: `Body` is rejected with
+  `21654 ContentSid Required`, and the Content API that would satisfy it is
+  itself gated behind upgrading. That is a catch-22, not a bug in this code, and
+  it is why the default mode is `off`.
+
+  Neither is general production reach. Sending to an arbitrary number needs Meta
+  business verification and template approval, roughly 10–15 business days.
+  Whatever the transport, **clinical detail never traverses WhatsApp** — that is
+  the classifier's job, and it runs before the transport is reachable at all.
 
 Every market figure quoted in the project brief is directional and unverified.
 See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
@@ -337,22 +347,49 @@ is served under `/api/` for that reason. See `infra/DEPLOYED.md`.
 
 ### WhatsApp delivery credentials
 
-Secrets are read from the environment only — never committed, never logged, and
-never baked into an image layer. For local runs put them in `.env` (gitignored);
-for Cloud Run, inject them as secrets rather than plain env vars:
+Secrets are read from the environment only — never committed, never logged,
+never baked into an image layer. Locally they go in `.env` (gitignored); on
+Cloud Run, inject them as secrets rather than plain env vars.
+
+**Meta Cloud API** (free test sender, the working path):
 
 ```bash
-printf %s "$TWILIO_ACCOUNT_SID" | gcloud secrets create twilio-account-sid --data-file=-
-printf %s "$TWILIO_AUTH_TOKEN"  | gcloud secrets create twilio-auth-token  --data-file=-
-
-gcloud run services update anbu-care --region=asia-south1 \
-  --update-secrets=TWILIO_ACCOUNT_SID=twilio-account-sid:latest,TWILIO_AUTH_TOKEN=twilio-auth-token:latest \
-  --update-env-vars=ANBU_WHATSAPP_MODE=twilio,TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+# From the Meta app dashboard: WhatsApp -> API Setup
+ANBU_WHATSAPP_MODE=meta
+WHATSAPP_ACCESS_TOKEN=...        # "Generate access token" — temporary, expires
+WHATSAPP_PHONE_NUMBER_ID=...     # the numeric ID, not the phone number
+WHATSAPP_API_VERSION=v23.0
 ```
 
-The runtime service account needs `roles/secretmanager.secretAccessor` for those
-two secrets. Set `ANBU_WHATSAPP_MODE=off` to record gate decisions without
-sending anything.
+No conversation window exists until the recipient has written to you, so the
+first contact must be a pre-approved template. `transport.open_session(to)`
+sends `hello_world` for exactly that purpose. It is an operational handshake,
+not a family update: it carries no case content and does not go through the
+gate, because there is nothing to classify.
+
+**Twilio** (implemented; needs a non-trial account, see the honesty note above):
+
+```bash
+ANBU_WHATSAPP_MODE=twilio
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_API_KEY_SID=SK...         # preferred: revocable without rotating the
+TWILIO_API_KEY_SECRET=...        # account auth token
+TWILIO_WHATSAPP_FROM=whatsapp:+1...   # your sandbox sender, NOT the docs default
+```
+
+On Cloud Run:
+
+```bash
+printf %s "$WHATSAPP_ACCESS_TOKEN" | gcloud secrets create whatsapp-access-token --data-file=-
+
+gcloud run services update anbu-care --region=asia-south1 \
+  --update-secrets=WHATSAPP_ACCESS_TOKEN=whatsapp-access-token:latest \
+  --update-env-vars=ANBU_WHATSAPP_MODE=meta,WHATSAPP_PHONE_NUMBER_ID=...
+```
+
+The runtime service account needs `roles/secretmanager.secretAccessor` on those
+secrets. `ANBU_WHATSAPP_MODE=off` (the default) records gate decisions and sends
+nothing.
 
 ### Runtime service account needs explicit roles
 
