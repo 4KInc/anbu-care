@@ -87,14 +87,15 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # covered, what do I do — and then a way to see the rest.
         "body": "Anbu Care, urgent. {parent_name} sent this at {timestamp}:\n"
                 "\"{said}\"\n"
-                "Those are her own words, not a medical assessment.\n\n"
-                "She is being directed to {hospital_name}, {distance_km} km away. "
+                "Those are her own words, not a medical assessment.\n"
+                "{understood_as}"
+                "\nShe is being directed to {hospital_name}, {distance_km} km away. "
                 "{why_hospital}\n"
                 "{cashless_status}.\n\n"
                 "Call her now. If you cannot reach her, call 108, the ambulance "
                 "line in India. Anbu Care has not called an ambulance and cannot.\n"
                 "Everything known so far: {dashboard_url}",
-        "params": ["parent_name", "timestamp", "said", "hospital_name",
+        "params": ["parent_name", "timestamp", "said", "understood_as", "hospital_name",
                    "distance_km", "why_hospital", "cashless_status"],
     },
     "urgent_family_alert_withheld": {
@@ -106,14 +107,15 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # mother harder to help.
         "body": "Anbu Care, urgent. {parent_name} sent a message at {timestamp}.\n"
                 "What she wrote contains medical detail, so it is not repeated here. "
-                "You can read it in the dashboard.\n\n"
-                "She is being directed to {hospital_name}, {distance_km} km away. "
+                "You can read it in the dashboard.\n"
+                "{understood_as}"
+                "\nShe is being directed to {hospital_name}, {distance_km} km away. "
                 "{why_hospital}\n"
                 "{cashless_status}.\n\n"
                 "Call her now. If you cannot reach her, call 108, the ambulance "
                 "line in India. Anbu Care has not called an ambulance and cannot.\n"
                 "Her exact words and everything else: {dashboard_url}",
-        "params": ["parent_name", "timestamp", "hospital_name",
+        "params": ["parent_name", "timestamp", "understood_as", "hospital_name",
                    "distance_km", "why_hospital", "cashless_status"],
     },
     "care_circle_notice": {

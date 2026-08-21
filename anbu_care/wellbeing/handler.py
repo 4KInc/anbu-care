@@ -53,7 +53,9 @@ def handle(entry: WellbeingEntry, parent_id: str) -> Handled:
     # maker is woken at 2am and needs everything the system knows. A neighbour
     # or a listed doctor needs to be asked to go round, and is not entitled to
     # the rest.
-    family_alerted, family_failed, family_numbers = _tell_the_family(case_id, parent_id, entry)
+    family_alerted, family_failed, family_numbers = _tell_the_family(
+        case_id, parent_id, entry, verdict,
+    )
     circle_alerted, circle_failed = _tell_the_care_circle(
         case_id, parent_id, verdict, skip_numbers=family_numbers,
     )
@@ -233,8 +235,26 @@ def _why_only(explanation: str) -> str:
     return text
 
 
+def _understood_as(verdict: esc.Escalation) -> str:
+    """The system showing its working, in one line.
+
+    She may have written in Tamil, or in Tamil spelled with English letters,
+    and her son may be half awake and unable to read either. The alert says it
+    is urgent; without this it never says WHY, which makes the escalation
+    illegible exactly when it needs to be obvious.
+
+    These are recognised terms, not findings. The same phrases are already on
+    the chain as matched_rules; this only puts them where the person who has to
+    act can see them.
+    """
+    terms = [t for t in dict.fromkeys(verdict.model_terms) if t]
+    if not terms:
+        return ""
+    return "Understood as: " + ", ".join(terms) + ".\n"
+
+
 def _tell_the_family(
-    case_id: str, parent_id: str, entry: WellbeingEntry
+    case_id: str, parent_id: str, entry: WellbeingEntry, verdict: esc.Escalation
 ) -> tuple[list[str], list[str], set[str]]:
     """The full picture, to contacts who hold admission-alert consent.
 
@@ -279,6 +299,7 @@ def _tell_the_family(
                 "distance_km": distance,
                 "why_hospital": why,
                 "cashless_status": cashless,
+                "understood_as": _understood_as(verdict),
         }
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,

@@ -178,6 +178,7 @@ def _urgent_body(**over):
         "why_hospital": ("The extra distance was accepted because Sacred Heart is "
                          "empanelled with Star Health, so this keeps the admission cashless."),
         "cashless_status": "Cashless should apply at this hospital",
+        "understood_as": "Understood as: chest pressure, shortness of breath.\n",
     }
     params.update(over)
     return render_template("urgent_family_alert", params)
@@ -767,3 +768,84 @@ def test_the_table_says_it_is_not_a_clinical_protocol():
     source = inspect.getsource(severity)
     assert "not a clinical protocol" in source
     assert "reviewed by a clinician" in source
+
+
+# ---- the system shows its working ----------------------------------------
+
+
+def test_the_alert_says_why_it_escalated(model):
+    """She may write in Tamil and he may be half asleep. "Urgent" without a
+    reason is illegible exactly when it needs to be obvious."""
+    from anbu_care.wellbeing.handler import _understood_as
+
+    model(["chest pain", "difficulty breathing"])
+    line = _understood_as(esc.assess("maarbu vali, moochu vaanga mudiyala"))
+    assert line == "Understood as: chest pain, difficulty breathing.\n"
+
+
+def test_understood_as_is_absent_when_the_model_added_nothing(model):
+    """The keyword table caught it unaided, so there is nothing to translate.
+    An empty "Understood as:" would be worse than no line."""
+    from anbu_care.wellbeing.handler import _understood_as
+
+    model([])
+    assert _understood_as(esc.assess("crushing chest pain, can't breathe")) == ""
+
+
+def test_understood_as_does_not_repeat_itself(model):
+    from anbu_care.wellbeing.handler import _understood_as
+
+    model(["chest pain", "chest pain", "dizziness"])
+    line = _understood_as(esc.assess("maarbu vali"))
+    assert line.count("chest pain") == 1
+
+
+def test_recognised_terms_are_not_presented_as_a_finding():
+    """"Understood as" is what the system matched. "Diagnosis" or "she has"
+    would be a claim nobody made."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    for name in ("urgent_family_alert", "urgent_family_alert_withheld"):
+        body = str(TEMPLATES[name]["body"])
+        assert "{understood_as}" in body
+        for claim in ("diagnosis", "she has", "condition:", "assessment:"):
+            assert claim not in body.lower()
+
+
+def test_the_understood_line_is_still_gated(monkeypatch):
+    """If recognised terms ever carried a measurement, the whole message is
+    blocked and falls back, exactly as her own words would be."""
+    from anbu_care.comms.policy import gate_message, render_template
+    from anbu_care.schemas import MessageClass
+
+    body = render_template("urgent_family_alert", {
+        "parent_name": "Rajeswari", "timestamp": "02:14 UTC", "said": "chest hurts",
+        "understood_as": "Understood as: troponin 0.94 ng/mL.\n",
+        "hospital_name": "Sacred Heart", "distance_km": "2.2",
+        "why_hospital": "It is in network.", "cashless_status": "Cashless applies",
+    })
+    assert gate_message(body, MessageClass.STATUS,
+                        template_name="urgent_family_alert").allowed is False
+
+
+def test_the_withheld_fallback_also_says_what_was_understood():
+    """The fallback drops her words. Dropping the reason too would leave a son
+    with an urgent message and nothing at all to go on."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    assert "{understood_as}" in str(TEMPLATES["urgent_family_alert_withheld"]["body"])
+
+
+def test_the_understood_line_does_not_swallow_the_paragraph_break():
+    """Without the break, "where she is going" runs straight into "what she
+    said" and the message becomes a wall of text on a phone."""
+    body = _urgent_body()
+    assert "not a medical assessment.\nUnderstood as:" in body
+    assert ".\n\nShe is being directed" in body
+
+
+def test_the_break_survives_when_there_is_nothing_to_translate():
+    """An English message adds no Understood line. The paragraph break must
+    still be there."""
+    body = _urgent_body(understood_as="")
+    assert "not a medical assessment.\n\nShe is being directed" in body
