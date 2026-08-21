@@ -40,6 +40,14 @@ TRANSCRIBE_TIMEOUT_SECONDS = 12
 MIN_AUDIO_BYTES = 1_200          # under a second, most likely a pocket touch
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
+# One call, not two. Gemini already has the audio, and asking it for the
+# transcript and the symptom reading together removes an entire round trip.
+# That mattered: two sequential calls put the webhook at fourteen seconds
+# against a Twilio ceiling of about fifteen, and a timeout mid-demo would make
+# Twilio retry and double-send the alerts.
+#
+# The cost is coupling. If transcription ever moves to another engine, the
+# split path in escalation.read() still exists and still works.
 _PROMPT = """Transcribe this audio exactly as spoken. It is most likely Tamil,
 Tamil mixed with English, or English, and the speaker may be elderly, unwell,
 out of breath or distressed.
@@ -48,19 +56,42 @@ Write the transcript in the language actually spoken, using that language's own
 script. Do not translate. Do not summarise. Do not add anything that was not
 said, and do not guess at words you cannot make out.
 
-If you cannot make out any speech at all, reply with exactly: NO_SPEECH
+Then do two more things with what you heard.
 
-Output only the transcript."""
+Normalise it into short English clinical symptom terms such as "chest pain",
+"shortness of breath", "dizziness", "confusion", "slurred speech", "severe
+bleeding", "seizure". Return [] if the message is about ordinary daily life,
+mood, sleep or appetite with no physical symptom.
+
+Say whether it describes something that needs someone to check on this person
+NOW. Judge only urgency of attention, never a diagnosis. Sudden, severe, new or
+rapidly worsening things need attention; ordinary aches, mood and long-standing
+complaints do not.
+
+Do NOT diagnose. Do NOT name a condition. "sudden loss of vision in one eye" is
+a correct reason. "possible retinal detachment" is not.
+
+Output ONLY this JSON and nothing else:
+{"transcript": "...", "symptoms": ["..."], "urgent": true or false, "why": "short factual phrase"}
+
+If you cannot make out any speech at all, set transcript to exactly NO_SPEECH."""
 
 
 @dataclass(frozen=True)
 class Transcript:
-    """What was heard, or plainly that nothing was."""
+    """What was heard, or plainly that nothing was.
+
+    `reading` carries the symptom terms and urgency judgement when they were
+    obtained in the same call as the transcript. It is advisory exactly as it
+    is for typed messages: the transcript still goes to the deterministic table
+    afterwards, so nothing here can quieten a red flag.
+    """
 
     ok: bool
     text: str = ""
     engine: str = ""
     detail: str = ""
+    reading: object | None = None
 
     @property
     def unclear(self) -> bool:
@@ -105,16 +136,52 @@ def transcribe(audio: bytes, mime_type: str = "audio/ogg") -> Transcript:
             ],
             config={"http_options": {"timeout": TRANSCRIBE_TIMEOUT_SECONDS * 1000}},
         )
-        text = (response.text or "").strip()
+        raw = (response.text or "").strip()
     except Exception as exc:  # noqa: BLE001 - failure is an outcome, not a crash
         return Transcript(
             ok=False, engine="gemini",
             detail=f"transcription failed ({type(exc).__name__}); the recording is kept"[:200],
         )
 
+    text, reading = _parse(raw)
+
     if not text or text.upper().startswith("NO_SPEECH"):
         return Transcript(ok=False, engine="gemini",
                           detail="no speech could be made out in the recording")
 
-    return Transcript(ok=True, text=text, engine="gemini",
-                      detail=f"transcribed {len(audio)} bytes of {mime_type}")
+    return Transcript(ok=True, text=text, engine="gemini", reading=reading,
+                      detail=f"transcribed {len(audio)} bytes of {mime_type} in one call")
+
+
+def _parse(raw: str) -> tuple[str, object | None]:
+    """Pull the transcript and the reading out of one reply.
+
+    A model that answers with a bare transcript instead of JSON still works:
+    the text is used and the reading is absent, which sends the caller down the
+    ordinary two-step path rather than losing the recording.
+    """
+    import json
+
+    from anbu_care.wellbeing.escalation import Reading
+
+    body = raw
+    if body.startswith("```"):
+        body = body.split("```")[1].removeprefix("json").strip()
+
+    try:
+        parsed = json.loads(body)
+    except Exception:  # noqa: BLE001 - not JSON, treat the whole reply as speech
+        return raw.strip(), None
+    if not isinstance(parsed, dict):
+        return raw.strip(), None
+
+    terms = parsed.get("symptoms")
+    reading = Reading(
+        terms=([str(t).strip().lower() for t in terms if str(t).strip()][:6]
+               if isinstance(terms, list) else []),
+        urgent=bool(parsed.get("urgent")),
+        why=str(parsed.get("why") or "").strip()[:160],
+        used=True,
+        note="read in the same call as the transcript",
+    )
+    return str(parsed.get("transcript") or "").strip(), reading

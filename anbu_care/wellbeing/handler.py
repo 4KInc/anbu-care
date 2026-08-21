@@ -123,12 +123,13 @@ def _tell_unclear(case_id, parent_id, profile, first, entry, template, purpose, 
     return alerted, failed, reached
 
 
-def handle(entry: WellbeingEntry, parent_id: str) -> Handled:
+def handle(entry: WellbeingEntry, parent_id: str,
+           reading: object | None = None) -> Handled:
     """Escalate if the table says so. Otherwise acknowledge and stop."""
     profile = service.load_profile(parent_id)
     conditions = list(profile.chronic_conditions) if profile else []
 
-    verdict = esc.assess(entry.text, conditions)
+    verdict = esc.assess(entry.text, conditions, reading=reading)
 
     if not verdict.escalate:
         return Handled(reply=esc.reply_text(verdict, []))

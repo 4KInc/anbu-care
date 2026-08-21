@@ -329,8 +329,13 @@ def _handle_voice_note(sender: Any, media: Any) -> Response:
         audio_object=stored.object_name,
     )
 
-    handled = (wellbeing_escalation.handle(entry, sender.parent_id) if heard.ok
-               else wellbeing_escalation.handle_unclear_voice(entry, sender.parent_id))
+    handled = (
+        # The reading came back with the transcript, so the escalation does not
+        # make a second model call.
+        wellbeing_escalation.handle(entry, sender.parent_id, reading=heard.reading)
+        if heard.ok else
+        wellbeing_escalation.handle_unclear_voice(entry, sender.parent_id)
+    )
 
     return Response(
         content=('<?xml version="1.0" encoding="UTF-8"?>'

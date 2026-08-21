@@ -185,13 +185,16 @@ def read(text: str) -> Reading:
         return Reading(note=f"model unavailable ({type(exc).__name__}); keyword scan only")
 
 
-def assess(text: str, chronic_conditions: list[str] | None = None) -> Escalation:
+def assess(text: str, chronic_conditions: list[str] | None = None,
+           reading: Reading | None = None) -> Escalation:
     """Decide whether a human needs to be told. Never what is wrong.
 
     The raw text goes to the table regardless of what the model said, so the
     model's contribution is strictly additive.
     """
-    reading = read(text)
+    # A voice note obtains the reading in the same call as the transcript, so
+    # there is nothing to ask again. Typed messages ask here.
+    reading = reading or read(text)
 
     # free_text is passed through untouched: this is the floor that holds when
     # the model is absent, wrong, or slow.

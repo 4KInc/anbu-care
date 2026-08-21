@@ -223,3 +223,64 @@ def test_typed_words_are_still_quoted_as_hers(household, sent):
     family = next(b for to, b in sent if to == "+16692167706")
     assert "Those are her own words, not a medical assessment" in family
     assert "heard in her voice note" not in family
+
+
+# ---- one call, and a fallback if it comes back the old shape -------------
+
+
+def test_a_json_reply_yields_transcript_and_reading_together():
+    """The round trip this removes was the difference between a webhook at
+    fourteen seconds and one at ten, against a Twilio ceiling of fifteen."""
+    text, reading = transcribe._parse(
+        '{"transcript": "மார்பு வலிக்கிறது", "symptoms": ["chest pain"],'
+        ' "urgent": true, "why": "chest pain with breathlessness"}'
+    )
+    assert text == "மார்பு வலிக்கிறது"
+    assert reading.terms == ["chest pain"]
+    assert reading.urgent is True
+    assert reading.used is True
+
+
+def test_a_fenced_json_reply_is_still_parsed():
+    """Models wrap JSON in a fence whatever the instruction says."""
+    text, reading = transcribe._parse(
+        '```json\n{"transcript": "chest pain", "symptoms": ["chest pain"], "urgent": true}\n```'
+    )
+    assert text == "chest pain"
+    assert reading.urgent is True
+
+
+def test_a_bare_transcript_still_works_without_a_reading():
+    """If the model answers with plain text instead of JSON, the recording is
+    not lost — the caller simply falls back to asking separately."""
+    text, reading = transcribe._parse("மார்பு வலிக்கிறது மூச்சு விட முடியவில்லை")
+    assert text == "மார்பு வலிக்கிறது மூச்சு விட முடியவில்லை"
+    assert reading is None
+
+
+def test_a_supplied_reading_means_no_second_model_call(monkeypatch):
+    """assess() must use what it was given rather than asking again."""
+    from anbu_care.wellbeing import escalation as esc
+
+    def explode(text):
+        raise AssertionError("assess made a second model call")
+
+    monkeypatch.setattr(esc, "read", explode)
+    verdict = esc.assess(
+        "crushing chest pain",
+        reading=esc.Reading(terms=["chest pain"], urgent=True, used=True),
+    )
+    assert verdict.escalate is True
+    assert verdict.decided_by == "both"
+
+
+def test_a_reading_from_the_transcript_call_still_cannot_suppress(monkeypatch):
+    """Collapsing the calls must not have weakened the floor."""
+    from anbu_care.wellbeing import escalation as esc
+
+    verdict = esc.assess(
+        "crushing chest pain, can't breathe",
+        reading=esc.Reading(terms=[], urgent=False, used=True, note="model says fine"),
+    )
+    assert verdict.escalate is True
+    assert verdict.decided_by == "rule"
