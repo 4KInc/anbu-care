@@ -73,6 +73,27 @@ Consent is checked per purpose, not per contact. DPDP requires purpose-specific,
 timestamped opt-in; a blanket checkbox is not sufficient, so
 `FamilyContact.consents` is a map of purpose to timestamp.
 
+### Three directions, not two
+
+Purposes carry their direction in the name, because a purpose that did not say
+which way it pointed is what caused a real defect here once: inbound wellbeing
+originally reused `status_updates`, so agreeing to *receive* updates about your
+parent silently made you eligible to *file reports* about her.
+
+| Direction | Purposes | Whose agreement |
+|---|---|---|
+| outbound — things we may send you | `admission_alerts`, `status_updates`, `billing_updates`, `claim_updates`, `outbound_notify` | the contact's |
+| inbound — things you may send us | `inbound_wellbeing` | the contact's |
+| **disclosure — showing the record itself** | `emergency_clinical_share` | **the parent's** |
+
+The third direction is not a fifth outbound purpose. The first two govern
+*messages* to or from a person and are held by that person about their own
+traffic. Disclosure governs handing someone the record, and its subject is
+different: a son agreeing to receive claim updates has not agreed that a
+stranger in a corridor may read his mother's allergies. So it lives on
+`ParentProfile.disclosure_consents`, and a test asserts it is unreachable from
+either of the other two sets.
+
 ## Why the receipt chain is signed as well as hashed
 
 A hash chain alone proves internal consistency: nobody edited entry 3 and left
@@ -123,7 +144,7 @@ counter. Two workers appending concurrently would collide on `seq` — acceptabl
 at hackathon scale, and the fix (a Firestore transaction on the case document)
 is a known next step rather than an oversight.
 
-A `MemoryStore` implements the same interface, which is why 399 tests run with no
+A `MemoryStore` implements the same interface, which is why 473 tests run with no
 GCP access at all.
 
 ## Why the TPA is simulated, and says so
@@ -140,6 +161,37 @@ to say the counterparty response is simulated every time it reports one.
 What is *not* simulated: packet assembly from stored evidence, the coverage and
 sub-limit checks against the real policy record, and the SLA deadlines, which are
 real timestamps checked against real wall time.
+
+## Why the trace can only render receipts
+
+The agency was always real — the adjudicator raises a query, the agent gathers
+what was asked for, the packet is re-checked, and the loop stops when the gate
+clears. What was missing was any way to *watch* it, and `anbu_care/trace/` is
+that view.
+
+It is deliberately the dullest module in the repository, because the
+interesting property is what it refuses to do: **one step per receipt, never
+more and never fewer**. No summarising two receipts into a tidier beat, no
+inferring an unrecorded step because the story reads better with it, no
+reordering into the sequence a narrator would prefer. `len(steps)` equals
+`receipt_count` or the test fails, and every step carries the `seq` and hash of
+the receipt it came from.
+
+A trace that could invent a step would be a story about an agent rather than a
+record of one, and the difference is the whole argument.
+
+Two failure directions are held, not one. The obvious one is inventing detail.
+The quieter one is hiding it: an unrecognised receipt kind still renders rather
+than silently vanishing, and a tampered chain reports `chain_verified: false`
+while still showing every step it has.
+
+This constraint earned its keep immediately. On the deployed demo path the
+trace showed the query and the answer with nothing in between, because
+`respond_to_query` attached the document in place and wrote no receipt. The
+agent's actual decision was real and invisible. The fix was a
+`claim.query_answered` receipt in the claim lane — the step became visible
+because it started being **recorded**, not because the renderer started
+inferring it.
 
 ## Agent boundaries
 
