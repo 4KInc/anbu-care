@@ -62,6 +62,11 @@ class HandoffGrant:
     case_id: str
     parent_id: str
     expires_at: int
+    # Whether the treating team may also leave a note. Signed into the token,
+    # so a read link cannot be edited into a write one. The family decides at
+    # mint time: a link that silently accepted writes would not be the
+    # "read-only" thing its own page claims to be.
+    may_write_note: bool = False
 
 
 def _secret() -> bytes | None:
@@ -74,8 +79,9 @@ def _secret() -> bytes | None:
     return value.encode("utf-8") if value else None
 
 
-def _sign(case_id: str, parent_id: str, epoch: int, expires: int, secret: bytes) -> str:
-    payload = f"{_DOMAIN}:{case_id}:{parent_id}:{epoch}:{expires}"
+def _sign(case_id: str, parent_id: str, epoch: int, expires: int, secret: bytes,
+          scope: str = "read") -> str:
+    payload = f"{_DOMAIN}:{scope}:{case_id}:{parent_id}:{epoch}:{expires}"
     digest = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
@@ -88,7 +94,7 @@ def consent_held(parent_id: str) -> bool:
     return consent_purposes.EMERGENCY_CLINICAL_SHARE in profile.disclosure_consents
 
 
-def mint(case_id: str, now: int | None = None) -> str:
+def mint(case_id: str, now: int | None = None, allow_notes: bool = False) -> str:
     """Issue a token for one case. Raises HandoffDenied rather than returning junk.
 
     Consent is read at the moment of issue, from the parent's own record. A
@@ -114,8 +120,9 @@ def mint(case_id: str, now: int | None = None) -> str:
 
     expires = int(now or time.time()) + HANDOFF_TTL_SECONDS
     epoch = case.handoff_epoch
-    signature = _sign(case.case_id, case.parent_id, epoch, expires, secret)
-    return f"{case.case_id}.{epoch}.{expires}.{signature}"
+    scope = "note" if allow_notes else "read"
+    signature = _sign(case.case_id, case.parent_id, epoch, expires, secret, scope)
+    return f"{case.case_id}.{scope}.{epoch}.{expires}.{signature}"
 
 
 def resolve(token: str, now: int | None = None) -> HandoffGrant:
@@ -127,10 +134,12 @@ def resolve(token: str, now: int | None = None) -> HandoffGrant:
     it is, not whether they were close.
     """
     secret = _secret()
-    if not secret or not token or token.count(".") != 3:
+    if not secret or not token or token.count(".") != 4:
         raise HandoffDenied("this link is not valid")
 
-    case_id, epoch_raw, expires_raw, presented = token.split(".")
+    case_id, scope, epoch_raw, expires_raw, presented = token.split(".")
+    if scope not in {"read", "note"}:
+        raise HandoffDenied("this link is not valid")
     try:
         epoch, expires = int(epoch_raw), int(expires_raw)
     except ValueError:
@@ -148,12 +157,12 @@ def resolve(token: str, now: int | None = None) -> HandoffGrant:
     if epoch != case.handoff_epoch:
         raise HandoffDenied("this link has been revoked by the family")
 
-    expected = _sign(case.case_id, case.parent_id, epoch, expires, secret)
+    expected = _sign(case.case_id, case.parent_id, epoch, expires, secret, scope)
     if not hmac.compare_digest(expected, presented):
         raise HandoffDenied("this link is not valid")
 
     return HandoffGrant(case_id=case.case_id, parent_id=case.parent_id,
-                        expires_at=expires)
+                        expires_at=expires, may_write_note=(scope == "note"))
 
 
 def revoke(case_id: str) -> None:
