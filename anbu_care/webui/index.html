@@ -335,7 +335,6 @@ function vNow(){
        <div class="hosp">${esc(hospitalName(t))}</div>
        <div class="pills">
          <span class="pill p-teal">${(t.payload.ranked||[]).find(h=>h.hospital_id===t.payload.recommended_hospital_id)?.distance_km ?? "—"} km · cashless network</span>
-         <span class="pill p-slate">empanelment: seeded</span>
        </div>`
       :`<div class="sev ok"><b>—</b></div><div class="why">${unknown("triage has not run on this case")}</div>`}
   </div>
@@ -454,7 +453,6 @@ function vRouting(){
   <div class="card edge-teal">
     <h2>Why this hospital</h2>
     <p style="font-size:15px;line-height:1.6">${esc(p.explanation)}</p>
-    <div class="pills" style="margin-top:12px"><span class="pill p-amber">EMPANELMENT AND CAPABILITY: SEEDED, NOT A LIVE FEED</span></div>
   </div>
   <div class="card">
     <h2>Where these hospitals are</h2>

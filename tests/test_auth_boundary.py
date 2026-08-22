@@ -170,11 +170,12 @@ def test_dashboard_carries_the_honesty_labels(client):
     """Labels are not decoration; a screenshot of this outlives the demo."""
     html = client.get("/app").text
     assert "SYNTHETIC — DEMO DATA" in html
-    # Narrowed, not dropped. Hospital identity and location are real; who is
-    # empanelled with which insurer is still a seeded assumption, so the label
-    # now claims exactly that and no more.
-    assert "EMPANELMENT AND CAPABILITY: SEEDED, NOT A LIVE FEED" in html
-    assert "empanelment: seeded" in html
+    # The seeded-empanelment badges were removed from the chrome by request.
+    # The claim they qualified did not go anywhere, so the caveat moved into the
+    # sentence that makes it — see
+    # test_explanation_carries_its_own_seeded_caveat in test_triage.py, which is
+    # now the thing standing between us and an unqualified assertion about which
+    # real hospital a real insurer pays at.
     assert "SIMULATED TPA" in html
     assert "not yet known" in html
     assert "does not monitor continuously" in html

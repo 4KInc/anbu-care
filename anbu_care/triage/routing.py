@@ -221,9 +221,15 @@ def _explain(
                 f"{nearest.capability_score:.2f} at {nearest.hospital.name}"
             )
         if best.network_match and not nearest.network_match:
+            # The provenance rides inside the sentence that makes the claim,
+            # not on a badge beside it. These are real, named hospitals and this
+            # is an assertion about whether a real insurer pays at them, so the
+            # one place the caveat cannot be dropped is here.
             deltas.append(
-                f"{best.hospital.name} is empanelled with {insurer or 'the policy insurer'} "
-                f"and {nearest.hospital.name} is not, so this keeps the admission cashless"
+                f"{best.hospital.name} is listed as empanelled with "
+                f"{insurer or 'the policy insurer'} and {nearest.hospital.name} is not, "
+                f"so this keeps the admission cashless (network data is seeded for this "
+                f"demo, not checked against the insurer's current list)"
             )
 
         if deltas:
@@ -242,9 +248,10 @@ def _explain(
 
     if not best.network_match:
         lines.append(
-            f"Note: {best.hospital.name} is not empanelled with "
-            f"{insurer or 'the policy insurer'} in the seeded snapshot — expect a "
-            "reimbursement claim rather than cashless pre-auth."
+            f"Note: {best.hospital.name} is not listed as empanelled with "
+            f"{insurer or 'the policy insurer'} in the seeded network data — expect a "
+            "reimbursement claim rather than cashless pre-auth. That listing is seeded "
+            "for this demo and has not been checked against the insurer's current list."
         )
 
     return " ".join(lines)
