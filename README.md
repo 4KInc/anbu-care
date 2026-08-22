@@ -84,6 +84,18 @@ This matters more than any feature list, so it comes first.
   of the routing decision. Verification caught a genuine bug: the previously
   seeded coordinates were out by 1.4 to 5.0 km, which changed which hospital was
   nearest and therefore what the routing explanation claimed.
+- **An emergency clinical summary for the treating team**, reachable by a
+  clinician with no login through a scoped link the family mints and can revoke.
+  Allergies first, every line traced to the stored field it came from, and no
+  field anywhere an instruction could live in — this is the record, not the
+  doctor.
+- **Clinician notes, typed or spoken.** A voice note is transcribed by Gemini
+  and shown back for confirmation; **an unconfirmed transcript writes nothing**.
+  The receipt carries the hash of the confirmed text, never the words.
+- **A decision trace**: the chain rendered as the sequence a person can follow —
+  the counterparty raising a query, the agent gathering what was asked for, the
+  re-adjudication that followed. One step per receipt, so the view cannot
+  invent a beat the chain does not contain.
 
 **Simulated, and labelled as such everywhere it appears:**
 
@@ -149,6 +161,20 @@ This matters more than any feature list, so it comes first.
 - **Anbu Care does not sense anything.** There is no location tracking, no
   monitoring, and no autonomous detection. Every input is something a person
   deliberately sent.
+- **The handoff link cannot say who opened it.** A link is a bearer credential,
+  so the access receipt records that the summary was read and when, and states
+  in its own payload that this was a link holder rather than an identified
+  clinician. Naming a doctor it cannot verify would be the same false claim as
+  reporting a message delivered when the provider only accepted it.
+- **A clinician note is attributed to whoever held the link**, and the system
+  cannot check that either. What it can prove is that the text was confirmed
+  before it was written, and that nobody has altered it since.
+- **The trace shows the deciding; it is not the deciding.** It renders receipts
+  that already exist. Where a step left no receipt it shows nothing — which is
+  how the gather in the claim loop was found to be invisible, and then fixed by
+  recording it rather than by inferring it.
+- **Nothing here is a hospital integration.** No EHR is connected, nobody writes
+  back, and the clinician view says so on its own face.
 
 Every market figure quoted in the project brief is directional and unverified.
 See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
@@ -159,7 +185,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 399 tests, no GCP or model access needed
+make test             # 473 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -313,7 +339,7 @@ anbu_care/
 scripts/
   demo_spine.py         end-to-end run, no model in the loop
   verify_stack.py       confirms Vertex / Firestore / Pub/Sub are reachable
-tests/                  399 tests, no GCP or model access needed
+tests/                  473 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -342,11 +368,26 @@ Beyond ADK's own agent API:
 | `POST /api/intake-signal` | Structured intake event |
 | `GET /api/intake-channels` | Which intake channels are configured |
 | `GET /api/map-config` | Maps browser key and the hospital-provenance source note |
+| `GET /api/cases/{id}/trace` | The decision sequence — one step per receipt, nothing synthesised |
+| `POST /api/cases/{id}/handoff-link` | Mint an emergency-access link for a treating clinician |
+| `POST /api/cases/{id}/handoff-link/revoke` | Kill every outstanding link for the case |
+| `GET /handoff/{token}` | The clinician's read-only summary. No login, by design |
+| `POST /handoff/{token}/note/draft` | Transcribe a spoken note for review. Writes nothing |
+| `POST /handoff/{token}/note/confirm` | Record a confirmed note |
 | `GET /app` | The dashboard |
 
 Everything returning case or patient content sits behind
 `require_case_access` / `require_family_session` and answers **401** without a
-session. `/api/cases/{id}/verify` is the deliberate exception.
+session. Two deliberate exceptions, and they are different in kind:
+
+- `/api/cases/{id}/verify` proves integrity **without revealing content** — no
+  name, no allergy, no hospital, no rupee figure — so it needs no credential.
+- `/handoff/{token}` shows clinical content to someone who has never
+  authenticated, because a nurse holding an unconscious patient will not create
+  an account. It is not a second way in: only a caller who already holds a
+  family session can mint the token, so it delegates a subset of that access
+  rather than bypassing it. One case, sixty minutes, revocable, and every open
+  writes a receipt the family can see.
 
 Smoke-testing a fresh deploy is three calls:
 
