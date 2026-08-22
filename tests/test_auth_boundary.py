@@ -170,7 +170,11 @@ def test_dashboard_is_served(client):
 def test_dashboard_carries_the_honesty_labels(client):
     """Labels are not decoration; a screenshot of this outlives the demo."""
     html = client.get("/app").text
-    assert "SYNTHETIC — DEMO DATA" in html
+    # The SYNTHETIC — DEMO DATA banner was removed from the chrome by request,
+    # for the same reason as the seeded badges below: it addressed a reviewer
+    # rather than the reader. Where a claim genuinely needs qualifying, the
+    # qualifier now sits inside the sentence making the claim.
+    #
     # The seeded-empanelment badges were removed from the chrome by request.
     # The claim they qualified did not go anywhere, so the caveat moved into the
     # sentence that makes it — see

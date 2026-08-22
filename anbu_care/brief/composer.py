@@ -22,7 +22,13 @@ from typing import Any
 
 from anbu_care import service
 from anbu_care.provenance.chain import Receipt
-from anbu_care.schemas import ArrivalBrief, ArrivalFact, FactSource, ParentProfile
+from anbu_care.schemas import (
+    ArrivalBrief,
+    ArrivalFact,
+    DocumentKind,
+    FactSource,
+    ParentProfile,
+)
 
 UNKNOWN_PHRASE = "not yet known"
 
@@ -43,6 +49,12 @@ def _fact(label: str, value: Any, source: FactSource) -> ArrivalFact:
         note = source.note or "no receipt or stored field carries this yet"
         return ArrivalFact(label=label, value=None, known=False, source=_unknown(note))
     return ArrivalFact(label=label, value=str(value), known=True, source=source)
+
+
+def _latest_document(parent_id: str, kind: DocumentKind):
+    """The most recently parsed document of one kind, or None."""
+    matching = [d for d in service.list_documents(parent_id) if d.kind is kind]
+    return max(matching, key=lambda d: d.parsed_at) if matching else None
 
 
 def _unknown_fact(label: str, note: str) -> ArrivalFact:
@@ -192,20 +204,55 @@ def compose_brief(case_id: str) -> ArrivalBrief:
     # Admission and discharge dates come from the claim packet, which is the only
     # place they are recorded as structured fields.
     admitted = discharged = None
+    admitted_src = discharged_src = None
     if packet is not None:
         stored_packet = service.load_packet(case_id, packet.payload.get("packet_id", ""))
         if stored_packet is not None:
             admitted, discharged = stored_packet.admitted_on, stored_packet.discharged_on
+            admitted_src = _from_receipt(packet, "packet.admitted_on")
+            discharged_src = _from_receipt(packet, "packet.discharged_on")
+
+    # A photographed discharge summary carries these dates on its face, and a
+    # family reading "no discharge date has been recorded" while holding the
+    # discharge summary they just sent is being told the system lost it. The
+    # packet still wins where it exists — it is the assembled, submitted
+    # version — but a read document beats nothing at all.
+    summary_doc = _latest_document(parent_id, DocumentKind.DISCHARGE_SUMMARY)
+    # The label follows the source, because they are not the same claim. A
+    # packet carries the discharge date the claim was built around; a discharge
+    # summary is the hospital saying she went home. Calling the first one
+    # "Discharged on" would report a plan as an event.
+    discharge_label = "Expected discharge"
+    if summary_doc is not None:
+        source = FactSource(kind="document", field=summary_doc.document_id,
+                            note="read from the discharge summary photograph")
+        if not admitted and summary_doc.details.get("admitted_on"):
+            admitted, admitted_src = summary_doc.details["admitted_on"], source
+        if summary_doc.details.get("discharged_on"):
+            discharged, discharged_src = summary_doc.details["discharged_on"], source
+            discharge_label = "Discharged on"
+
     brief.facts.append(_fact(
         "Admitted on", admitted,
-        _from_receipt(packet, "packet.admitted_on") if packet
-        else _unknown("no claim packet has been assembled yet"),
+        admitted_src or _unknown("no admission date has been recorded on this case"),
     ))
     brief.facts.append(_fact(
-        "Expected discharge", discharged,
-        _from_receipt(packet, "packet.discharged_on") if packet
-        else _unknown("no discharge date has been recorded on this case"),
+        discharge_label, discharged,
+        discharged_src or _unknown("no discharge date has been recorded on this case"),
     ))
+
+    # The rest of what that document says, once it exists. Each is shown only
+    # when it was actually read — an absent line is absent, not a blank row.
+    if summary_doc is not None:
+        detail_source = FactSource(kind="document", field=summary_doc.document_id,
+                                   note="read from the discharge summary photograph")
+        for label, key in (("Diagnosis on discharge", "diagnosis"),
+                           ("Condition at discharge", "condition_at_discharge"),
+                           ("Follow-up due", "follow_up_on"),
+                           ("Treating consultant", "consultant")):
+            value = summary_doc.details.get(key)
+            if value:
+                brief.facts.append(_fact(label, value, detail_source))
 
     # ---- money -------------------------------------------------------------
     if adjudication is not None:

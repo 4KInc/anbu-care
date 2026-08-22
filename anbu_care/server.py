@@ -502,6 +502,33 @@ def case_bill_image(case_id: str, bill_id: str,
             "note": "short-lived signed URL; the bucket itself is not public"}
 
 
+@app.get("/api/parents/{parent_id}/documents/{document_id}/image")
+def parent_document_image(parent_id: str, document_id: str,
+                          _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """A short-lived signed URL for a document's source photograph.
+
+    The same reason the bill lane has one: a reading is worth very little if
+    nobody can hold it against the paper it came from. A discharge summary
+    especially — the dates on it price the claim.
+    """
+    from anbu_care.comms import storage
+
+    doc = next((d for d in service.list_documents(parent_id)
+                if d.document_id == document_id), None)
+    if doc is None:
+        raise HTTPException(status_code=404,
+                            detail=f"no document {document_id} for {parent_id}")
+    if not doc.source_filename:
+        raise HTTPException(status_code=404,
+                            detail="no photograph was stored for this document")
+
+    signed = storage.signed_url(doc.source_filename)
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return {"url": signed.url, "expires_in_seconds": signed.expires_in_seconds,
+            "note": "short-lived signed URL; the bucket itself is not public"}
+
+
 @app.get("/api/cases/{case_id}/verify")
 def case_verify(case_id: str) -> dict[str, Any]:
     """Independently verify a case's chain.

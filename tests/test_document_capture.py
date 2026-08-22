@@ -463,7 +463,107 @@ def test_the_record_view_does_not_explain_itself_to_a_judge():
     for pitch in ("This is the clinical view", "ground truth",
                   "not from what an agent said", "server-enforced"):
         assert pitch not in record, f"the record view still pitches: {pitch}"
-    # The state chip stays: it labels the view, it does not argue for it.
-    assert "Credentialed access" in record
+    # The lock chip went too, on a second pass. The view is credentialed either
+    # way; saying so on the page was one more line addressed to a reviewer.
+    assert "Credentialed access" not in record
     # And nothing in this view speaks the system's vocabulary at the reader.
     assert "ingested" not in record
+
+
+# =========================================================================
+# THE DOCUMENT SAYS MORE THAN ONE SENTENCE
+# =========================================================================
+
+
+DISCHARGE = {
+    "admitted_on": "2026-08-19", "discharged_on": "2026-08-22",
+    "hospital": "Sacred Heart Hospital", "consultant": "Dr A. Anand",
+    "diagnosis": "Non-ST elevation acute coronary syndrome",
+    "condition_at_discharge": "Stable, ambulant",
+    "allergies": ["Penicillin", "Sulfa drugs"],
+    "discharge_medications": [{"name": "Aspirin", "dose": "75 mg"},
+                              {"name": "Clopidogrel", "dose": "75 mg"}],
+    "follow_up_on": "2026-08-29",
+}
+
+
+def test_everything_read_off_the_page_is_kept(parent_id, monkeypatch):
+    """A one-line summary was the only thing stored, so a discharge summary
+    with a diagnosis, two dates, a consultant and a follow-up date came out the
+    other side as a single sentence and nothing else."""
+    _reads(monkeypatch, "discharge_summary", DISCHARGE)
+    ingest_document_image(parent_id, IMAGE, "image/png")
+
+    doc = service.list_documents(parent_id)[-1]
+    assert doc.details["diagnosis"] == "Non-ST elevation acute coronary syndrome"
+    assert doc.details["follow_up_on"] == "2026-08-29"
+    assert doc.details["consultant"] == "Dr A. Anand"
+    assert len(doc.details["discharge_medications"]) == 2
+
+
+def test_a_discharge_summary_updates_the_medication_and_allergies(
+        parent_id, monkeypatch):
+    _reads(monkeypatch, "discharge_summary", DISCHARGE)
+    result = ingest_document_image(parent_id, IMAGE, "image/png")
+
+    profile = service.load_profile(parent_id)
+    assert [m.name for m in profile.medications] == ["Aspirin", "Clopidogrel"]
+    assert "Sulfa drugs" in profile.allergies
+    assert "discharged on 2026-08-22" in result["applied"]
+
+
+def test_a_discharge_summary_never_removes_an_allergy(parent_id, monkeypatch):
+    """It lists what that admission recorded. A shorter list is not a
+    retraction of an allergy somebody has carried for years, and dropping one
+    on that reading could kill them."""
+    payload = dict(DISCHARGE, allergies=["Sulfa drugs"])
+    _reads(monkeypatch, "discharge_summary", payload)
+    ingest_document_image(parent_id, IMAGE, "image/png")
+
+    allergies = service.load_profile(parent_id).allergies
+    assert "Penicillin" in allergies, "an allergy on file was dropped"
+    assert "Sulfa drugs" in allergies
+
+
+def test_the_arrival_brief_learns_the_discharge_date_from_the_photograph(
+        parent_id, monkeypatch):
+    """"No discharge date has been recorded" while the family is holding the
+    discharge summary they just sent tells them the system lost it."""
+    from anbu_care.brief import composer
+
+    case_id = triage_tools.run_triage(
+        parent_id=parent_id, symptoms=["chest pain"], free_text="",
+        reported_by="caregiver", lat=0.0, lon=0.0, case_id="")["case_id"]
+
+    before = {f.label: f for f in composer.compose_brief(case_id).facts}
+    assert before["Expected discharge"].known is False
+
+    _reads(monkeypatch, "discharge_summary", DISCHARGE)
+    ingest_document_image(parent_id, IMAGE, "image/png", case_id=case_id)
+
+    after = {f.label: f for f in composer.compose_brief(case_id).facts}
+    assert after["Discharged on"].value == "2026-08-22"
+    assert after["Admitted on"].value == "2026-08-19"
+    assert after["Diagnosis on discharge"].value.startswith("Non-ST")
+    assert after["Follow-up due"].value == "2026-08-29"
+    # And it says where it came from, rather than appearing by magic.
+    assert after["Discharged on"].source.kind == "document"
+
+
+def test_a_packet_date_is_not_relabelled_as_an_actual_discharge():
+    """They are different claims. A packet carries the date the claim was built
+    around; a discharge summary is the hospital saying she went home."""
+    composer = (pathlib.Path(__file__).resolve().parents[1]
+                / "anbu_care" / "brief" / "composer.py").read_text()
+    assert 'discharge_label = "Expected discharge"' in composer
+    assert 'discharge_label = "Discharged on"' in composer
+
+
+def test_the_record_view_can_open_the_paper_it_read(parent_id, monkeypatch):
+    """A figure nobody can check against the page it came from is worth little,
+    which is why the bill lane has this and the document lane did not."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+    assert "openDocPhoto" in page
+    assert "documents/${encodeURIComponent(documentId)}/image" in page
+    assert "docDetails(d)" in page

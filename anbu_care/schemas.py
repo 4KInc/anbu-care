@@ -148,6 +148,11 @@ class ParsedDocument(BaseModel):
     source_filename: str | None = None
     observations: list[Observation] = Field(default_factory=list)
     summary: str = ""
+    # Everything the reader got off the page, as it read it. Observations are
+    # the lab-shaped subset; a prescription's medications, a discharge
+    # summary's dates and diagnosis, a schedule's limits have nowhere else to
+    # live. Kept because a one-line summary was throwing away the document.
+    details: dict[str, Any] = Field(default_factory=dict)
     parsed_at: datetime = Field(default_factory=utcnow)
     # Set by the KB agent when compared against the baseline record.
     delta_vs_baseline: str | None = None

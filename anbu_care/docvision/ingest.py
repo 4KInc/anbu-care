@@ -202,6 +202,48 @@ def _apply_prescription(parent_id: str, payload: dict) -> str:
     return f"medication list updated: {before} on file, {len(meds)} read from this prescription"
 
 
+def _apply_discharge_summary(parent_id: str, payload: dict) -> str:
+    """Take the discharge summary into the record it describes.
+
+    This document is the one that closes an episode, and its contents were
+    being read and then dropped. The dates drive per-day sub-limits, the
+    diagnosis is what the adjudicator prices against, and the discharge
+    medication is what the parent actually goes home on.
+
+    Allergies MERGE and never remove. A discharge summary lists what that
+    admission recorded; a shorter list is not a retraction of an allergy
+    somebody has been carrying for years, and dropping one on that reading
+    could kill someone.
+    """
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return "no parent record to update"
+
+    changed: list[str] = []
+
+    meds = _medications(payload.get("discharge_medications"))
+    if meds:
+        before = len(profile.medications)
+        profile.medications = meds
+        changed.append(f"medication list updated: {before} on file, "
+                       f"{len(meds)} on discharge")
+
+    read = [str(a).strip() for a in (payload.get("allergies") or []) if str(a).strip()]
+    known = {a.lower() for a in profile.allergies}
+    added = [a for a in read if a.lower() not in known]
+    if added:
+        profile.allergies = list(profile.allergies) + added
+        changed.append(f"allergies added: {', '.join(added)}")
+
+    if changed:
+        service.save_profile(profile)
+
+    discharged = str(payload.get("discharged_on") or "").strip()
+    if discharged:
+        changed.append(f"discharged on {discharged}")
+    return "; ".join(changed) or "nothing on file needed changing"
+
+
 def _apply_policy(parent_id: str, payload: dict) -> str:
     """Update the policy, refusing to lose cover to a partial reading."""
     profile = service.load_profile(parent_id)
@@ -310,6 +352,11 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         source_filename=stored.object_name,
         observations=_observations(reading.payload) if reading.kind == "lab_report" else [],
         summary=_summary_for(reading.kind, reading.payload),
+        # The rest of the page. A prescription's doses, a discharge summary's
+        # diagnosis and follow-up date, a schedule's limits — read off the
+        # paper and then dropped, because a one-line summary was the only
+        # thing kept. Stored as read, never interpreted here.
+        details=dict(reading.payload or {}),
         # The image hash rides here so a duplicate can be spotted without a
         # schema change; the prefix is enough to identify and too short to be
         # mistaken for the full digest.
@@ -322,6 +369,8 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         applied = _apply_prescription(parent_id, reading.payload)
     elif reading.kind == "policy_schedule":
         applied = _apply_policy(parent_id, reading.payload)
+    elif reading.kind == "discharge_summary":
+        applied = _apply_discharge_summary(parent_id, reading.payload)
 
     if case_id and service.load_case(case_id) is not None:
         service.append_receipt(

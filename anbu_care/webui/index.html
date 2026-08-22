@@ -285,7 +285,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 
 // Shown once, on the first screen a person lands on. Repeating it on every
 // tab trains the eye to skip it, which is worse than saying it plainly once.
-const SYNTH_BANNER = `<div class="strip demo">SYNTHETIC — DEMO DATA · no real patient, no real record</div>`;
+const SYNTH_BANNER = "";
 let SYNTH_SHOWN = false;
 function synthOnce(){
   if(SYNTH_SHOWN) return "";
@@ -570,11 +570,27 @@ function vHandoff(){
       audit trail. It does not identify who opened it, because a link cannot.</p>
   </div>`;
 
+  const blurb = `<p class="mute">If she is admitted and you are not there, the receiving nurse can be
+      given a read-only view of her allergies, conditions, medication and recent results. No login,
+      expires in an hour, and you can stop it at any time.</p>`;
+
+  // Reading the record and DISCLOSING it to a third party are different acts.
+  // A dashboard link can be forwarded, so it opens the record it was minted
+  // for and stops there — it cannot mint further credentials for anyone else.
+  // The buttons used to be offered anyway and answered with a raw 401.
+  if(!S.token) return `<div class="card">
+    <h2 class="mini">Share with the treating team</h2>
+    ${blurb}
+    <p class="mute" style="margin-top:10px">Sharing with a clinician creates a new link for someone
+      else to hold, so it needs a signed-in family session rather than the link that opened this
+      page.</p>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="signIn()">Sign in to share</button></div>
+  </div>`;
+
   return `<div class="card">
     <h2 class="mini">Share with the treating team</h2>
-    <p class="mute">If she is admitted and you are not there, the receiving nurse can be given a
-      read-only view of her allergies, conditions, medication and recent results. No login, expires
-      in an hour, and you can stop it at any time.</p>
+    ${blurb}
     <div class="btns" style="margin-top:12px">
       <button class="btn" onclick="sendHandoff(false)">Send it to my WhatsApp</button>
       <button class="btn" onclick="sendHandoff(true)">Send to the care circle</button>
@@ -630,7 +646,6 @@ function vRecord(){
   const docs=S.record.documents||[], pr=S.record.profile||{};
   return `${synthOnce()}
   ${title("Health record","Parsed from uploaded documents. New readings are compared with the baseline.")}
-  <span class="lock">🔒 Credentialed access</span>
   ${vHandoff()}
   <div class="card"><h2 class="mini">Baseline</h2>
     ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
@@ -655,6 +670,7 @@ function vRecord(){
       ${arrivedMidEpisode(d)?`<div class="pills" style="margin:-6px 0 12px">
         <span class="pill p-slate">added during this episode · ${esc(new Date(d.parsed_at).toLocaleTimeString())}</span>
       </div>`:""}
+      ${docDetails(d)}
       ${(d.observations||[]).length===0
         // A prescription has no lab values, and saying so as an "unknown"
         // reports a normal document as missing data. Only a lab report with
@@ -666,6 +682,9 @@ function vRecord(){
             <div class="v num">${esc(o.value)} <span class="u">${esc(o.unit||"")}</span>
               ${o.flag?`<span class="pill ${["high","low","abnormal"].includes((o.flag||"").toLowerCase())?"p-red":"p-teal"}">${esc(o.flag)}</span>`:""}
             </div></div>`).join("")}
+      <div class="btns" style="margin-top:12px">
+        <button class="btn" onclick="openDocPhoto('${esc(d.document_id)}')">Open the photograph</button>
+      </div>
       ${d.delta_vs_baseline?`<div class="deltas">
         ${d.delta_vs_baseline.split("; ").map(n=>{
           const material=/new and abnormal/.test(n);
@@ -675,6 +694,77 @@ function vRecord(){
         }).join("")}
       </div>`:""}
     </div>`;}).join("")}`;
+}
+
+// Everything the reader got off the page, laid out per kind. A one-line
+// summary was all that showed, so a prescription with six medications and a
+// discharge summary with a diagnosis and a follow-up date both rendered as a
+// single sentence and nothing else.
+const DETAIL_ROWS = {
+  discharge_summary: [["Hospital","hospital"],["Consultant","consultant"],
+                      ["Admitted","admitted_on"],["Discharged","discharged_on"],
+                      ["Diagnosis","diagnosis"],
+                      ["Condition at discharge","condition_at_discharge"],
+                      ["Follow-up due","follow_up_on"]],
+  prescription:      [["Prescribed on","prescribed_on"],["Prescriber","prescriber"]],
+  policy:            [["Insurer","insurer"],["Policy number","policy_number"],
+                      ["Sum insured","sum_insured_inr"],["Co-pay","copay_percent"],
+                      ["Room rent limit","room_rent_percent_per_day"],
+                      ["ICU limit","icu_percent_per_day"],["Valid until","valid_until"]],
+  blood_report:      [["Collected on","collected_on"]],
+};
+const MONEY_KEYS = new Set(["sum_insured_inr"]);
+const PERCENT_KEYS = new Set(["copay_percent","room_rent_percent_per_day","icu_percent_per_day"]);
+
+function detailValue(key, value){
+  if(MONEY_KEYS.has(key)) return `INR ${Number(value).toLocaleString("en-IN")}`;
+  if(PERCENT_KEYS.has(key)) return `${esc(value)}%`;
+  return esc(value);
+}
+
+function docDetails(d){
+  const det = d.details || {};
+  const rows = (DETAIL_ROWS[d.kind]||[])
+    .filter(([,key]) => det[key] !== null && det[key] !== undefined && det[key] !== "")
+    .map(([label,key]) => row(label, detailValue(key, det[key])))
+    .join("");
+
+  // Medication is a list, not a row, and it is the thing a treating clinician
+  // reads first. A prescription carries it under one key, a discharge summary
+  // under another.
+  const meds = det.medications || det.discharge_medications || [];
+  const medList = meds.length ? `<div class="obs-wrap">${meds.map(m=>`
+      <div class="obs"><div class="n">${esc(m.name||"")}</div>
+        <div class="v">${esc(m.dose||"")}${m.frequency?` <span class="u">${esc(m.frequency)}</span>`:""}</div>
+      </div>`).join("")}</div>` : "";
+
+  const allergies = (det.allergies||[]).filter(Boolean);
+  const allergyRow = allergies.length
+    ? row("Allergies on this document", allergies.map(esc).join(", ")) : "";
+
+  const network = (det.network_hospitals||[]).filter(Boolean);
+  const networkRow = network.length
+    ? row("Network hospitals", network.map(esc).join(", ")) : "";
+
+  if(!rows && !medList && !allergyRow && !networkRow) return "";
+  return `${rows}${allergyRow}${networkRow}${medList}`;
+}
+
+// Same shape as the bill photograph: the bucket is private, so the URL is
+// fetched through the credentialed API and the tab is opened synchronously on
+// the click, before the await, or the browser treats it as a popup.
+function openDocPhoto(documentId){
+  const tab = window.open("", "_blank");
+  api(`/api/parents/${encodeURIComponent(S.parentId)}/documents/${encodeURIComponent(documentId)}/image`,
+      {auth:true}).then(r=>{
+    if(!tab) return;
+    if(r && r.url){ tab.location = r.url; return; }
+    tab.document.title = "Photograph unavailable";
+    tab.document.body.style.font = "16px system-ui";
+    tab.document.body.style.padding = "24px";
+    tab.document.body.textContent = (r && (r.detail || r.__error))
+      || "That photograph could not be opened.";
+  }).catch(()=>{ if(tab) tab.document.body.textContent = "That photograph could not be opened."; });
 }
 
 // The photograph sits behind the credential, so a plain href cannot reach it —
