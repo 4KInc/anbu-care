@@ -1,6 +1,7 @@
-# Demo script — ~5 minutes, unedited
+# Demo script — ~5m30s, unedited
 
-One take. A phone on camera, one terminal, one browser tab.
+One take. **Two phones** on camera (hers, and the nurse's), one terminal, one
+browser tab.
 
 **Live URL:** https://anbu-care-37j4eofpwq-el.a.run.app
 
@@ -8,6 +9,12 @@ The arc changed with W1/W2. It used to open with a simulated intake signal
 arriving from outside. It now opens with **a seventy-one year old sending a
 voice note in Tamil at 2am**, because that is the actual product and the
 machinery underneath is more convincing once you have seen why it matters.
+
+Two beats are new since the last recording and neither has been performed
+before: **the clinician handoff** (Beat 5), where a nurse scans a QR and reads
+her allergies without logging into anything, and **the trace** (Beat 7), where
+the agent's decision sequence is read off the chain and then verified by anyone
+watching. Rehearse both. Pre-flight §5 exists specifically for them.
 
 ---
 
@@ -95,7 +102,35 @@ curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
       the answer, and it is the chain working rather than failing. The case you
       create live during the demo will use the corrected coordinates.
 
-### 5. Walk the dashboard by hand
+### 5. The handoff and the trace (new beats, new ways to fail)
+
+Both of these were added after the last recording, so neither has muscle memory
+behind it. Dry-run them fully.
+
+```bash
+TOKEN=anbu-demo-family-token
+CASE=<a case you just created>
+curl -sX POST -H "Authorization: Bearer $TOKEN" $URL/api/cases/$CASE/handoff-link | jq -r .url
+curl -s  -H "Authorization: Bearer $TOKEN" $URL/api/cases/$CASE/trace | jq '.query_fork'
+```
+
+- [ ] **`ANBU_PUBLIC_BASE_URL` was set on the deployed revision.** If it was
+      not, the QR encodes a relative path and scans to nothing. This is silent —
+      the dashboard looks perfect and the phone just never resolves it.
+- [ ] **Actually scan the QR with the second phone**, from the laptop screen, at
+      the angle and brightness you will record at. Glare is the failure mode.
+- [ ] The summary shows **Penicillin** at the top. If allergies read "not on
+      file", the seed did not run.
+- [ ] `query_fork.gathered_at_seqs` is **not empty**. An empty list means the
+      case was driven a way that writes no gather receipt — use `claim-flow`.
+- [ ] `synthesized` is **0** (`steps` minus `receipt_count`). Say this number
+      out loud on camera; it is the point of the beat.
+- [ ] Export `$TOKEN` in the shell you will record in. The trace is
+      credentialed, and a 401 there reads as broken rather than as a boundary.
+- [ ] If you are doing the optional voice-note-on-the-nurse's-phone moment, warm
+      the transcriber first — same cold-start risk as Beat 2.
+
+### 6. Walk the dashboard by hand
 
 Open `$URL/app` at the window size you will record.
 
@@ -107,20 +142,27 @@ Open `$URL/app` at the window size you will record.
       **SELF-REPORTED — NOT A MEASURED VITAL**.
 - [ ] `SYNTHETIC — DEMO DATA` visible on every clinical view.
 
-### 6. Recording hygiene
+### 7. Recording hygiene
 
 - [ ] Say **"synthetic"**, **"simulated"** and **"seeded snapshot"** at least
       once each. The honesty framing is the architecture case, not a disclaimer.
 - [ ] Say **"received"**, never "detected".
 - [ ] Say **"recognised"** or **"matched"**, never "diagnosed".
 - [ ] Do not claim an ambulance is called, or could be.
-- [ ] Voice calls are **built but switched off** (no Twilio number purchased).
-      If you mention the ladder, say it is off.
+- [ ] Voice **calls** are built but switched off (`ANBU_VOICE_MODE=off`). The
+      number is now purchased, so the reason is a deliberate default rather
+      than a missing prerequisite — if you mention the ladder, say it is off.
+      Do not confuse this with voice **notes**, which are live and are Beat 2.
 - [ ] Say **"the table decides, the model can add"**. Never "the AI decides".
+- [ ] Say **"read-only"** and **"not connected to any hospital system"** during
+      the handoff beat. Outbound presentation is not integration, and a judge
+      who thinks you claimed an EHR connection will discount everything else.
+- [ ] Never say the trace shows "what the agent was thinking". It shows what the
+      agent **recorded**. That distinction is the beat.
 - [ ] A voice note takes ~10s. Do not fill the silence with hedging; say what
       is happening ("it is transcribing, then matching") and let it land.
 
-### 7. Backup take
+### 8. Backup take
 
 Record a second pass immediately, before changing anything. Everything except
 the Gemini transcription and extraction is deterministic;
@@ -134,16 +176,24 @@ the Gemini transcription and extraction is deterministic;
 |---|---|---|
 | 0:00–0:20 | **The question** | "If something happens to my mother tonight, who makes sure the right decisions get made?" Every incumbent answers: a human coordinator. |
 | 0:20–1:20 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. |
-| 1:20–2:10 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
-| 2:10–2:50 | **The boundary** ⭐ | Clinical detail refused — and the family still told. |
-| 2:50–3:20 | **The claim** ⭐ | QUERY → resolved → PARTIAL. ₹66,000, told now. |
-| 3:20–3:50 | **Public where it proves, private where it reveals** ⭐ | 401 and 200, same case. |
-| 3:50–4:20 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
-| 4:20–4:50 | **The honest wall** | What it does not do, said out loud. |
+| 1:20–2:00 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
+| 2:00–2:35 | **The boundary** ⭐ | Clinical detail refused — and the family still told. |
+| 2:35–3:15 | **She arrives, and you are not there** ⭐⭐ | Scan the QR. A nurse reads her allergies with no login. |
+| 3:15–3:45 | **The claim** ⭐ | QUERY → resolved → PARTIAL. ₹66,000, told now. |
+| 3:45–4:30 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
+| 4:30–5:00 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
+| 5:00–5:30 | **The honest wall** | What it does not do, said out loud. |
 
-**If you must cut:** drop the claim beat (2:40–3:20). It is the strongest
-*business* beat but the weakest *architecture* beat, and the PDF can be shown as
-a still in the writeup.
+Runs ~5:30, up from ~5:00. Two beats were added and only one costs time: the
+handoff is new (~40s), while the trace beat **absorbs** the old
+public-vs-private beat rather than sitting beside it — showing the credentialed
+trace and then the open `/verify` makes the same point in one movement instead
+of two. The rest was tightened by five to ten seconds a beat.
+
+**If you must cut:** drop the claim beat (3:15–3:45), as before. It is the
+strongest single beat but the trace beat now carries the QUERY→gather→resolve
+arc anyway, so cutting it costs less than it used to. Do **not** cut the
+handoff or the trace — they are the two beats no other entry will have.
 
 ---
 
@@ -218,7 +268,7 @@ attack".
 
 ---
 
-## Beat 3 (1:20–2:10) — what actually decided that ⭐
+## Beat 3 (1:20–2:00) — what actually decided that ⭐
 
 Terminal. This is where the architecture argument lands, and it now has two
 halves: what the model did, and what it was not allowed to do.
@@ -280,7 +330,7 @@ uv run pytest tests/test_escalation.py -k "junk or quieten or silent" -q
 **Do not say** "the AI decides" or "the AI knows". Say **the table decides, and
 the model can add**.
 
-## Beat 4 (2:10–2:50) — the boundary ⭐
+## Beat 4 (2:00–2:35) — the boundary ⭐
 
 Two halves. The refusal, then the thing most people forget.
 
@@ -313,7 +363,62 @@ comms.sent      → urgent_family_alert_withheld   (no quote, still delivered)
 
 ---
 
-## Beat 5 (2:50–3:20) — the claim ⭐
+## Beat 5 (2:35–3:15) — she arrives, and you are not there ⭐⭐
+
+The beat nobody else will have. It needs **two devices on camera**: the laptop
+showing the family dashboard, and a second phone standing in for the nurse's.
+
+On the dashboard, **Record** tab, scroll to *Share with the treating team* and
+tap **Create a link**. A QR appears.
+
+> "She has been routed to Sacred Heart. She arrives, and her son is eleven time
+> zones away and asleep. The nurse receiving her has no idea what she is
+> allergic to."
+
+Now **pick up the second phone and scan the QR off the laptop screen.** Do it
+slowly and let the camera see it happen — this is the shot.
+
+> "No login. No account. That nurse has never authenticated with anything."
+
+Let the summary land. **Penicillin** is at the top, large and red.
+
+> "Allergies first, because that is the field that kills people when it is
+> missed. Conditions, current medication, and her most recent troponin — with
+> the date, because a troponin from March means something different from one
+> taken this morning.
+>
+> Nothing on this page is advice. It does not tell the doctor what to do. Anbu
+> Care is the record, not the clinician — and the summary has no field a
+> recommendation could even be written into."
+
+Then the part that makes it defensible rather than reckless:
+
+> "That link is scoped to this one case, it dies in an hour, her son can revoke
+> it from here, and **every time it is opened a receipt is written to the chain
+> he can read.** It cannot reach the audit trail, her full record, or any other
+> case.
+>
+> And it does not claim to know who opened it, because a link cannot. The
+> receipt says a link holder read the summary. Not a name we could not verify."
+
+**Optional, if the take is going well** (~15s): record a voice note on the
+nurse's phone and show the transcript come back for confirmation.
+
+> "A doctor would rather talk than type. Gemini transcribes it — and **nothing
+> is written until they confirm it.** A misheard number must never land as a
+> clinical fact with someone's name on it."
+
+Tap confirm. The note appears on the chain in the next beat.
+
+**Foot-guns:**
+- Set `ANBU_PUBLIC_BASE_URL` before deploying, or the QR encodes a relative path
+  and scans to nothing. Test the scan during pre-flight, not on camera.
+- Screen glare kills QR scanning. Tilt the laptop back before the take.
+- The link expires in **60 minutes**. Mint it during the take, not before.
+
+---
+
+## Beat 6 (3:15–3:45) — the claim ⭐
 
 ```bash
 uv run python scripts/demo_support.py claim-flow $CASE $PARENT
@@ -335,23 +440,68 @@ download it and hash it.
 
 ---
 
-## Beat 6 (3:20–3:50) — public where it proves, private where it reveals ⭐
+## Beat 7 (3:45–4:30) — watch it decide, then check that it did ⭐⭐
 
-Same case id, two URLs, no credentials:
+The agentic beat. Everything so far showed the system *acting*; this shows it
+**deciding**, and then lets anyone verify the decisions were real.
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/case-da1c2cb6db          # 401
-curl -s $URL/api/cases/case-da1c2cb6db/verify                                    # 200
+curl -s -H "Authorization: Bearer $TOKEN" $URL/api/cases/$CASE/trace | jq
 ```
 
-> "Anyone can prove this case has not been altered. Nobody can read it. The
-> verification endpoint proves integrity without revealing content — which is
-> the only reason the DPDP argument holds. If the record were readable by anyone
-> with the URL, refusing to send it over WhatsApp would be theatre."
+Read the sequence down the screen. Do not paraphrase it — let it speak:
+
+```
+ 2  A claim packet was assembled          INR 358,500 claimed, 0 document(s) attached
+ 3  The claim was submitted               cashless_preauth
+ 4  The counterparty answered             QUERY — asked for discharge summary
+ 5  The agent gathered what was asked for attached 1 discharge summary
+ 6  The counterparty answered             PARTIAL — INR 66,000 disallowed
+```
+
+> "It submitted. It got asked for a document it had not sent. It went and found
+> that document, attached it, and resubmitted — and the answer came back priced.
+>
+> Nobody scripted that branch. The query is what the adjudicator returned, and
+> what happened next depended on it."
+
+Then the line the whole architecture exists for. Point at `synthesized: 0`:
+
+> "Every step you just read is a receipt. Not a log line, not a summary someone
+> wrote afterwards — one step per receipt, and the view is **incapable** of
+> adding a beat the chain does not contain. If a step is not on the chain, it is
+> not on the screen."
+
+Now the pairing — same case id, no credentials, in the same breath:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/$CASE/trace    # 401
+curl -s $URL/api/cases/$CASE/verify | jq                                # 200
+```
+
+> "You have just watched it decide. Now check that it did — and you do not need
+> my permission. That verification is public and it proves the record has not
+> been altered **without revealing what it says**. Anyone can check us. Nobody
+> can read her.
+>
+> That is the only reason the privacy argument holds. If the record were
+> readable by anyone with the URL, refusing to send it over WhatsApp would be
+> theatre."
+
+**Say this once, plainly** — it is the sentence the judges should remember:
+
+> "Autonomy you can verify. Those are usually a trade-off. Here they are the
+> same screen."
+
+**Foot-guns:**
+- The trace is credentialed. Have `$TOKEN` exported *before* the take — a 401
+  here reads as a broken demo rather than a boundary.
+- `gathered@[]` with an empty list means the case was driven a way that writes
+  no gather receipt. Use `claim-flow`, and check during pre-flight.
 
 ---
 
-## Beat 7 (3:50–4:20) — tamper ⭐
+## Beat 8 (4:30–5:00) — tamper ⭐
 
 ```bash
 curl -s $URL/api/cases/case-a7cf9fa613/verify
@@ -369,7 +519,7 @@ reason: payload does not hash to the recorded hash — content was altered
 
 ---
 
-## Beat 8 (4:20–4:50) — the honest wall
+## Beat 9 (5:00–5:30) — the honest wall
 
 Do not skip this. It is the strongest beat in the demo, because everyone else's
 demo skips it.
@@ -388,8 +538,15 @@ demo skips it.
 > dispatcher asking whether she is conscious. So it wakes people who can act,
 > and tells them to ring 108.
 >
-> No hospital is integrated. No doctor is in the loop. The care circle are
-> notified parties, not partners.
+> No hospital system is integrated — not one. That summary the nurse read was
+> **outbound presentation, not an EHR connection**. Nobody writes back into
+> anything, and if she leaves a note it lands on our chain, not in the
+> hospital's. The care circle are notified parties, not partners.
+>
+> And the handoff link cannot tell you *who* opened it. It is a link — whoever
+> holds it, holds it. So the receipt says a link holder read the summary, and
+> it does not put a doctor's name on something we could not verify. That is why
+> it dies in an hour and why the family can kill it from their phone.
 >
 > Every figure on screen is synthetic. The TPA is simulated. And when the
 > transport fails, the record says `not_delivered` — it never claims a message
