@@ -807,7 +807,7 @@ async function drawMap(){
   if(!bounds.isEmpty()) map.fitBounds(bounds, 60);
 }
 
-function caseFromLink(){function caseFromLink(){
+function caseFromLink(){
   try { return new URLSearchParams(location.search).get("case"); }
   catch { return null; }
 }

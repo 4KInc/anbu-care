@@ -308,3 +308,57 @@ def test_the_map_key_is_served_but_the_restriction_is_the_control(client):
     assert "maps_api_key" in body
     assert "Google Places" in body["label"]
     assert "empanelment" in body["label"].lower()
+
+
+def test_the_dashboard_script_actually_parses():
+    """The dashboard is one HTML file with one inline script, and a syntax
+    error in it renders a blank page with no server-side symptom at all.
+
+    That happened: a duplicated `function caseFromLink(){` header shipped and
+    survived five deploys, because every check we had was a grep for a string
+    the broken file still contained. The page returned 200, the API returned
+    200, the tests were green, and the dashboard showed nothing.
+
+    Balanced-delimiter counting is not enough — the bug was inside otherwise
+    balanced code. This parses the script the way a browser would.
+    """
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "anbu_care" / "webui" / "index.html").read_text()
+    assert html.count("<script>") == 1 and html.count("</script>") == 1
+    script = html[html.index("<script>") + len("<script>"):html.rindex("</script>")]
+
+    node = shutil.which("node")
+    if node:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+            fh.write(script)
+            path = fh.name
+        result = subprocess.run([node, "--check", path], capture_output=True, text=True)
+        assert result.returncode == 0, (
+            f"the dashboard script does not parse:\n{result.stderr[:400]}")
+    else:  # pragma: no cover - CI without node
+        # Weaker, but catches the exact class of bug that shipped: a declaration
+        # repeated on one line, which is always a botched edit.
+        import re
+
+        for match in re.finditer(r"^(?:async )?function (\w+)\s*\(", script, re.M):
+            line = script[match.start():script.index("\n", match.start())]
+            assert line.count("function ") == 1, f"duplicated declaration: {line[:70]}"
+
+
+def test_no_view_function_is_declared_twice():
+    """A second declaration silently shadows the first and is a botched edit."""
+    import re
+    from collections import Counter
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "anbu_care" / "webui" / "index.html").read_text()
+    script = html[html.index("<script>"):html.rindex("</script>")]
+    names = re.findall(r"^(?:async )?function (\w+)\s*\(", script, re.M)
+    duplicated = [n for n, c in Counter(names).items() if c > 1]
+    assert not duplicated, f"declared more than once: {duplicated}"
