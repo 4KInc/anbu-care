@@ -360,10 +360,10 @@ def test_a_template_may_choose_a_view_but_never_an_address():
     assert "evil.example" not in hijacked
 
 
-def test_only_the_bill_template_redirects_to_a_view():
+def test_only_the_bill_templates_redirect_to_a_view():
     """Every other message still lands on the front page, as before."""
     for name, spec in TEMPLATES.items():
-        if name == "bill_recorded":
+        if name in {"bill_recorded", "bill_unreadable"}:
             assert spec.get("view") == "claim"
         else:
             assert "view" not in spec, f"{name} unexpectedly names a view"

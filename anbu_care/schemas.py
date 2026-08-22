@@ -489,6 +489,12 @@ class ExtractedBill(BaseModel):
     currency: str = "INR"
     vendor: str | None = None
     bill_date: str | None = None
+    # Admission and discharge as printed on the bill. Read because a per-day
+    # sub-limit is multiplied by the length of stay: a three-day ICU stay read
+    # as one day understates what the insurer covers, and therefore overstates
+    # what the family is told they owe.
+    admitted_on: str | None = None
+    discharged_on: str | None = None
     # The private object the numbers came from. Credentialed access only; this
     # is never handed to a browser except through a short-lived signed URL.
     image_object: str | None = None

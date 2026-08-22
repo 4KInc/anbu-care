@@ -678,3 +678,42 @@ def test_the_message_does_not_mix_this_bill_with_every_bill():
     assert "{this_bill}" in body and "on this bill" in body
     assert "{running_total_line}" in body
     assert "{total_billed}" not in body, "the ambiguous total is back"
+
+
+def test_the_stay_is_read_off_the_bill_when_no_packet_exists(case_id, parent_id, monkeypatch):
+    """A per-day sub-limit is multiplied by the length of stay.
+
+    The bill prints "Cardiac ICU bed charges, 3 days" and an admission and
+    discharge date, and we were assuming one day — covering INR 10,000 of a
+    INR 96,000 ICU line instead of INR 30,000, and telling the family they owed
+    20,000 more than the policy says. Understating coverage is not the safe
+    direction; it is just a different wrong number about money.
+    """
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps({
+        "line_items": [ICU], "subtotal_inr": 96_000, "stated_total_inr": 96_000,
+        "admitted_on": "2026-08-19", "discharged_on": "2026-08-22",
+        "unreadable": False,
+    }))
+    from anbu_care.comms import storage as gcs
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="": StoredArtifact(
+        stored=True, url="x", object_name=f"artifacts/{filename}", detail="stub"))
+
+    bill = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert bill.admitted_on == "2026-08-19"
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    icu = next(l for l in estimate.lines if l.item == "cardiac_icu_room")
+
+    assert icu.estimated_covered_inr == 30_000        # 3 days, not 1
+    assert icu.estimated_you_pay_inr == 66_000
+    assert "3 day(s) as printed on the bill" in estimate.basis
+
+
+def test_a_bill_without_dates_still_says_it_assumed_one_day(case_id, parent_id, monkeypatch):
+    """The assumption stays visible rather than becoming an invisible default."""
+    _reads(monkeypatch, [ICU], stated=96_000)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    assert "one day assumed" in estimate.basis

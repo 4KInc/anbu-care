@@ -114,7 +114,21 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
     # admission and discharge are recorded as structured fields. Absent one,
     # a single day is used and the basis says so — never inferred from a bill.
     days = 1
-    basis_days = "one day assumed: no claim packet records admission and discharge dates"
+    basis_days = "one day assumed: no admission or discharge date is on record"
+
+    # The bill itself usually prints the stay. Preferred over assuming one day,
+    # because a per-day sub-limit is multiplied by it: a three-day ICU stay read
+    # as one day understated coverage by 20,000 and overstated what the family
+    # was told they owe. The claim packet still wins where one exists — those
+    # dates are structured fields somebody entered, not a model's reading.
+    for bill in bills:
+        stay = stay_days(bill.admitted_on, bill.discharged_on)
+        if stay:
+            days = max(days, stay)
+            basis_days = (f"{stay} day(s) as printed on the bill "
+                          f"({bill.admitted_on} to {bill.discharged_on})")
+            break
+
     if case is not None:
         for receipt in reversed(service.get_chain(case_id).receipts):
             if receipt.kind == "claim.packet_assembled":

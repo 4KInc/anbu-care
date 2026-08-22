@@ -104,6 +104,8 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "body": "Anbu Care: that bill could not be read. {reason}\n"
                 "The photo is kept. Send a clearer one, or add the amounts by "
                 "hand here: {dashboard_url}",
+        # Also opens on the bills, since that is what the message is about.
+        "view": "claim",
         "params": ["reason"],
     },
     "clinician_handoff_link": {

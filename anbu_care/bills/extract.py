@@ -63,6 +63,8 @@ Return ONLY a JSON object, no prose and no code fence:
   "stated_total_inr": <integer rupees, the final TOTAL printed, or null>,
   "vendor": "<hospital or clinic name, or null>",
   "bill_date": "<YYYY-MM-DD, or null>",
+  "admitted_on": "<YYYY-MM-DD admission date printed on the bill, or null>",
+  "discharged_on": "<YYYY-MM-DD discharge date printed on the bill, or null>",
   "unreadable": <true if you cannot read this reliably>,
   "unreadable_reason": "<short reason, or null>"
 }
@@ -86,6 +88,10 @@ Rules you must not break:
   admission_kit, telephone, food_for_attendant, cosmetics.
   Anything else: lowercase the printed label and replace spaces with
   underscores.
+- Admission and discharge dates are usually printed in the patient block near
+  the top. They matter: a per-day sub-limit is multiplied by the length of
+  stay, so a stay read as one day instead of three understates what an insurer
+  covers. Read them if they are printed, and use null if they are not.
 - If the image is not a bill at all, set "unreadable" with that as the reason.
 """
 
@@ -104,6 +110,8 @@ class Extraction:
     tax_inr: int | None = None
     vendor: str | None = None
     bill_date: str | None = None
+    admitted_on: str | None = None
+    discharged_on: str | None = None
     needs_review: bool = False
     review_reason: str | None = None
 
@@ -267,5 +275,7 @@ def extract(image: bytes, mime_type: str = "image/jpeg") -> Extraction:
         discount_inr=discount, tax_inr=tax,
         vendor=(str(parsed["vendor"]).strip() if parsed.get("vendor") else None),
         bill_date=(str(parsed["bill_date"]).strip() if parsed.get("bill_date") else None),
+        admitted_on=(str(parsed["admitted_on"]).strip() if parsed.get("admitted_on") else None),
+        discharged_on=(str(parsed["discharged_on"]).strip() if parsed.get("discharged_on") else None),
         needs_review=needs_review, review_reason=reason,
     )
