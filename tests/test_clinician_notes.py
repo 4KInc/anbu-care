@@ -46,9 +46,14 @@ def case_id() -> str:
 
 
 def _heard(monkeypatch, text: str):
-    """Pin what the transcriber returns, so the gate is what is under test."""
+    """Pin what the transcriber returns, so the gate is what is under test.
+
+    Patches `transcribe_dictation`, which is the clinician lane's own
+    entry point — a prompt that only transcribes, with no symptom reading and
+    no urgency judgement to discard.
+    """
     monkeypatch.setattr(
-        transcribe, "transcribe",
+        transcribe, "transcribe_dictation",
         lambda audio, mime="audio/ogg", **kw: transcribe.Transcript(
             ok=True, engine="gemini", text=text, detail="stubbed", reading=None),
     )
@@ -292,7 +297,7 @@ def test_an_untranscribable_recording_is_refused_and_writes_nothing(case_id, mon
     assert len(service.get_chain(case_id).receipts) == before
 
 
-def test_the_clinician_path_is_not_held_to_twilio_s_webhook_ceiling(case_id, monkeypatch):
+def test_the_clinician_path_is_not_held_to_twilio_s_webhook_ceiling():
     """A cold start failed a transcript that would have worked a second later.
 
     The 12-second limit exists because the wellbeing lane answers a Twilio
@@ -300,21 +305,118 @@ def test_the_clinician_path_is_not_held_to_twilio_s_webhook_ceiling(case_id, mon
     direct call from a browser and has no such ceiling — it was inheriting a
     constraint that does not apply to it, and losing real transcripts to it.
     """
-    seen = {}
+    import inspect
 
-    def _spy(audio, mime="audio/ogg", timeout_seconds=None, **kw):
-        seen["timeout"] = timeout_seconds
-        return transcribe.Transcript(ok=True, engine="gemini", text="Seen and reviewed.",
-                                     detail="stub", reading=None)
+    default = inspect.signature(
+        transcribe.transcribe_dictation).parameters["timeout_seconds"].default
+    assert default == transcribe.CLINICIAN_TIMEOUT_SECONDS
+    assert default > transcribe.TRANSCRIBE_TIMEOUT_SECONDS
 
-    monkeypatch.setattr(transcribe, "transcribe", _spy)
+
+def test_the_dictation_prompt_asks_only_for_words(case_id, monkeypatch):
+    """The no-interpret wall is easier to trust when nothing was interpreted.
+
+    The clinician lane used to reuse the wellbeing prompt, which also extracts
+    symptom terms and judges whether someone should check on this person NOW —
+    a meaningless question for a doctor at a bedside, computed and discarded on
+    every note. Now it is never asked for.
+    """
+    prompt = transcribe._DICTATION_PROMPT.lower()
+    for forbidden in ("symptom", "urgent", "urgency", "diagnos", "assess",
+                      "recommend", "impression"):
+        assert f"do not {forbidden}" in prompt or forbidden not in prompt.split("do not")[0], (
+            f"the dictation prompt still asks the model to {forbidden}"
+        )
+    assert "do not interpret" in prompt
+    assert "do not translate" in prompt
+    # Numbers are the thing that must survive verbatim.
+    assert "numbers and dates" in prompt
+
+    _heard(monkeypatch, "Expected discharge on the twenty second.")
     grant = access.resolve(access.mint(case_id, allow_notes=True))
-    notes.draft_from_voice(grant, b"x" * 5000)
-
-    assert seen["timeout"] == transcribe.CLINICIAN_TIMEOUT_SECONDS
-    assert seen["timeout"] > transcribe.TRANSCRIBE_TIMEOUT_SECONDS
+    draft = notes.draft_from_voice(grant, b"x" * 5000)
+    assert draft.text
 
 
 def test_the_emergency_lane_keeps_its_short_timeout():
     """The wellbeing lane IS behind Twilio's ceiling and must stay there."""
     assert transcribe.TRANSCRIBE_TIMEOUT_SECONDS == 12
+
+
+def test_the_wellbeing_lane_is_untouched_by_the_dictation_split():
+    """The emergency path must keep its prompt, its reading and its ceiling.
+
+    Splitting the prompt was worth doing only if it changed nothing for the
+    seventy-one year old sending a voice note at 2am.
+    """
+    import inspect
+
+    assert transcribe.TRANSCRIBE_TIMEOUT_SECONDS == 12
+    assert inspect.signature(
+        transcribe.transcribe).parameters["timeout_seconds"].default == 12
+
+    # The wellbeing prompt still does all three jobs.
+    wellbeing = transcribe._PROMPT.lower()
+    assert "symptom" in wellbeing
+    assert "needs someone to check on this person" in wellbeing
+
+    # And the dictation prompt does exactly one.
+    assert "symptom" not in transcribe._DICTATION_PROMPT.lower().split("do not")[0]
+
+
+def test_a_dictation_reply_never_carries_a_reading(monkeypatch):
+    """reading is None because it was never asked for, not discarded after.
+
+    Also asserts WHICH prompt was sent — the point of the split is that the
+    clinician lane never requests an interpretation at all.
+    """
+    monkeypatch.setenv("ANBU_TRANSCRIBE_MODE", "gemini")
+    sent = {}
+
+    def _seam(audio, mime_type, prompt, timeout_seconds):
+        sent["prompt"] = prompt
+        sent["timeout"] = timeout_seconds
+        return "Reviewed at the bedside."
+
+    monkeypatch.setattr(transcribe, "_call_model", _seam)
+
+    result = transcribe.transcribe_dictation(b"x" * 5000)
+    assert result.ok is True
+    assert result.text == "Reviewed at the bedside."
+    assert result.reading is None
+    assert sent["prompt"] is transcribe._DICTATION_PROMPT
+    assert sent["prompt"] is not transcribe._PROMPT
+    assert sent["timeout"] == transcribe.CLINICIAN_TIMEOUT_SECONDS
+
+
+def test_the_wellbeing_lane_still_sends_its_own_prompt(monkeypatch):
+    """The split must not have redirected the emergency lane."""
+    monkeypatch.setenv("ANBU_TRANSCRIBE_MODE", "gemini")
+    sent = {}
+
+    def _seam(audio, mime_type, prompt, timeout_seconds):
+        sent["prompt"] = prompt
+        sent["timeout"] = timeout_seconds
+        return '{"transcript": "maarbu vali", "symptoms": ["chest pain"], "urgent": true}'
+
+    monkeypatch.setattr(transcribe, "_call_model", _seam)
+
+    result = transcribe.transcribe(b"x" * 5000)
+    assert result.ok is True
+    assert sent["prompt"] is transcribe._PROMPT
+    assert sent["timeout"] == transcribe.TRANSCRIBE_TIMEOUT_SECONDS
+    # And it still gets its reading in the same call.
+    assert result.reading is not None
+
+
+def test_a_dictation_reply_that_arrives_as_json_does_not_leak_braces(monkeypatch):
+    """Belt and braces: a model that ignores the format must not put {} in a note."""
+    monkeypatch.setenv("ANBU_TRANSCRIBE_MODE", "gemini")
+    monkeypatch.setattr(
+        transcribe, "_call_model",
+        lambda audio, mime_type, prompt, timeout_seconds:
+            '{"transcript": "Seen and reviewed.", "symptoms": []}')
+
+    result = transcribe.transcribe_dictation(b"x" * 5000)
+    assert result.text == "Seen and reviewed."
+    assert "{" not in result.text

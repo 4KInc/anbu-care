@@ -43,6 +43,40 @@ TRANSCRIBE_TIMEOUT_SECONDS = 12
 # whose transcript failed types it instead, which is the outcome this avoids.
 CLINICIAN_TIMEOUT_SECONDS = 45
 
+# A clinician dictating is not a patient in distress, and asking one prompt to
+# serve both was a category error hiding in plain sight.
+#
+# `_PROMPT` does three jobs: transcribe, normalise into symptom terms, and judge
+# whether someone needs to check on this person NOW. That last question is
+# meaningless for a doctor at a bedside — the doctor IS the person checking —
+# and the answer was being computed and then thrown away on every note. Worse,
+# it primes for "elderly, unwell, out of breath or distressed", which describes
+# the patient and not the person speaking.
+#
+# So dictation gets its own prompt that only transcribes. The wellbeing lane is
+# untouched: same prompt, same one-call transcript-plus-reading, same behaviour.
+_DICTATION_PROMPT = """Transcribe this audio exactly as spoken.
+
+The speaker is a clinician dictating a note at a patient's bedside. They may
+speak Tamil, Tamil mixed with English, Hindi, or English, and they may use
+clinical terms, drug names, numbers and dates.
+
+Write the transcript in the language actually spoken, using that language's own
+script. Do not translate. Do not summarise. Do not tidy the phrasing. Do not add
+anything that was not said.
+
+Numbers and dates matter more than anything else here, because this becomes an
+attributed clinical note. Transcribe them exactly as spoken. If a number or a
+date is unclear, write what you heard rather than the value you think was
+meant — a human is going to check this before it is recorded.
+
+Do NOT interpret. Do NOT assess urgency. Do NOT extract symptoms. Do NOT add a
+diagnosis, an impression or a recommendation, even if the speaker invites one.
+You are writing down words, not reading a case.
+
+Output ONLY the transcript text, with no JSON, no quotes and no commentary.
+If you cannot make out any speech at all, output exactly NO_SPEECH."""
+
 # Rough byte bounds, used only to ignore obvious non-speech. A WhatsApp voice
 # note is opus in ogg at roughly a kilobyte per second, so this is a proxy for
 # duration and is deliberately loose: better to attempt a transcription and
@@ -116,6 +150,28 @@ def _too_short_or_long(audio: bytes) -> str | None:
     return None
 
 
+def _call_model(audio: bytes, mime_type: str, prompt: str, timeout_seconds: int) -> str:
+    """The one place this module talks to Gemini.
+
+    Isolated so the parsing, the refusal paths and the prompt choice can be
+    tested against real code rather than against a mock of themselves — and so
+    a test cannot accidentally spend a real call, which is exactly what
+    happened while writing these.
+    """
+    from google import genai
+    from google.genai import types
+
+    from anbu_care.config import settings
+
+    client = genai.Client()
+    response = client.models.generate_content(
+        model=settings().model,
+        contents=[types.Part.from_bytes(data=audio, mime_type=mime_type), prompt],
+        config={"http_options": {"timeout": timeout_seconds * 1000}},
+    )
+    return (response.text or "").strip()
+
+
 def transcribe(audio: bytes, mime_type: str = "audio/ogg",
                timeout_seconds: int = TRANSCRIBE_TIMEOUT_SECONDS) -> Transcript:
     """Transcribe, or say clearly that it could not be done.
@@ -133,21 +189,7 @@ def transcribe(audio: bytes, mime_type: str = "audio/ogg",
         return Transcript(ok=False, engine="none", detail=size_problem)
 
     try:
-        from google import genai
-        from google.genai import types
-
-        from anbu_care.config import settings
-
-        client = genai.Client()
-        response = client.models.generate_content(
-            model=settings().model,
-            contents=[
-                types.Part.from_bytes(data=audio, mime_type=mime_type),
-                _PROMPT,
-            ],
-            config={"http_options": {"timeout": timeout_seconds * 1000}},
-        )
-        raw = (response.text or "").strip()
+        raw = _call_model(audio, mime_type, _PROMPT, timeout_seconds)
     except Exception as exc:  # noqa: BLE001 - failure is an outcome, not a crash
         return Transcript(
             ok=False, engine="gemini",
@@ -162,6 +204,50 @@ def transcribe(audio: bytes, mime_type: str = "audio/ogg",
 
     return Transcript(ok=True, text=text, engine="gemini", reading=reading,
                       detail=f"transcribed {len(audio)} bytes of {mime_type} in one call")
+
+
+def transcribe_dictation(audio: bytes, mime_type: str = "audio/ogg",
+                         timeout_seconds: int = CLINICIAN_TIMEOUT_SECONDS) -> Transcript:
+    """Transcribe a clinician's dictation. Words only, no reading.
+
+    Returns a Transcript whose `reading` is always None — not discarded after
+    the fact, but never asked for. The no-interpret wall is easier to trust
+    when the interpretation was never requested.
+    """
+    if os.getenv("ANBU_TRANSCRIBE_MODE", "gemini").strip().lower() in {"off", "none", "false"}:
+        return Transcript(ok=False, engine="off",
+                          detail="transcription is switched off; nothing was transcribed")
+
+    size_problem = _too_short_or_long(audio)
+    if size_problem:
+        return Transcript(ok=False, engine="none", detail=size_problem)
+
+    try:
+        raw = _call_model(audio, mime_type, _DICTATION_PROMPT, timeout_seconds)
+    except Exception as exc:  # noqa: BLE001 - failure is an outcome, not a crash
+        return Transcript(
+            ok=False, engine="gemini",
+            detail=f"transcription failed ({type(exc).__name__}); the recording is kept"[:200],
+        )
+
+    text = raw.strip()
+    # A model that answers with JSON anyway must not put braces in the note.
+    if text.startswith("```"):
+        text = text.split("```")[1].removeprefix("json").strip()
+    if text.startswith("{"):
+        import json as _json
+
+        try:
+            text = str(_json.loads(text).get("transcript") or "").strip()
+        except Exception:  # noqa: BLE001 - fall through to the raw text
+            pass
+
+    if not text or text.upper().startswith("NO_SPEECH"):
+        return Transcript(ok=False, engine="gemini",
+                          detail="no speech could be made out in the recording")
+
+    return Transcript(ok=True, text=text, engine="gemini", reading=None,
+                      detail=f"dictation, {len(audio)} bytes of {mime_type}")
 
 
 def _parse(raw: str) -> tuple[str, object | None]:
