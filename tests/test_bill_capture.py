@@ -831,3 +831,41 @@ def test_the_bills_api_exposes_the_bill_id_the_link_needs(client, case_id, paren
     body = client.get(f"/api/cases/{case_id}/bills",
                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
     assert body["bills"][0]["bill_id"]
+
+
+def test_a_capped_room_line_warns_that_the_real_shortfall_is_larger(
+    case_id, parent_id, monkeypatch
+):
+    """The estimate must not be optimistic about money a family will owe.
+
+    Indian insurers do not merely deduct excess room rent. Where the room is
+    above the eligible category they apply a PROPORTIONATE reduction to the
+    associated medical expenses too. This estimate does not model that, so an
+    ICU line over its per-day cap means the real shortfall is larger than the
+    figure shown — and that is the one direction an estimate must never be
+    quietly wrong in.
+    """
+    _reads(monkeypatch, [ICU, PHARM], stated=130_500)      # ICU 96,000 over a 10,000/day cap
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+
+    assert estimate.may_understate is True
+    note = estimate.may_understate_note.lower()
+    assert "larger than the figure above" in note
+    assert "does not model" in note
+    # Names which line triggered it, so it is checkable rather than a blanket
+    # hedge attached to every estimate.
+    assert "icu" in note
+
+
+def test_an_estimate_with_no_capped_line_makes_no_such_claim(case_id, parent_id, monkeypatch):
+    """The warning has to mean something, so it cannot be always-on."""
+    small = {"label": "Ward medication", "item": "pharmacy",
+             "amount_inr": 1_240, "source_hint": "row 1"}
+    _reads(monkeypatch, [small], stated=1_240)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    assert estimate.may_understate is False
+    assert estimate.may_understate_note == ""

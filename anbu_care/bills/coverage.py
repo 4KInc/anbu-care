@@ -158,8 +158,26 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
             lines.append(_line_estimate(entry.item, entry.label, entry.amount_inr,
                                         policy, days, bill))
 
+    # A line capped by a per-day room or ICU sub-limit is the trigger for
+    # proportionate deduction under a real Indian policy, which this estimate
+    # does not model. Say so, rather than let the number look complete.
+    capped = [l for l in lines if "per day" in l.rule and l.estimated_you_pay_inr > 0]
+    understates = bool(capped)
+    note = ""
+    if understates:
+        worst = max(capped, key=lambda l: l.estimated_you_pay_inr)
+        note = (
+            f"{worst.label} was charged above the per-day limit. Indian insurers "
+            f"usually also reduce the OTHER hospital charges in the same "
+            f"proportion — medicines, consumables and implants excepted — so the "
+            f"real shortfall is likely to be larger than the figure above. This "
+            f"estimate does not model that reduction."
+        )
+
     return CoverageEstimate(
         case_id=case_id,
+        may_understate=understates,
+        may_understate_note=note,
         lines=lines,
         bills_counted=len(bills),
         total_billed_inr=sum(line.claimed_inr for line in lines),

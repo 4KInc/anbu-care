@@ -52,6 +52,36 @@ that describes the split as accurate rather than indicative.
 All figures on the generated bills are synthetic and the images say so on their
 face. No real patient, no real hospital billing record.
 
+## Medical and insurance document formats
+
+`scripts/make_documents.py` renders synthetic discharge summaries, lab reports,
+prescriptions and policy schedules for testing ingestion. Formats follow
+publicly documented Indian standards.
+
+| Claim | Source | Status |
+|---|---|---|
+| Discharge summary sections and field order | [NABH sample format, E-Mitra/FORMAT/04](https://nabh-portal-live.s3.ap-south-1.amazonaws.com/wp-content/uploads/2025/07/18074912/D.-E-Mitra_FORMAT-04_Hospital-Discharge-Summary-Format.pdf) | unverified, structural only |
+| Lab report layout: result, unit, biological reference interval, abnormal flag | [Drlogy pathology report formats](https://www.drlogy.com/pathology-lab-software/report-format) | unverified, structural only |
+| Room rent sub-limit typically 1% of sum insured per day, ICU 2% | [Onsurity](https://www.onsurity.com/blog/room-rent-icu-limits-in-health-insurance/), [Policybazaar](https://www.policybazaar.com/health-insurance/individual-health-insurance/articles/concept-of-room-rent-limit-in-health-insurance/) | unverified — matches the values already in `SUBLIMIT_RULES` |
+| **Proportionate deduction on exceeding room rent** | [Onsurity](https://www.onsurity.com/blog/room-rent-icu-limits-in-health-insurance/), [Acko](https://www.acko.com/health-insurance/room-rent-limit/) | unverified — **load-bearing, and NOT implemented** |
+
+**The proportionate-deduction finding matters more than the documents.** Indian
+insurers do not merely deduct excess room rent when the room occupied is above
+the eligible category: they reduce the *associated medical expenses* in the
+same proportion the eligible rent bears to the rent actually charged, with
+medicines, consumables and implants typically excepted.
+
+The coverage estimate does **not** model this. Where a room or ICU line exceeds
+its per-day limit the real shortfall is therefore larger — potentially much
+larger — than the figure shown. That is the one direction an estimate about
+somebody's money must never be quietly wrong in, so `CoverageEstimate` carries
+`may_understate` and the dashboard says so on the face of the number rather
+than in a footnote.
+
+Implementing it properly needs a decision about which heads are "associated
+medical expenses" for a given policy, which is policy wording rather than a
+general rule. Until then the warning stands in for the arithmetic.
+
 ## Hospital knowledge base
 
 `anbu_care/kb/data/hospitals_thoothukudi.json` carries its own status field:

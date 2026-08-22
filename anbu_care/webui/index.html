@@ -741,7 +741,10 @@ function vBills(){
     <div class="pills" style="margin-top:12px">
       <span class="pill p-amber">ESTIMATE — NOT THE INSURER'S DECISION</span>
       ${est.needs_review?`<span class="pill p-red">A LINE NEEDS CHECKING</span>`:""}
+      ${est.may_understate?`<span class="pill p-red">LIKELY TO BE MORE THAN THIS</span>`:""}
     </div>
+    ${est.may_understate?`<div class="strip note" style="margin-top:12px">
+      ${esc(est.may_understate_note)}</div>`:""}
   </div>
 
   ${costly.length?`<div class="card">

@@ -552,6 +552,20 @@ class CoverageEstimate(BaseModel):
         "claims. On a reimbursement claim the family usually pays first and is "
         "repaid later, so an estimated-covered amount is not money you have."
     )
+    # Set when a room or ICU line exceeds its per-day sub-limit.
+    #
+    # Indian insurers do not merely deduct the excess room rent. Where the room
+    # occupied is above the eligible category, they apply a PROPORTIONATE
+    # reduction to the associated medical expenses too — the same ratio the
+    # eligible rent bears to the rent actually charged. This estimate does not
+    # model that, so where this flag is set the real shortfall is LARGER than
+    # the figure shown, potentially by a lot.
+    #
+    # Carried as a field rather than buried in prose because it points the one
+    # direction that hurts: an estimate that is too optimistic about what a
+    # frightened family will owe.
+    may_understate: bool = False
+    may_understate_note: str = ""
     needs_review: bool = False
 
 
