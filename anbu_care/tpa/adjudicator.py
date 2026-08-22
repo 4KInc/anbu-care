@@ -40,6 +40,16 @@ SUBLIMIT_RULES: dict[str, float] = {
 }
 
 # Conventional exclusions. A claim made up entirely of these is not payable.
+#
+# IRDAI publishes a list of items "subsumed" into the room or procedure charge
+# and therefore not separately payable — over two hundred of them. These are the
+# ones that actually turn up as their own line on an Indian IPD bill, which is
+# the only reason to enumerate any of them: an exclusion nobody bills for
+# excludes nothing. Gloves and PPE were added after a real bill layout put them
+# on their own line and the estimate quietly counted them as covered.
+#
+# Not exhaustive, and deliberately so — the estimate is labelled an estimate,
+# and a list padded to look complete would make it look like an adjudication.
 NON_COVERED_ITEMS: frozenset[str] = frozenset({
     "toiletries",
     "attendant_charges",
@@ -47,6 +57,15 @@ NON_COVERED_ITEMS: frozenset[str] = frozenset({
     "telephone",
     "food_for_attendant",
     "cosmetics",
+    # Subsumed consumables and non-medical items.
+    "gloves",
+    "gloves_and_ppe_kit",
+    "ppe_kit",
+    "ppe",
+    "sanitizer",
+    "documentation_charges",
+    "registration_charges",
+    "sundries",
 })
 
 # A payable figure cannot be computed without these.

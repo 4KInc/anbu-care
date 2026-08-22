@@ -57,7 +57,10 @@ Return ONLY a JSON object, no prose and no code fence:
      "amount_inr": <integer rupees>,
      "source_hint": "<where on the bill, e.g. 'row 3' or 'ICU charges section'>"}
   ],
-  "stated_total_inr": <integer rupees, or null if no total is printed>,
+  "subtotal_inr": <integer rupees, the SUB-TOTAL before discount and tax, or null>,
+  "discount_inr": <integer rupees deducted as a discount, or null>,
+  "tax_inr": <integer rupees of GST or tax added, or null>,
+  "stated_total_inr": <integer rupees, the final TOTAL printed, or null>,
   "vendor": "<hospital or clinic name, or null>",
   "bill_date": "<YYYY-MM-DD, or null>",
   "unreadable": <true if you cannot read this reliably>,
@@ -68,8 +71,13 @@ Rules you must not break:
 - Transcribe amounts EXACTLY as printed. Never estimate, never round, never
   infer a figure that is obscured. If a digit is unclear, set "unreadable".
 - Rupees only, as integers. Drop paise. "1,23,456.00" is 123456.
-- Do NOT compute the total yourself. "stated_total_inr" is only what is
-  PRINTED on the bill. If no total is printed, use null.
+- Do NOT compute any total yourself. Every total field is only what is PRINTED
+  on the bill. If a figure is not printed, use null.
+- An Indian hospital bill usually prints BOTH a sub-total and a total, and they
+  differ by a discount, by GST, or by both. The line items add up to the
+  SUB-TOTAL. Read them as separate figures and do not reconcile them for us.
+- "Advance paid" and "balance due" are payment lines, not charges. Do NOT
+  include them as line items.
 - Do NOT include a line you cannot read. A missing line is recoverable; an
   invented one is not.
 - Use these normalised keys where they apply, because the coverage rules look
@@ -91,6 +99,9 @@ class Extraction:
     detail: str
     line_items: list[dict] = field(default_factory=list)
     stated_total_inr: int | None = None
+    subtotal_inr: int | None = None
+    discount_inr: int | None = None
+    tax_inr: int | None = None
     vendor: str | None = None
     bill_date: str | None = None
     needs_review: bool = False
@@ -217,18 +228,34 @@ def extract(image: bytes, mime_type: str = "image/jpeg") -> Extraction:
                           detail="no line item on that bill could be read")
 
     stated = _coerce_amount(parsed.get("stated_total_inr"))
+    subtotal = _coerce_amount(parsed.get("subtotal_inr"))
+    discount = _coerce_amount(parsed.get("discount_inr"))
+    tax = _coerce_amount(parsed.get("tax_inr"))
     computed = sum(line["amount_inr"] for line in lines)
 
-    # The arithmetic check. A bill whose lines do not add up to its own printed
-    # total has been read wrong somewhere, and which line is wrong is not
-    # knowable from here — so the whole extraction is flagged rather than
-    # silently reconciled to whichever number looks nicer.
+    # The arithmetic check, against the right number.
+    #
+    # Line items add up to the SUB-TOTAL. The total is the sub-total less any
+    # discount plus any tax, and comparing the lines to it flagged every
+    # discounted bill as misread — which a real bill with a 12,000 discount
+    # promptly did. So check against the sub-total where one is printed, and
+    # fall back to reconciling the total through discount and tax.
+    #
+    # Which line is wrong is never knowable from here, so a genuine mismatch
+    # flags the whole extraction rather than being reconciled to whichever
+    # number looks nicer.
     needs_review = False
     reason = None
-    if stated is not None and abs(stated - computed) > TOTAL_TOLERANCE_INR:
+    against, label = ((subtotal, "sub-total") if subtotal is not None
+                      else (None, None))
+    if against is None and stated is not None:
+        against = stated + (discount or 0) - (tax or 0)
+        label = "total after adding back the discount and removing tax"
+
+    if against is not None and abs(against - computed) > TOTAL_TOLERANCE_INR:
         needs_review = True
-        reason = (f"the lines add up to INR {computed:,} but the bill states "
-                  f"INR {stated:,} — check the photograph")
+        reason = (f"the lines add up to INR {computed:,} but the bill's {label} "
+                  f"is INR {against:,} — check the photograph")
     elif dropped:
         needs_review = True
         reason = f"{dropped} line(s) on this bill could not be read and are not included"
@@ -236,7 +263,8 @@ def extract(image: bytes, mime_type: str = "image/jpeg") -> Extraction:
     return Extraction(
         ok=True, engine="gemini",
         detail=f"read {len(lines)} line(s) from {len(image)} bytes of {mime_type}",
-        line_items=lines, stated_total_inr=stated,
+        line_items=lines, stated_total_inr=stated, subtotal_inr=subtotal,
+        discount_inr=discount, tax_inr=tax,
         vendor=(str(parsed["vendor"]).strip() if parsed.get("vendor") else None),
         bill_date=(str(parsed["bill_date"]).strip() if parsed.get("bill_date") else None),
         needs_review=needs_review, review_reason=reason,

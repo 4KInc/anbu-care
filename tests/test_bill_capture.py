@@ -509,3 +509,78 @@ def test_latest_case_for_parent_returns_the_most_recent(parent_id):
 
 def test_latest_case_for_parent_is_none_for_a_stranger():
     assert service.latest_case_for_parent("parent-nobody") is None
+
+
+# =========================================================================
+# WHAT A REAL BILL LAYOUT TAUGHT US
+# =========================================================================
+
+
+def test_a_discounted_bill_is_not_flagged_as_misread(monkeypatch):
+    """Line items add up to the SUB-TOTAL, not the total.
+
+    A real Indian IPD bill prints both, differing by a discount and GST.
+    Checking the lines against the total flagged every discounted bill as a
+    misread — which the first realistic bill promptly did, by exactly its
+    12,000 discount.
+    """
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps({
+        "line_items": [ICU, PHARM],                    # 96,000 + 34,500 = 130,500
+        "subtotal_inr": 130_500,
+        "discount_inr": 12_000,
+        "tax_inr": 0,
+        "stated_total_inr": 118_500,
+        "unreadable": False,
+    }))
+    result = vision.extract(IMAGE, "image/jpeg")
+
+    assert result.ok is True
+    assert result.needs_review is False, result.review_reason
+    assert result.subtotal_inr == 130_500
+    assert result.discount_inr == 12_000
+
+
+def test_a_bill_without_a_subtotal_reconciles_through_the_total(monkeypatch):
+    """Not every bill prints a sub-total; the discount still has to be undone."""
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps({
+        "line_items": [ICU, PHARM],
+        "subtotal_inr": None, "discount_inr": 12_000, "tax_inr": 0,
+        "stated_total_inr": 118_500, "unreadable": False,
+    }))
+    assert vision.extract(IMAGE, "image/jpeg").needs_review is False
+
+
+def test_a_genuine_mismatch_is_still_caught(monkeypatch):
+    """The check must still do its job once the false positive is gone."""
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps({
+        "line_items": [ICU],                            # 96,000
+        "subtotal_inr": 9_600,                          # a real misread
+        "discount_inr": None, "tax_inr": None,
+        "stated_total_inr": 9_600, "unreadable": False,
+    }))
+    result = vision.extract(IMAGE, "image/jpeg")
+    assert result.needs_review is True
+    assert "96,000" in result.review_reason and "9,600" in result.review_reason
+
+
+def test_subsumed_consumables_are_not_estimated_as_covered(case_id, parent_id, monkeypatch):
+    """IRDAI treats PPE and gloves as subsumed into the room charge.
+
+    They appear as their own line on a real bill, and were being counted as
+    fully covered — the most optimistic possible reading of the one number a
+    family should not be given optimistically.
+    """
+    ppe = {"label": "Gloves and PPE kit", "item": "gloves_and_ppe_kit",
+           "amount_inr": 1_450, "source_hint": "row 14"}
+    _reads(monkeypatch, [ICU, ppe], stated=97_450)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    line = next(l for l in estimate.lines if l.item == "gloves_and_ppe_kit")
+
+    assert line.estimated_covered_inr == 0
+    assert line.estimated_you_pay_inr == 1_450
+    assert "excluded" in line.rule
