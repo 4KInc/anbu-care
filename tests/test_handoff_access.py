@@ -282,3 +282,67 @@ def test_the_page_leads_with_allergies_and_says_it_is_not_integrated(client):
     assert body.index("Allergies") < body.index("Conditions")
     assert "not connected to any hospital system" in body.lower()
     assert "read only" in body.lower()
+
+
+# =========================================================================
+# THE QR — a nurse points a camera at a screen
+# =========================================================================
+
+
+def test_the_mint_response_carries_a_scannable_qr(client, monkeypatch):
+    from anbu_care.webauth import DEMO_TOKEN
+
+    monkeypatch.setenv("ANBU_PUBLIC_BASE_URL", "https://example.run.app")
+    case_id = _case(_parent())
+
+    body = client.post(f"/api/cases/{case_id}/handoff-link",
+                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+
+    svg = body["qr_svg"]
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    # Inline, so nothing external has to load on hospital wifi.
+    assert "http://" not in svg.replace("http://www.w3.org/2000/svg", "")
+    assert "<script" not in svg
+
+
+def test_the_qr_encodes_an_absolute_url_when_the_base_is_known(monkeypatch):
+    """A QR carrying a relative path scans to nothing.
+
+    Proven by matrix equality against an independently encoded absolute URL,
+    not by eyeballing the SVG: two QR codes are identical if and only if they
+    carry the same payload at the same settings.
+    """
+    import segno
+
+    from anbu_care.server import _qr_svg
+
+    monkeypatch.setenv("ANBU_PUBLIC_BASE_URL", "https://example.run.app")
+    produced = _qr_svg("/handoff/tok")
+
+    absolute = _svg_of(segno.make("https://example.run.app/handoff/tok", error="h"))
+    relative = _svg_of(segno.make("/handoff/tok", error="h"))
+
+    assert produced == absolute, "the QR does not carry the absolute URL"
+    assert produced != relative, "the QR fell back to a path that scans to nothing"
+
+    # A trailing slash on the base must not produce a double slash.
+    monkeypatch.setenv("ANBU_PUBLIC_BASE_URL", "https://example.run.app/")
+    assert _qr_svg("/handoff/tok") == absolute
+
+
+def test_the_qr_still_renders_without_a_configured_base(monkeypatch):
+    """Degrades rather than raising — the link is clickable regardless."""
+    from anbu_care.server import _qr_svg
+
+    monkeypatch.delenv("ANBU_PUBLIC_BASE_URL", raising=False)
+    assert _qr_svg("/handoff/tok").startswith("<svg")
+
+
+def _svg_of(qr) -> str:
+    """Render a segno QR exactly as the server does, for comparison."""
+    import io
+
+    buffer = io.BytesIO()
+    qr.save(buffer, kind="svg", scale=5, border=2, dark="#12212e", light="#ffffff",
+            svgclass=None, lineclass=None, xmldecl=False, svgns=True)
+    return buffer.getvalue().decode("utf-8")

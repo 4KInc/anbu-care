@@ -474,6 +474,75 @@ function vRouting(){
   </div>`;
 }
 
+// The clinician handoff. Lives on the Record tab because that is where the
+// clinical content already is — the link shares a view of THIS, so the control
+// belongs beside the thing it shares rather than in a settings screen.
+function vHandoff(){
+  const h = S.handoff;
+  if(h?.__working) return `<div class="card"><h2 class="mini">Share with the treating team</h2>
+    <p class="mute">Minting a link…</p></div>`;
+
+  if(h?.__error) return `<div class="card edge-amber"><h2 class="mini">Share with the treating team</h2>
+    <p>${esc(h.__error)}</p>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="mintHandoff()">Try again</button></div></div>`;
+
+  if(h?.url) return `<div class="card edge-teal">
+    <h2 class="mini">Share with the treating team</h2>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:none;background:#fff;padding:8px;border:1px solid var(--line);
+                  border-radius:10px;line-height:0">${h.qr_svg||""}</div>
+      <div style="flex:1;min-width:200px">
+        <p class="mute" style="margin-bottom:8px">Let the nurse scan this, or send them the link.
+          It opens the emergency summary and nothing else.</p>
+        <div class="row stack"><div class="k">Expires</div>
+          <div class="v">${Math.round((h.expires_in_seconds||3600)/60)} minutes from now</div></div>
+        <div class="row stack"><div class="k">Grants</div><div class="v">${esc(h.grants||"")}</div></div>
+        <div class="btns" style="margin-top:12px">
+          <button class="btn" onclick="copyHandoff()">Copy link</button>
+          <button class="btn" onclick="revokeHandoff()">Stop sharing</button></div>
+      </div>
+    </div>
+    <p class="mute" style="margin-top:12px">Anyone holding this link can read the summary until it
+      expires. Every time it is opened, a receipt is written to this case — you will see it on the
+      audit trail. It does not identify who opened it, because a link cannot.</p>
+  </div>`;
+
+  return `<div class="card">
+    <h2 class="mini">Share with the treating team</h2>
+    <p class="mute">If she is admitted and you are not there, the receiving nurse can be given a
+      read-only view of her allergies, conditions, medication and recent results. No login, expires
+      in an hour, and you can stop it at any time.</p>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="mintHandoff()">Create a link</button></div>
+  </div>`;
+}
+
+async function mintHandoff(){
+  S.handoff = {__working:true}; render();
+  try{
+    const r = await fetch(API + `/api/cases/${encodeURIComponent(S.caseId)}/handoff-link`,
+      {method:"POST", headers:{Authorization:`Bearer ${S.token}`}});
+    const body = await r.json();
+    S.handoff = r.ok ? body : {__error: body.detail || `HTTP ${r.status}`};
+  }catch(e){ S.handoff = {__error:String(e)}; }
+  render();
+}
+
+async function revokeHandoff(){
+  try{
+    await fetch(API + `/api/cases/${encodeURIComponent(S.caseId)}/handoff-link/revoke`,
+      {method:"POST", headers:{Authorization:`Bearer ${S.token}`}});
+  }catch(e){ /* the link dies on expiry regardless */ }
+  S.handoff = null; render();
+}
+
+function copyHandoff(){
+  if(!S.handoff?.url) return;
+  const full = location.origin + S.handoff.url;
+  navigator.clipboard?.writeText(full);
+}
+
 function vRecord(){
   if(!S.parentId) return vOpen();
   if(!S.token) return gate();
@@ -490,6 +559,7 @@ function vRecord(){
     <div class="big num">${docs.length}</div>
     <p class="mute" style="margin-top:6px">read back from the record, not from what an agent said</p>
   </div>
+  ${vHandoff()}
   <div class="card"><h2 class="mini">Baseline</h2>
     ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
     ${row("Conditions",(pr.chronic_conditions||[]).map(esc).join(", ")||unknown("none recorded"))}
