@@ -183,14 +183,15 @@ def test_out_of_network_recommendation_is_flagged_in_the_explanation():
     assert "reimbursement claim rather than cashless" in decision.explanation
 
 
-def test_explanation_carries_its_own_seeded_caveat(parent):
-    """The empanelment caveat must ride inside the sentence, not beside it.
+def test_empanelment_is_reported_as_a_listing_not_asserted_as_fact(parent):
+    """Empanelment is said to be *listed*, never flatly asserted.
 
-    The dashboard badges that used to carry this were removed. These are real,
-    named hospitals and the sentence asserts whether a real insurer pays at
-    them, so an unqualified version of it is a factual claim about a business
-    that nobody has verified. If the caveat is ever refactored out of the
-    string, this fails rather than the claim quietly going bare.
+    The seeded caveat was removed from this sentence by request, so the verb is
+    the only thing left holding it honest. These are real, named hospitals and
+    the sentence is about whether a real insurer pays at them, from network data
+    that is seeded and unverified. "X is listed as empanelled" is true of the
+    record; "X is empanelled" is a claim about a real business that nobody has
+    checked. If someone tightens the wording later, this fails first.
     """
     decision = route(
         SymptomReport(parent_id=parent.parent_id, reported_by="parent",
@@ -198,14 +199,14 @@ def test_explanation_carries_its_own_seeded_caveat(parent):
         parent,
     )
     assert "empanelled" in decision.explanation
-    assert "seeded" in decision.explanation.lower(), (
-        "the routing explanation asserts empanelment for named real hospitals "
-        "and must say the network data is seeded"
+    assert "listed as empanelled" in decision.explanation, (
+        "the routing explanation must report empanelment as a listing, not "
+        "assert it as verified fact about a real hospital"
     )
 
 
-def test_out_of_network_explanation_also_carries_the_caveat():
-    """The other branch of the same claim needs the same qualifier."""
+def test_out_of_network_explanation_is_also_a_listing_claim():
+    """The other branch of the same claim needs the same verb."""
     parent = ParentProfile(
         parent_id="p3", name="X", age=70, city="Thoothukudi", lat=8.7642, lon=78.1400,
         policy=InsurancePolicy(insurer="Unknown Insurer", policy_number="X-2",
@@ -214,7 +215,19 @@ def test_out_of_network_explanation_also_carries_the_caveat():
     decision = route(
         SymptomReport(parent_id="p3", reported_by="parent", symptoms=["chest pain"]), parent
     )
-    assert "seeded" in decision.explanation.lower()
+    assert "not listed as empanelled" in decision.explanation
+
+
+def test_kb_still_carries_the_seeded_provenance_even_though_the_ui_does_not():
+    """The caveat left the sentence; it must not have left the system.
+
+    /api/hospitals and the triage payload are now the only places a reader can
+    learn that empanelment is seeded, so they carry it or nothing does.
+    """
+    from anbu_care.kb.hospitals import KB_META
+
+    assert "NOT A LIVE FEED" in KB_META()["capability_status"]
+    assert "empanelment" in KB_META()["warning"].lower()
 
 
 def test_ranking_is_deterministic(parent):
