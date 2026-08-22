@@ -54,9 +54,17 @@ body, input, button, pre, code{font-feature-settings:"zero" 0, "ss01" 0;
 
 /* ---- shell ------------------------------------------------------------ */
 main{max-width:760px;margin:0 auto;padding:var(--pad)}
-.strip{border-radius:var(--r);padding:9px 12px;font-size:12.5px;font-weight:700;
+.strip{border-radius:var(--r);padding:6px 12px;font-size:12.5px;font-weight:700;
        letter-spacing:.02em;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.strip.demo{background:var(--red-bg);color:var(--red-ink);border:1px solid #f6d6d6}
+/* Quieter than it was, and deliberately still present. The words are
+   load-bearing: this record is public, and without them a screenshot of a
+   synthetic patient reads as a real one. Alarm-red trained the eye to skip it,
+   which is the one failure that would actually cost us. So it drops to a
+   footnote — muted ground, a single amber rule down the left edge — and keeps
+   saying exactly what it said. */
+.strip.demo{background:var(--slate-bg);color:var(--ink-soft);
+            border:1px solid var(--line);border-left:3px solid var(--amber);
+            font-size:11.5px;font-weight:600}
 .strip.note{background:var(--card);color:var(--ink-soft);border:1px solid var(--line);
             font-weight:400;letter-spacing:0;font-size:13px;line-height:1.5;display:block}
 .lock{display:inline-flex;align-items:center;gap:6px;background:var(--teal-bg);
