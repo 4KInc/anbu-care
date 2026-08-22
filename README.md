@@ -61,10 +61,29 @@ This matters more than any feature list, so it comes first.
 - The WhatsApp compliance boundary — enforced in code, before send.
 - Claim packet assembly, coverage and sub-limit checks, and STEP_UP evidence
   scoring.
-- SLA tracking against the IRDAI 2024 Master Circular's 1-hour cashless and
-  30-day reimbursement clocks, against real wall time.
+- SLA tracking against the regulatory cashless and reimbursement windows, run
+  against real wall time. The two window lengths are implemented as real
+  deadlines in `anbu_care/service.py` and are quoted from the IRDAI 2024 Master
+  Circular, but that citation is **not yet verified against the source
+  document** — see [`docs/CITATIONS.md`](docs/CITATIONS.md), where both are
+  flagged load-bearing. The clock machinery is real either way; the specific
+  window lengths should be checked before anyone narrates them as fact.
 - The signed, tamper-evident receipt chain, and the verification that detects
   a silent edit.
+- **Wellbeing check-in over inbound WhatsApp**, including voice notes. A voice
+  note is stored, transcribed by Gemini in a single call, and read for symptom
+  terms — and the audio, not the transcript, is treated as the record. Alerts
+  say "we heard", never "she said". Multilingual and verified from a real
+  handset in Tamil script, transliterated Tamil, Hindi and code-mixed English.
+- **Escalation and care-circle notification.** A recognised red flag opens a
+  case, runs triage, alerts the family, and can ring a care-circle contact.
+- **Per-purpose consent, read live.** Six purposes, with the inbound and
+  outbound sets deliberately disjoint. Conflating them was a real shipped
+  defect, since fixed and regression-tested.
+- **Google Places verification of the hospital knowledge base**, and a real map
+  of the routing decision. Verification caught a genuine bug: the previously
+  seeded coordinates were out by 1.4 to 5.0 km, which changed which hospital was
+  nearest and therefore what the routing explanation claimed.
 
 **Simulated, and labelled as such everywhere it appears:**
 
@@ -72,28 +91,64 @@ This matters more than any feature list, so it comes first.
   integrate against in this window. The liaison agent submits to a simulated
   endpoint. Packet assembly and SLA tracking are real; only the counterparty's
   answer is mocked.
-- **The hospital knowledge base.** `anbu_care/kb/data/hospitals_thoothukudi.json`
-  is a dated seeded snapshot, not a live capability feed. Capability and
-  empanelment values must be spot-checked against current listings before any
-  public writeup or recorded narration.
+- **Hospital capability and insurer empanelment.**
+  `anbu_care/kb/data/hospitals_thoothukudi.json` is split provenance, and only
+  half of it is seeded. **Locations are real:** all five hospitals carry a
+  Google Places `place_id` and a `location_verified_on` date, so identity,
+  coordinates and therefore distance are verified rather than guessed.
+  **Capability and empanelment are seeded** and must be spot-checked against
+  current listings before any public writeup or recorded narration. Google can
+  say where a hospital is; it cannot say who bills which insurer, or which
+  centre can run a cath lab at 2am.
 - **WhatsApp delivery.** The gate decision is real and always has been; the
   transport behind it is real code with real credentials. Whether a message
   actually leaves depends on the configured provider, and the system never
   claims a send that did not happen — a permitted-but-undelivered message is
   recorded as `comms.not_delivered`, with `sent_at` left unset.
 
-  Two providers are wired. **Meta's Cloud API** test sender is free, needs no
-  payment method, and reaches up to five verified recipient numbers — the
-  working path. **Twilio's** sandbox is also implemented, but a Twilio *trial*
-  account cannot send freeform WhatsApp at all: `Body` is rejected with
-  `21654 ContentSid Required`, and the Content API that would satisfy it is
-  itself gated behind upgrading. That is a catch-22, not a bug in this code, and
-  it is why the default mode is `off`.
+  Two providers are wired, and **Twilio is the working path.** The account is
+  upgraded (`type: Full`), and a freeform `Body` send with no `ContentSid`
+  reaches a real handset — verified end to end on 2026-08-22, `status:
+  delivered`. This reverses an earlier note in this README: on a Twilio *trial*
+  account freeform sends are rejected with `21654 ContentSid Required` while the
+  Content API that would satisfy it returns `20003 not available on a Trial
+  account`. That catch-22 is real, and upgrading is what resolves it.
+
+  **Meta's Cloud API is implemented but is a dead end on this project.** The
+  test sender registers and connects, the token is valid, and sends still fail
+  `131030 Recipient phone number not in allowed list` — the only UI for that
+  allow-list permanently reports "No phone numbers available for this app",
+  reproduced across two apps in two separate business portfolios. There is no
+  public Graph API for the list. The code stays because it works given a
+  populated allow-list; it is not the path this demo uses.
+
+  One live constraint remains on the working path: the account has **no Content
+  templates**, so freeform sends only succeed inside WhatsApp's 24-hour customer
+  service window. A cold, business-initiated send still fails, and fails
+  honestly as `comms.not_delivered`.
 
   Neither is general production reach. Sending to an arbitrary number needs Meta
   business verification and template approval, roughly 10–15 business days.
   Whatever the transport, **clinical detail never traverses WhatsApp** — that is
   the classifier's job, and it runs before the transport is reachable at all.
+
+**Real, but narrower than it looks:**
+
+- **Wellbeing check-ins are self-reported, never a measured vital.** The
+  dashboard labels them so. An absent entry reads "no check-in yet" — a missing
+  check-in is not evidence that anything is well.
+- **A transcript is not what she said.** It is what a model heard. That is why
+  the audio is retained and playable, and why nothing in the system attributes
+  the transcript to her as speech.
+- **The care circle is a set of notified parties, not integrated providers.**
+  Nobody in it can reply into the system, and no hospital or clinician system is
+  connected in either direction.
+- **A placed call is not an answered call.** The telephony reports that a call
+  was placed; whether anyone picked up is outside what this system can know, and
+  it never claims otherwise.
+- **Anbu Care does not sense anything.** There is no location tracking, no
+  monitoring, and no autonomous detection. Every input is something a person
+  deliberately sent.
 
 Every market figure quoted in the project brief is directional and unverified.
 See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
@@ -104,7 +159,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 73 tests, no GCP or model access needed
+make test             # 399 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -143,21 +198,32 @@ Every mandatory requirement, and where it is actually load-bearing.
 
 | Requirement | Used for |
 |---|---|
-| **Gemini 3.5 (Vertex AI)** | Multimodal reasoning over discharge summaries, lab reports, ECG images, prescriptions, and bills; policy-clause matching. Configurable via `ANBU_MODEL` — any Gemini 3.5+ model satisfies the mandate. |
+| **Gemini 3.5 (Vertex AI)** | Multimodal reasoning over discharge summaries, lab reports, ECG images and prescriptions; policy-clause matching; and single-call transcription of inbound WhatsApp voice notes. Deployed default is `gemini-3.5-flash`, configurable via `ANBU_MODEL` — any Gemini 3.5+ model satisfies the mandate. |
 | **Google ADK** | Five sub-agents with isolated tool scopes under one coordinator. |
-| **Cloud Run** | Hosts the agent API and the dashboard endpoints. |
+| **Cloud Run** | Hosts the agent API, the Twilio webhook, and the dashboard. |
 | **Firestore** | Case state and the hash-chained receipt ledger, single-table PK/SK. |
 | **Pub/Sub** | Async multi-day case tracking — intake events, case updates, claim status. |
-| **Memory Bank** | Persistent cross-session context across weeks of a case. |
+| **Memory Bank** | Wired via `ANBU_MEMORY_SERVICE_URI`, but **the deployed revision runs the in-memory fallback** — `/api/healthz` reports `"memory_bank": "in-memory (not persistent)"`. Cross-session persistence is therefore not live. |
 
 ---
 
 ## Architecture
 
 ```
-              NRI Family (mobile/web app + WhatsApp)
-                              |
-                 +------------+------------+
+   Parent in India                    NRI Family (dashboard + WhatsApp)
+   (WhatsApp voice note / text)                     |
+              |                                     |
+   +----------v-----------+                         |
+   | Inbound wellbeing    |  Gemini transcribes     |
+   | (Twilio webhook)     |  audio in ONE call;     |
+   | audio is the record, |  RED_FLAGS table (code) |
+   | transcript derived   |  decides, not the model |
+   +----------+-----------+                         |
+              |                                     |
+              |  red flag -> open case, triage      |
+              +------------------+------------------+
+                                 |
+                 +------------+--+---------+
                  |  Onboarding / KB Agent  |
                  |  (medical hx, docs,     |
                  |   insurance baseline)   |
@@ -176,7 +242,14 @@ Every mandatory requirement, and where it is actually load-bearing.
  | location+| |  evidence  |   |  validated     |  |  compliant     |
  | hospital | |  enrich)   |   |  packet;       |  |  status to     |
  | matching | |            |   |  *SIMULATED*   |  |  parent + NRI) |
- +----+-----+ +-----+------+   +--------+-------+  +----------------+
+ +----+-----+ +-----+------+   +--------+-------+  +-------+--------+
+      |             |                   |                  |
+      |             |                   |          +-------v--------+
+      |             |                   |          | Care circle    |
+      |             |                   |          | NOTIFIED only, |
+      |             |                   |          | never          |
+      |             |                   |          | integrated     |
+      |             |                   |          +----------------+
       |             |                   |
       +-------------+---------+---------+
                               |
@@ -240,7 +313,7 @@ anbu_care/
 scripts/
   demo_spine.py         end-to-end run, no model in the loop
   verify_stack.py       confirms Vertex / Firestore / Pub/Sub are reachable
-tests/                  73 tests, no GCP or model access needed
+tests/                  399 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -259,7 +332,21 @@ Beyond ADK's own agent API:
 | `GET /api/parents/{id}` | Baseline record and every ingested document |
 | `GET /api/cases/{id}` | Case metadata and current chain head |
 | `GET /api/cases/{id}/trail` | Every decision on the case, in order, with hash links |
+| `GET /api/cases/{id}/brief` | The arrival brief, degrading to "not yet known" in every hole |
 | `GET /api/cases/{id}/verify` | Independent chain verification — deliberately unauthenticated |
+| `POST /api/wellbeing/inbound` | Twilio webhook — inbound check-ins, text and voice notes |
+| `GET /api/parents/{id}/wellbeing` | Check-in history for a parent |
+| `GET /api/parents/{id}/care-circle` | Care-circle contacts and their consent purposes |
+| `POST /api/cases/{id}/notify-claim` | Claim-status message to the family, through the comms gate |
+| `POST /api/cases/{id}/notify-care-circle` | Care-circle notice, through the comms gate |
+| `POST /api/intake-signal` | Structured intake event |
+| `GET /api/intake-channels` | Which intake channels are configured |
+| `GET /api/map-config` | Maps browser key and the hospital-provenance source note |
+| `GET /app` | The dashboard |
+
+Everything returning case or patient content sits behind
+`require_case_access` / `require_family_session` and answers **401** without a
+session. `/api/cases/{id}/verify` is the deliberate exception.
 
 Smoke-testing a fresh deploy is three calls:
 
@@ -351,7 +438,7 @@ Secrets are read from the environment only — never committed, never logged,
 never baked into an image layer. Locally they go in `.env` (gitignored); on
 Cloud Run, inject them as secrets rather than plain env vars.
 
-**Meta Cloud API** (free test sender, the working path):
+**Meta Cloud API** (implemented, but a dead end on this project — see the honesty note above):
 
 ```bash
 # From the Meta app dashboard: WhatsApp -> API Setup
@@ -367,7 +454,7 @@ sends `hello_world` for exactly that purpose. It is an operational handshake,
 not a family update: it carries no case content and does not go through the
 gate, because there is nothing to classify.
 
-**Twilio** (implemented; needs a non-trial account, see the honesty note above):
+**Twilio** (the working path; needs a non-trial account, see the honesty note above):
 
 ```bash
 ANBU_WHATSAPP_MODE=twilio
@@ -420,13 +507,6 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   Model Garden to a dedicated GPU-backed endpoint, billed per hour rather than
   per token. Deferred as infra cost out of proportion to a component that by
   design cannot change any decision.
-- **Wellbeing check-in.** A daily self-reported or caregiver-logged pain/mood
-  entry, timestamped and labelled "self-reported", surfaced to the family — never
-  inferred and never shown as a measured vital, with an absent entry reading "no
-  check-in yet". Scoped and deliberately deferred: the version that is actually
-  useful has to reach the arrival brief and the dashboard, which means touching
-  the brief composer and the credentialed surface for a feature that adds no
-  guarantee. Not worth reopening working code for.
 - **Per-analyte reference change values.** A repeat lab reading drifts for
   reasons that are not clinical, so changes inside a flat 10% band are narrated
   as "within normal variation" rather than "new and abnormal" — which is what

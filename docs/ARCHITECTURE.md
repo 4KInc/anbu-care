@@ -123,7 +123,7 @@ counter. Two workers appending concurrently would collide on `seq` — acceptabl
 at hackathon scale, and the fix (a Firestore transaction on the case document)
 is a known next step rather than an oversight.
 
-A `MemoryStore` implements the same interface, which is why 73 tests run with no
+A `MemoryStore` implements the same interface, which is why 399 tests run with no
 GCP access at all.
 
 ## Why the TPA is simulated, and says so
@@ -163,6 +163,14 @@ gets confused produces a worse *explanation*, not a worse *decision*.
   transaction on the case document.
 - **Memory Bank** is wired via `ANBU_MEMORY_SERVICE_URI` but falls back to
   in-memory when unset, which is not persistent.
-- **No live hospital-capability feed.** The KB is a dated seed and says so.
-- **The dashboard is API-only.** Clinical detail is meant to live there, and the
-  routes exist, but there is no UI yet.
+- **No live hospital-capability feed.** Hospital *locations* are now verified
+  against Google Places, with a `place_id` and verification date on every
+  record, so distance is real. Capability and insurer empanelment remain a dated
+  seed and say so — no feed publishes them.
+- **No content templates on the WhatsApp sender.** Freeform sends succeed only
+  inside WhatsApp's 24-hour customer service window; a cold business-initiated
+  send fails, and is recorded as `comms.not_delivered` rather than claimed.
+- **A placed call is not an answered call.** Escalation walks the contacts in
+  stored order and stops at the first call the carrier accepts. Whether anyone
+  picked up is outside what the telephony reports, so no no-answer fallback is
+  possible and none is claimed.
