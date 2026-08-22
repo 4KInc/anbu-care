@@ -81,6 +81,44 @@ def _summary_for(kind: str, payload: dict) -> str:
     return "Document."
 
 
+def message_summary_for(kind: str, payload: dict) -> str:
+    """A summary safe to put in a WhatsApp message. Counts, never findings.
+
+    The record summary names which analytes were flagged, because a family
+    reading the record behind a credential should see that. Putting the same
+    sentence in a message got it BLOCKED as clinical, correctly — "Flagged:
+    Troponin I, CK-MB" is exactly the content the gate exists to stop, and the
+    family got silence instead of a notification.
+
+    So the message says how many results fell outside the reference range and
+    where to read them. The count is the news; the names are the record.
+    """
+    if kind == "lab_report":
+        obs = payload.get("observations") or []
+        flagged = sum(1 for o in obs
+                      if str(o.get("flag") or "").lower() in {"high", "low", "abnormal"})
+        if flagged:
+            return (f"{len(obs)} result(s) recorded, {flagged} outside the "
+                    f"reference range.")
+        return f"{len(obs)} result(s) recorded."
+    if kind == "discharge_summary":
+        span = " to ".join(x for x in (payload.get("admitted_on"),
+                                       payload.get("discharged_on")) if x)
+        meds = len(payload.get("discharge_medications") or [])
+        return (f"Admission {span}." if span else "Discharge summary recorded.") + (
+            f" {meds} medication(s) listed on discharge." if meds else "")
+    if kind == "prescription":
+        return f"{len(payload.get('medications') or [])} medication(s) recorded."
+    if kind == "policy_schedule":
+        # Money and cover, not clinical detail, so this one can say the figures.
+        sum_insured = payload.get("sum_insured_inr")
+        bits = [f"Sum insured INR {sum_insured:,}."] if isinstance(sum_insured, int) else []
+        if payload.get("copay_percent"):
+            bits.append(f"Co-pay {payload['copay_percent']}%.")
+        return " ".join(bits) or "Policy schedule recorded."
+    return "Recorded."
+
+
 def _observations(payload: dict) -> list[Observation]:
     out: list[Observation] = []
     for entry in payload.get("observations") or []:
@@ -275,6 +313,9 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
 
     return {
         "document_id": doc_id, "kind": reading.kind, "summary": doc.summary,
+        # Two summaries on purpose: one for the record, one that can survive the
+        # comms gate. Conflating them is what got the first message blocked.
+        "message_summary": message_summary_for(reading.kind, reading.payload),
         "observations": len(doc.observations), "applied": applied,
         "payload": reading.payload, "image_object": stored.object_name,
     }

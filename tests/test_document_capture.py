@@ -239,3 +239,86 @@ def test_the_summary_repeats_the_document_and_never_characterises_it(parent_id, 
     assert "troponin i" in summary                 # names what was flagged
     for verdict in ("serious", "urgent", "concerning", "suggests", "consistent with"):
         assert verdict not in summary
+
+
+# =========================================================================
+# THE MESSAGE MUST SURVIVE THE GATE IT SHARES A SYSTEM WITH
+# =========================================================================
+
+
+def test_the_message_summary_never_names_a_clinical_finding(parent_id, monkeypatch):
+    """This shipped, and the family got silence.
+
+    The record summary names which analytes were flagged, which is right for a
+    credentialed view. The same sentence in a WhatsApp message was classified
+    clinical and BLOCKED — correctly, because "Flagged: Troponin I, CK-MB" is
+    exactly what the gate exists to stop. The document was on file and nobody
+    was told.
+
+    So there are two summaries: the count is the news, the names are the record.
+    """
+    from anbu_care.comms.policy import MessageClass, TEMPLATES, classify_message, gate_message
+    from anbu_care.docvision.ingest import message_summary_for
+
+    payload = {"observations": [
+        {"name": "Troponin I", "value": "0.94", "flag": "high"},
+        {"name": "CK-MB", "value": "38", "flag": "high"},
+        {"name": "Sodium", "value": "138", "flag": "normal"}]}
+
+    safe = message_summary_for("lab_report", payload)
+    assert "3 result(s)" in safe and "2 outside" in safe
+    for analyte in ("troponin", "ck-mb", "sodium"):
+        assert analyte not in safe.lower()
+
+    body = str(TEMPLATES["document_recorded"]["body"]).format(
+        parent_name="Rajeswari", document_kind="lab report", summary=safe,
+        applied_line="", dashboard_url="https://example/app")
+    assert classify_message(body)[0] is not MessageClass.CLINICAL
+    assert gate_message(body, "logistics", template_name="document_recorded").allowed
+
+
+def test_the_record_summary_still_names_them(parent_id, monkeypatch):
+    """Behind the credential, a family should see which results were flagged."""
+    _reads(monkeypatch, "lab_report", {"observations": [
+        {"name": "Troponin I", "value": "0.94", "flag": "high"}]})
+    result = ingest_document_image(parent_id, IMAGE, "image/png")
+
+    assert "Troponin I" in result["summary"]
+    assert "Troponin" not in result["message_summary"]
+
+
+def test_every_document_kind_produces_a_sendable_message(parent_id):
+    """A template that cannot be sent is a family left in silence."""
+    from anbu_care.comms.policy import TEMPLATES, gate_message
+    from anbu_care.docvision.ingest import message_summary_for
+
+    payloads = {
+        "lab_report": {"observations": [{"name": "Troponin I", "value": "0.94", "flag": "high"}]},
+        "discharge_summary": {"admitted_on": "2026-08-19", "discharged_on": "2026-08-22",
+                              "diagnosis": "Acute coronary syndrome",
+                              "discharge_medications": [{"name": "Aspirin"}]},
+        "prescription": {"medications": [{"name": "Aspirin"}, {"name": "Clopidogrel"}]},
+        "policy_schedule": {"insurer": "Star Health", "sum_insured_inr": 500_000,
+                            "copay_percent": 10},
+    }
+    for kind, payload in payloads.items():
+        summary = message_summary_for(kind, payload)
+        body = str(TEMPLATES["document_recorded"]["body"]).format(
+            parent_name="Rajeswari", document_kind=kind.replace("_", " "),
+            summary=summary, applied_line="", dashboard_url="https://example/app")
+        verdict = gate_message(body, "logistics", template_name="document_recorded")
+        assert verdict.allowed, f"{kind} would be blocked: {summary}"
+        # And the diagnosis in particular must not ride along.
+        assert "coronary" not in body.lower()
+
+
+def test_a_withheld_fallback_exists_for_when_the_gate_still_refuses():
+    """The wellbeing lane already learned this: never leave them untold."""
+    from anbu_care.comms.policy import TEMPLATES, gate_message
+
+    body = str(TEMPLATES["document_recorded_withheld"]["body"]).format(
+        parent_name="Rajeswari", document_kind="lab report",
+        dashboard_url="https://example/app")
+    assert gate_message(body, "logistics",
+                        template_name="document_recorded_withheld").allowed
+    assert "not carried over WhatsApp" in body

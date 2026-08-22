@@ -112,6 +112,16 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "Check it here: {dashboard_url}",
         "params": ["parent_name", "document_kind", "summary", "applied_line"],
     },
+    "document_recorded_withheld": {
+        # The fallback when even the safe summary is refused. Carries a kind and
+        # a link and nothing else, so a family is told something arrived rather
+        # than left with silence they cannot distinguish from a failure.
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: a {document_kind} for {parent_name} has been recorded. "
+                "What it says is not carried over WhatsApp. Read it here: "
+                "{dashboard_url}",
+        "params": ["parent_name", "document_kind"],
+    },
     "bill_unreadable": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: that bill could not be read. {reason}\n"

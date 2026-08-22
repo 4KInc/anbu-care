@@ -1039,15 +1039,16 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         logger.warning("document read for %s but no contact to tell", parent_id)
         return
 
-    def tell(template: str, params: dict[str, str], klass: str, purpose: str) -> None:
+    def tell(template: str, params: dict[str, str], klass: str, purpose: str):
         try:
-            whatsapp_tools.send_family_update(
+            return whatsapp_tools.send_family_update(
                 case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
                 template_name=template, template_params=params,
                 message_class=klass, purpose_override=purpose,
             )
         except Exception:  # noqa: BLE001 - a failed telling must not hide the outcome
             logger.exception("could not report the document outcome")
+            return None
 
     def failed(reason: str) -> None:
         tell("bill_unreadable", {"reason": reason[:200]}, "logistics", consent.STATUS_UPDATES)
@@ -1069,12 +1070,22 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
             failed("something went wrong reading it.")
             return
 
-        tell("document_recorded", {
+        sent = tell("document_recorded", {
             "parent_name": first_name,
             "document_kind": result["kind"].replace("_", " "),
-            "summary": result["summary"][:300],
+            "summary": result["message_summary"][:300],
             "applied_line": (f"{result['applied']}.\n" if result.get("applied") else ""),
         }, "logistics", consent.STATUS_UPDATES)
+
+        # If the gate still refuses it, the family must not be left in silence.
+        # Same fallback the wellbeing lane uses for a withheld quote: say that
+        # something was recorded and where to read it, carrying nothing that
+        # could have been the reason for the block.
+        if sent is not None and sent.get("allowed") is False:
+            tell("document_recorded_withheld", {
+                "parent_name": first_name,
+                "document_kind": result["kind"].replace("_", " "),
+            }, "logistics", consent.STATUS_UPDATES)
         return
 
     # ---- a bill: the existing lane, which reads line items in detail -------
