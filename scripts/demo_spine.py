@@ -117,7 +117,11 @@ def main() -> int:
         flag = "◀ chosen" if h["hospital_id"] == triage["recommended_hospital"]["hospital_id"] else ""
         print(f"     {h['total_score']:.3f}  {h['name']:<44} {h['distance_km']:>5.1f} km  "
               f"cap {h['capability_score']:.2f}  network {'yes' if h['network_match'] else 'no ':<3} {flag}")
-    print(f"\n   KB provenance: {triage['knowledge_base']['status']} (seeded {triage['knowledge_base']['seeded_on']})")
+    kb = triage["knowledge_base"]
+    print(f"\n   KB provenance — locations: {kb['location_status']} "
+          f"({kb['location_verified_on']})")
+    print(f"                  capability: {kb['capability_status']} "
+          f"(seeded {kb['seeded_on']})")
 
     step(4, "WhatsApp — what may go out, and what must not")
     hospital = triage["recommended_hospital"]

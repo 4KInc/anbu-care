@@ -4,8 +4,11 @@
     "state": "Tamil Nadu",
     "country": "India",
     "seeded_on": "2026-08-19",
-    "status": "SEEDED SNAPSHOT — NOT A LIVE FEED",
-    "warning": "Capability and empanelment values below are seeded for the hackathon demo and must be spot-checked against current hospital and insurer listings before any public writeup or recorded narration. There is no live hospital-capability feed in this build.",
+    "location_status": "VERIFIED — Google Places, per-hospital place_id",
+    "location_verified_on": "2026-08-21",
+    "capability_status": "SEEDED SNAPSHOT — NOT A LIVE FEED",
+    "status": "MIXED — locations verified, capability and empanelment seeded",
+    "warning": "Split provenance, and only half of this file is seeded. Hospital identity and coordinates are verified against Google Places and carry a place_id and a verification date, so distance is real. Capability and insurer empanelment are seeded for the hackathon demo and must be spot-checked against current hospital and insurer listings before any public writeup or recorded narration. No feed publishes them: Google can say where a hospital is, not who bills which insurer.",
     "verify_against": [
       "Hospital's own emergency/cardiology service listing",
       "Insurer network-hospital list for the specific policy",

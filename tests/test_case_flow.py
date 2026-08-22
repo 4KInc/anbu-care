@@ -92,12 +92,43 @@ def test_triage_writes_a_receipt_carrying_the_full_ranking(parent_id):
     assert chain.verify().ok
 
 
-def test_triage_surfaces_that_the_kb_is_a_seeded_snapshot(parent_id):
+def test_triage_surfaces_that_kb_capability_is_a_seeded_snapshot(parent_id):
+    """The seeded caveat narrowed when half of it stopped being true.
+
+    Locations are verified against Google Places now, so a blanket "not a live
+    feed" overstated the doubt. Capability and empanelment are still seeded and
+    no feed publishes them, so that half of the caveat has to survive — and it
+    has to survive *specifically*, not folded into a summary line a reader can
+    interpret either way.
+    """
     result = triage_tools.run_triage(
         parent_id=parent_id, symptoms=["chest pain"], free_text="",
         reported_by="neighbour", lat=0.0, lon=0.0, case_id="",
     )
-    assert "NOT A LIVE FEED" in result["knowledge_base"]["status"]
+    kb = result["knowledge_base"]
+
+    assert "NOT A LIVE FEED" in kb["capability_status"]
+    assert "VERIFIED" in kb["location_status"]
+    assert kb["location_verified_on"]
+
+    # The warning must still name what is seeded. A caveat that says "some of
+    # this is seeded" without saying which half is not a caveat.
+    assert "empanelment" in kb["warning"].lower()
+    assert "capability" in kb["warning"].lower()
+
+
+def test_kb_meta_never_claims_capability_is_verified():
+    """Guards the direction that would actually hurt: over-claiming.
+
+    Re-seeding the KB must not let "verified" leak from the location half onto
+    the capability half.
+    """
+    from anbu_care.kb.hospitals import KB_META
+
+    assert "VERIFIED" not in KB_META()["capability_status"].upper().replace(
+        "NOT A LIVE FEED", ""
+    )
+    assert KB_META()["location_status"] != KB_META()["capability_status"]
 
 
 # ---- comms ---------------------------------------------------------------

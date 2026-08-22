@@ -120,8 +120,14 @@ def run_triage(
         ],
         "explanation": decision.explanation,
         "receipt_id": receipt.receipt_id,
+        # Split provenance, surfaced separately because the two halves are not
+        # equally trustworthy and collapsing them loses the distinction that
+        # matters: where a hospital is has been verified, who it bills has not.
         "knowledge_base": {
             "status": KB_META()["status"],
+            "location_status": KB_META()["location_status"],
+            "location_verified_on": KB_META()["location_verified_on"],
+            "capability_status": KB_META()["capability_status"],
             "seeded_on": KB_META()["seeded_on"],
             "warning": KB_META()["warning"],
         },
