@@ -96,8 +96,17 @@ def dashboard() -> FileResponse:
     backend guarantees. Severity, routing scores, adjudication arithmetic and
     chain verification are all rendered exactly as the audited endpoints
     returned them.
+
+    `no-cache` because the page ships its own JavaScript inline. Without a
+    cache-control header a browser applies HEURISTIC caching off last-modified,
+    which means a family can be served the previous build after a deploy — a
+    fix that is live on the server and invisible in the tab. This was hit while
+    verifying one. `no-cache` still revalidates against the ETag, so an
+    unchanged page is a 304 and costs nothing; it only forbids serving a stale
+    copy without asking.
     """
-    return FileResponse(WEBUI, media_type="text/html")
+    return FileResponse(WEBUI, media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/healthz")

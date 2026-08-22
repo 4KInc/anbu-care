@@ -429,3 +429,13 @@ def test_the_browser_is_not_stricter_than_the_server():
     assert "if(!S.token && !S.linkToken) return gate();" in page
     assert "if(S.parentId && (S.token || S.linkToken)){" in page
     assert "if(!S.token) return gate();" not in page
+
+
+def test_the_dashboard_is_never_served_stale(client):
+    """The page carries its own JavaScript inline. With no cache-control a
+    browser caches it heuristically off last-modified, so a deployed fix can
+    stay invisible in an already-open tab — which happened while verifying one.
+    """
+    response = client.get("/app")
+    assert response.status_code == 200
+    assert "no-cache" in response.headers.get("cache-control", "")
