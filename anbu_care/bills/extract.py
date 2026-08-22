@@ -30,8 +30,14 @@ import os
 import re
 from dataclasses import dataclass, field
 
-# Loose bounds, only to reject obvious non-photographs before spending a call.
-MIN_IMAGE_BYTES = 4_000
+# Loose bounds, only to reject obvious junk before spending a call.
+#
+# The floor is deliberately low. An earlier 4 KB was tuned for phone photos and
+# would have refused a legitimate bill: a scan, a screenshot or a fax of a
+# mostly-white page compresses far below that, and refusing a readable bill
+# because it compressed well is a worse failure than spending one wasted call
+# on something that turns out not to be a bill.
+MIN_IMAGE_BYTES = 800
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 SUPPORTED_MIME = ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")

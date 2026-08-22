@@ -360,3 +360,22 @@ def test_a_bill_whose_photograph_cannot_be_stored_is_refused(case_id, parent_id,
     assert "could not be stored" in str(rejected.value)
     assert ingest.list_bills(case_id) == []
     assert len(service.get_chain(case_id).receipts) == before
+
+
+def test_a_small_but_legitimate_bill_is_not_refused_for_its_size(monkeypatch):
+    """A scan or screenshot of a mostly-white page compresses very small.
+
+    An earlier floor of 4 KB was tuned for phone photographs and would have
+    refused a perfectly readable bill for compressing well — a worse failure
+    than one wasted call on something that turns out not to be a bill.
+    """
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps(
+        {"line_items": [ICU], "stated_total_inr": 96_000, "unreadable": False}))
+
+    small_but_real = b"\x89PNG\r\n\x1a\n" + b"z" * 1_600
+    result = vision.extract(small_but_real, "image/png")
+    assert result.ok is True
+
+    # A few bytes is still junk and is still refused.
+    assert vision.extract(b"tiny", "image/png").ok is False
