@@ -183,6 +183,40 @@ def test_out_of_network_recommendation_is_flagged_in_the_explanation():
     assert "reimbursement claim rather than cashless" in decision.explanation
 
 
+def test_explanation_carries_its_own_seeded_caveat(parent):
+    """The empanelment caveat must ride inside the sentence, not beside it.
+
+    The dashboard badges that used to carry this were removed. These are real,
+    named hospitals and the sentence asserts whether a real insurer pays at
+    them, so an unqualified version of it is a factual claim about a business
+    that nobody has verified. If the caveat is ever refactored out of the
+    string, this fails rather than the claim quietly going bare.
+    """
+    decision = route(
+        SymptomReport(parent_id=parent.parent_id, reported_by="parent",
+                      symptoms=["chest pain"]),
+        parent,
+    )
+    assert "empanelled" in decision.explanation
+    assert "seeded" in decision.explanation.lower(), (
+        "the routing explanation asserts empanelment for named real hospitals "
+        "and must say the network data is seeded"
+    )
+
+
+def test_out_of_network_explanation_also_carries_the_caveat():
+    """The other branch of the same claim needs the same qualifier."""
+    parent = ParentProfile(
+        parent_id="p3", name="X", age=70, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        policy=InsurancePolicy(insurer="Unknown Insurer", policy_number="X-2",
+                               sum_insured_inr=100_000),
+    )
+    decision = route(
+        SymptomReport(parent_id="p3", reported_by="parent", symptoms=["chest pain"]), parent
+    )
+    assert "seeded" in decision.explanation.lower()
+
+
 def test_ranking_is_deterministic(parent):
     report = SymptomReport(parent_id="p1", reported_by="neighbour", symptoms=["chest pain"])
     runs = [
