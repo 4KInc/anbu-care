@@ -17,7 +17,7 @@ from typing import Any
 from xml.sax.saxutils import escape
 
 from fastapi import Depends, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
@@ -413,6 +413,70 @@ def case_verify(case_id: str) -> dict[str, Any]:
     return provenance_tools.verify_case_chain(case_id)
 
 
+@app.post("/api/cases/{case_id}/handoff-link")
+def mint_handoff_link(
+    case_id: str, _session: str = Depends(require_family_session)
+) -> dict[str, Any]:
+    """Mint an emergency-access link for the treating team.
+
+    Family session required. The token delegates a subset of the caller's own
+    access — it is not a second way in, which is why this endpoint sits behind
+    the same credential as everything else that touches content.
+    """
+    from anbu_care.handoff import access
+
+    try:
+        token = access.mint(case_id)
+    except access.HandoffDenied as denied:
+        raise HTTPException(status_code=409, detail=str(denied)) from None
+
+    return {
+        "status": "issued",
+        "url": f"/handoff/{token}",
+        "expires_in_seconds": access.HANDOFF_TTL_SECONDS,
+        "grants": "the emergency clinical summary for this case, read only",
+        "does_not_grant": ["/api/cases/{id}/trail", "/api/parents/{id}", "any other case"],
+    }
+
+
+@app.post("/api/cases/{case_id}/handoff-link/revoke")
+def revoke_handoff_links(
+    case_id: str, _session: str = Depends(require_family_session)
+) -> dict[str, Any]:
+    """Stop sharing. Every outstanding link for this case dies immediately."""
+    from anbu_care.handoff import access
+
+    try:
+        access.revoke(case_id)
+    except access.HandoffDenied as denied:
+        raise HTTPException(status_code=404, detail=str(denied)) from None
+    return {"status": "revoked", "note": "every outstanding link for this case is now dead"}
+
+
+@app.get("/handoff/{token}", response_class=HTMLResponse)
+def handoff_page(token: str) -> HTMLResponse:
+    """The clinician's view. No login, because a nurse will not make one.
+
+    Every refusal renders the same near-empty page: expired, revoked, forged
+    and malformed are indistinguishable to the holder, and none of them leak
+    whether the case exists or whose it is.
+    """
+    from anbu_care.handoff import access, summary as handoff_summary
+
+    try:
+        grant = access.resolve(token)
+    except access.HandoffDenied as denied:
+        return HTMLResponse(_handoff_denied_html(str(denied)), status_code=403)
+
+    # The open is recorded BEFORE the content is returned. A read that the
+    # family cannot see is the one thing this design must not allow, so the
+    # receipt is not contingent on the render succeeding.
+    access.record_access(grant)
+
+    composed = handoff_summary.compose_emergency_summary(grant.parent_id)
+    return HTMLResponse(_handoff_html(composed, grant))
+
+
 @app.post("/api/cases/{case_id}/notify-claim")
 def notify_claim(case_id: str, _session: str = Depends(require_family_session)) -> dict[str, Any]:
     """Send the family the claim outcome, with the assessment attached.
@@ -566,3 +630,102 @@ def case_detail(case_id: str, _session: str = Depends(require_case_access)) -> d
         "head_hash": chain.head_hash,
         "verified": chain.verify().ok,
     }
+
+
+# ---------------------------------------------------------------------------
+# The clinician handoff page
+#
+# Deliberately plain HTML with inline styles and no script. It is opened on an
+# unknown device, on hospital wifi, by someone who has seconds — so it must
+# render with no fonts to fetch, no JS to run and nothing to fail. Allergies
+# are first and largest because that is the field that kills people when it is
+# missed.
+# ---------------------------------------------------------------------------
+
+_HANDOFF_CSS = """
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+     background:#f4f6f8;color:#12212e;padding:18px}
+main{max-width:640px;margin:0 auto}
+.band{background:#fff;border:1px solid #dbe3ea;border-radius:12px;padding:16px;margin-bottom:12px}
+.allergy{border:2px solid #b3261e;background:#fff5f4}
+.allergy h2{color:#b3261e;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.allergy .v{font-size:30px;font-weight:800;line-height:1.15;color:#8c1d18}
+.allergy .none{font-size:17px;font-weight:700;color:#8c1d18;line-height:1.45}
+h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#5c6f7e;margin-bottom:10px}
+.row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;
+     border-bottom:1px solid #eef2f5}
+.row:last-child{border-bottom:0}
+.row .k{color:#5c6f7e}
+.row .v{font-weight:700;text-align:right}
+li{list-style:none;padding:6px 0;border-bottom:1px solid #eef2f5;font-weight:700}
+li:last-child{border-bottom:0}
+.miss{color:#6b7c8a;font-style:italic;font-weight:400}
+.foot{font-size:13px;color:#5c6f7e;line-height:1.55}
+.tag{display:inline-block;background:#eef2f5;color:#48606f;border-radius:99px;
+     padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:10px}
+"""
+
+
+def _esc(text: object) -> str:
+    return escape(str(text if text is not None else ""))
+
+
+def _handoff_denied_html(reason: str) -> str:
+    """Every refusal looks the same and shows nothing.
+
+    Expired, revoked, forged and malformed are one page. A holder learns that
+    it did not work, and not whether the case exists, whose it is, or how close
+    they were.
+    """
+    return (
+        f"<!doctype html><html lang=en><head><meta charset=utf-8>"
+        f"<meta name=viewport content='width=device-width,initial-scale=1'>"
+        f"<title>Link not available</title><style>{_HANDOFF_CSS}</style></head><body><main>"
+        f"<div class=band><h2>Emergency clinical summary</h2>"
+        f"<p style='font-size:18px;font-weight:700'>{_esc(reason)}.</p>"
+        f"<p class=foot style='margin-top:10px'>Ask the family to send a new link. "
+        f"Nothing about this patient is shown here.</p></div></main></body></html>"
+    )
+
+
+def _handoff_html(summary: Any, grant: Any) -> str:
+    def facts(items: list[Any], bullet: bool = False) -> str:
+        out = []
+        for fact in items:
+            if not fact.known:
+                out.append(f"<div class=row><span class=k>{_esc(fact.label)}</span>"
+                           f"<span class='v miss'>not on file</span></div>"
+                           f"<p class=foot>{_esc(fact.source.note)}</p>")
+            elif bullet:
+                out.append(f"<li>{_esc(fact.value)}</li>")
+            else:
+                out.append(f"<div class=row><span class=k>{_esc(fact.label)}</span>"
+                           f"<span class=v>{_esc(fact.value)}</span></div>")
+        return "".join(out) or "<p class=foot>nothing on file</p>"
+
+    allergies = summary.allergies
+    if allergies and allergies[0].known:
+        allergy_block = "".join(
+            f"<div class=v>{_esc(f.value)}</div>" for f in allergies if f.known
+        )
+    else:
+        note = allergies[0].source.note if allergies else "not on file"
+        allergy_block = f"<div class=none>Not on file. {_esc(note)}</div>"
+
+    return (
+        f"<!doctype html><html lang=en><head><meta charset=utf-8>"
+        f"<meta name=viewport content='width=device-width,initial-scale=1'>"
+        f"<title>Emergency clinical summary</title><style>{_HANDOFF_CSS}</style>"
+        f"</head><body><main>"
+        f"<span class=tag>READ ONLY &middot; NOT CONNECTED TO ANY HOSPITAL SYSTEM</span>"
+        f"<div class='band allergy'><h2>Allergies</h2>{allergy_block}</div>"
+        f"<div class=band><h2>Patient</h2>{facts(summary.identity)}</div>"
+        f"<div class=band><h2>Conditions</h2><ul>{facts(summary.conditions, bullet=True)}</ul></div>"
+        f"<div class=band><h2>Current medication</h2>{facts(summary.medications)}</div>"
+        f"<div class=band><h2>Recent results</h2>{facts(summary.recent_labs)}</div>"
+        f"<div class=band><p class=foot>{_esc(summary.disclaimer)}</p>"
+        f"<p class=foot style='margin-top:8px'>The family has been shown that this "
+        f"summary was opened. This link expires on its own.</p></div>"
+        f"</main></body></html>"
+    )
