@@ -12,6 +12,7 @@ dependencies = [
     "google-cloud-storage>=3.13.1",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.3",
+    "segno>=1.6.1",
     "uvicorn[standard]>=0.52.3",
 ]
 

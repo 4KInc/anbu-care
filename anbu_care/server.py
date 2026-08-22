@@ -430,9 +430,14 @@ def mint_handoff_link(
     except access.HandoffDenied as denied:
         raise HTTPException(status_code=409, detail=str(denied)) from None
 
+    path = f"/handoff/{token}"
     return {
         "status": "issued",
-        "url": f"/handoff/{token}",
+        "url": path,
+        # Inline SVG rather than a data-URI PNG or a CDN script: it scales on
+        # any screen a nurse points a camera at, adds no dependency to the
+        # page, and survives a hospital network that blocks everything.
+        "qr_svg": _qr_svg(path),
         "expires_in_seconds": access.HANDOFF_TTL_SECONDS,
         "grants": "the emergency clinical summary for this case, read only",
         "does_not_grant": ["/api/cases/{id}/trail", "/api/parents/{id}", "any other case"],
@@ -729,3 +734,26 @@ def _handoff_html(summary: Any, grant: Any) -> str:
         f"summary was opened. This link expires on its own.</p></div>"
         f"</main></body></html>"
     )
+
+
+def _qr_svg(path: str) -> str:
+    """A scannable QR for the handoff link, as inline SVG.
+
+    Absolute URL where the public base is known, because a QR carrying a
+    relative path scans to nothing. Error correction is set high: this gets
+    photographed off a screen at an angle, in a corridor, by someone in a
+    hurry.
+    """
+    import io
+
+    import segno
+
+    base = os.getenv("ANBU_PUBLIC_BASE_URL", "").rstrip("/")
+    target = f"{base}{path}" if base else path
+
+    buffer = io.BytesIO()
+    segno.make(target, error="h").save(
+        buffer, kind="svg", scale=5, border=2, dark="#12212e", light="#ffffff",
+        svgclass=None, lineclass=None, xmldecl=False, svgns=True,
+    )
+    return buffer.getvalue().decode("utf-8")
