@@ -290,3 +290,31 @@ def test_an_untranscribable_recording_is_refused_and_writes_nothing(case_id, mon
 
     assert "type the note instead" in str(denied.value)
     assert len(service.get_chain(case_id).receipts) == before
+
+
+def test_the_clinician_path_is_not_held_to_twilio_s_webhook_ceiling(case_id, monkeypatch):
+    """A cold start failed a transcript that would have worked a second later.
+
+    The 12-second limit exists because the wellbeing lane answers a Twilio
+    webhook and Twilio hangs up at about fifteen. The clinician endpoint is a
+    direct call from a browser and has no such ceiling — it was inheriting a
+    constraint that does not apply to it, and losing real transcripts to it.
+    """
+    seen = {}
+
+    def _spy(audio, mime="audio/ogg", timeout_seconds=None, **kw):
+        seen["timeout"] = timeout_seconds
+        return transcribe.Transcript(ok=True, engine="gemini", text="Seen and reviewed.",
+                                     detail="stub", reading=None)
+
+    monkeypatch.setattr(transcribe, "transcribe", _spy)
+    grant = access.resolve(access.mint(case_id, allow_notes=True))
+    notes.draft_from_voice(grant, b"x" * 5000)
+
+    assert seen["timeout"] == transcribe.CLINICIAN_TIMEOUT_SECONDS
+    assert seen["timeout"] > transcribe.TRANSCRIBE_TIMEOUT_SECONDS
+
+
+def test_the_emergency_lane_keeps_its_short_timeout():
+    """The wellbeing lane IS behind Twilio's ceiling and must stay there."""
+    assert transcribe.TRANSCRIBE_TIMEOUT_SECONDS == 12

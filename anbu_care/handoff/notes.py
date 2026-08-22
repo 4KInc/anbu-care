@@ -127,7 +127,11 @@ def draft_from_voice(grant: HandoffGrant, audio: bytes,
 
     from anbu_care.comms import transcribe
 
-    heard = transcribe.transcribe(audio, mime_type)
+    # Not behind Twilio's webhook ceiling — this is a direct call from the
+    # clinician's own device — so it waits longer rather than failing a
+    # transcript that would have succeeded a second later.
+    heard = transcribe.transcribe(
+        audio, mime_type, timeout_seconds=transcribe.CLINICIAN_TIMEOUT_SECONDS)
     if not heard.ok or not (heard.text or "").strip():
         raise HandoffDenied(
             "that recording could not be made out. Play it back, or type the "

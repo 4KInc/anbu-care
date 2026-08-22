@@ -31,7 +31,17 @@ from dataclasses import dataclass
 # client is a dependency, and it is already paid for. ElevenLabs Scribe is the
 # fallback if accented Tamil proves weak — hence this interface, so swapping
 # the engine touches one function.
+# Twelve seconds, because the WELLBEING lane answers a Twilio webhook and
+# Twilio hangs up at roughly fifteen. That ceiling is Twilio's, not Gemini's,
+# and not every caller is behind it — the clinician note endpoint is a direct
+# call from a browser with no such limit, and it was failing on cold starts
+# purely by inheriting a constraint that does not apply to it. So callers may
+# raise it; the default keeps the emergency lane exactly as it was.
 TRANSCRIBE_TIMEOUT_SECONDS = 12
+
+# A doctor waiting half a minute for a transcript is mildly annoyed. A doctor
+# whose transcript failed types it instead, which is the outcome this avoids.
+CLINICIAN_TIMEOUT_SECONDS = 45
 
 # Rough byte bounds, used only to ignore obvious non-speech. A WhatsApp voice
 # note is opus in ogg at roughly a kilobyte per second, so this is a proxy for
@@ -106,7 +116,8 @@ def _too_short_or_long(audio: bytes) -> str | None:
     return None
 
 
-def transcribe(audio: bytes, mime_type: str = "audio/ogg") -> Transcript:
+def transcribe(audio: bytes, mime_type: str = "audio/ogg",
+               timeout_seconds: int = TRANSCRIBE_TIMEOUT_SECONDS) -> Transcript:
     """Transcribe, or say clearly that it could not be done.
 
     Never raises. A caller that receives `unclear` is expected to tell somebody
@@ -134,7 +145,7 @@ def transcribe(audio: bytes, mime_type: str = "audio/ogg") -> Transcript:
                 types.Part.from_bytes(data=audio, mime_type=mime_type),
                 _PROMPT,
             ],
-            config={"http_options": {"timeout": TRANSCRIBE_TIMEOUT_SECONDS * 1000}},
+            config={"http_options": {"timeout": timeout_seconds * 1000}},
         )
         raw = (response.text or "").strip()
     except Exception as exc:  # noqa: BLE001 - failure is an outcome, not a crash
