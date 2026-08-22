@@ -514,6 +514,11 @@ class CoverageLine(BaseModel):
 
     label: str
     item: str
+    # Which bill this line came off. Three bills on one case produce three
+    # "Nursing charges" rows, and a flat list of them is unreadable: the reader
+    # cannot tell which hospital, which stay, or which of them to query.
+    bill_id: str = ""
+    vendor: str | None = None
     claimed_inr: int
     estimated_covered_inr: int
     estimated_you_pay_inr: int

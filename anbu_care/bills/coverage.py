@@ -38,22 +38,26 @@ from anbu_care.tpa.adjudicator import (
 
 
 def _line_estimate(item: str, label: str, amount: int,
-                   policy: InsurancePolicy | None, days: int) -> CoverageLine:
+                   policy: InsurancePolicy | None, days: int,
+                   bill: ExtractedBill | None = None) -> CoverageLine:
     """One line, through the same rules the adjudicator uses."""
     key = item.strip().lower()
+    # Carried so three bills' worth of "Nursing charges" can be told apart.
+    src = {"bill_id": bill.bill_id if bill else "",
+           "vendor": bill.vendor if bill else None}
 
     if policy is None:
         return CoverageLine(
             label=label, item=item, claimed_inr=amount,
             estimated_covered_inr=0, estimated_you_pay_inr=amount,
-            rule="no policy is on file, so nothing can be estimated as covered",
+            rule="no policy is on file, so nothing can be estimated as covered", **src,
         )
 
     if key in NON_COVERED_ITEMS:
         return CoverageLine(
             label=label, item=item, claimed_inr=amount,
             estimated_covered_inr=0, estimated_you_pay_inr=amount,
-            rule="conventionally excluded from cover",
+            rule="conventionally excluded from cover", **src,
         )
 
     explicit = policy.sub_limits_inr.get(key)
@@ -62,7 +66,7 @@ def _line_estimate(item: str, label: str, amount: int,
             label=label, item=item, claimed_inr=amount,
             estimated_covered_inr=explicit,
             estimated_you_pay_inr=amount - explicit,
-            rule=f"policy sub-limit for {key}: INR {explicit:,}",
+            rule=f"policy sub-limit for {key}: INR {explicit:,}", **src,
         )
 
     capped = _cap_for(key, policy.sum_insured_inr, days)
@@ -72,19 +76,19 @@ def _line_estimate(item: str, label: str, amount: int,
             return CoverageLine(
                 label=label, item=item, claimed_inr=amount,
                 estimated_covered_inr=cap, estimated_you_pay_inr=amount - cap,
-                rule=rule,
-            )
+                rule=rule, **src,
+        )
         return CoverageLine(
             label=label, item=item, claimed_inr=amount,
             estimated_covered_inr=amount, estimated_you_pay_inr=0,
-            rule=f"within the sub-limit ({rule})",
+            rule=f"within the sub-limit ({rule})", **src,
         )
 
     return CoverageLine(
         label=label, item=item, claimed_inr=amount,
         estimated_covered_inr=amount, estimated_you_pay_inr=0,
-        rule="no sub-limit applies to this item",
-    )
+        rule="no sub-limit applies to this item", **src,
+        )
 
 
 def _settled_so_far(case_id: str) -> int | None:
@@ -152,7 +156,7 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
             bases.append(basis_days)
         for entry in bill.line_items:
             lines.append(_line_estimate(entry.item, entry.label, entry.amount_inr,
-                                        policy, days))
+                                        policy, days, bill))
 
     return CoverageEstimate(
         case_id=case_id,

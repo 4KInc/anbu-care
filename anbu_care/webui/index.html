@@ -124,6 +124,52 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .why2{display:block;font-size:12.5px;color:var(--ink-mute);font-style:normal;
       font-weight:400;margin-top:3px;line-height:1.45}
 
+
+/* ---- bills: what you pay, at a glance ---------------------------------- */
+/* Thirty-six rows of "INR 0 · no sub-limit applies to this item" buried the
+   three lines that actually cost money. The split is a proportion, so it is
+   drawn as one; the reason is a chip, not a sentence; and the lines that cost
+   nothing are folded away rather than competing for the same attention. */
+.headline{padding:4px 0 2px}
+.headline .lbl{font-size:11.5px;font-weight:800;letter-spacing:.08em;
+               text-transform:uppercase;color:var(--ink-mute)}
+.headline .amt{font-size:40px;font-weight:800;letter-spacing:-.025em;
+               line-height:1.05;color:var(--red);font-variant-numeric:tabular-nums}
+.headline .of{font-size:13.5px;color:var(--ink-soft);margin-top:5px}
+.split{display:flex;height:12px;border-radius:99px;overflow:hidden;
+       background:var(--line-soft);margin:14px 0 8px}
+.split i{display:block;height:100%}
+.split .cov{background:var(--teal)}
+.split .pay{background:var(--red)}
+.legend{display:flex;gap:16px;font-size:12.5px;color:var(--ink-soft);flex-wrap:wrap}
+.legend b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.key{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px}
+
+.bline{padding:13px 0;border-bottom:1px solid var(--line-soft)}
+.bline:last-child{border-bottom:0}
+.bline .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.bline .name{font-size:15.5px;font-weight:700;min-width:0;overflow-wrap:anywhere}
+.bline .pay{font-size:17px;font-weight:800;color:var(--red);white-space:nowrap;
+            font-variant-numeric:tabular-nums}
+.bline .src{font-size:12px;color:var(--ink-mute);margin-top:2px}
+.bline .bar{display:flex;height:7px;border-radius:99px;overflow:hidden;
+            background:var(--line-soft);margin:8px 0 7px}
+.bline .why{font-size:12.5px;color:var(--ink-soft);line-height:1.45}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.05em;
+     text-transform:uppercase;border-radius:5px;padding:3px 7px;margin-right:7px}
+.tag.limit{background:var(--amber-bg);color:var(--amber)}
+.tag.excl{background:var(--red-bg);color:var(--red-ink)}
+details.covered{margin-top:4px}
+details.covered summary{cursor:pointer;font-size:14px;color:var(--ink-soft);
+  padding:11px 0;list-style:none;display:flex;justify-content:space-between;gap:12px}
+details.covered summary::-webkit-details-marker{display:none}
+details.covered summary b{color:var(--teal-ink);font-variant-numeric:tabular-nums}
+details.covered[open] summary{border-bottom:1px solid var(--line-soft)}
+.covrow{display:flex;justify-content:space-between;gap:12px;padding:8px 0;
+        font-size:14px;color:var(--ink-soft);border-bottom:1px solid var(--line-soft)}
+.covrow:last-child{border-bottom:0}
+.covrow b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
 /* ---- money ------------------------------------------------------------ */
 .owe{border-top:1px solid var(--line);margin-top:6px;padding-top:14px}
 .owe .k{font-size:16px;font-weight:800;color:var(--ink)}
@@ -658,14 +704,77 @@ function vBills(){
   const bills = b.bills || [], est = b.estimate || {};
   if(!bills.length) return "";
 
-  const money = n => `INR ${Number(n||0).toLocaleString("en-IN")}`;
+  const inr = n => `INR ${Number(n||0).toLocaleString("en-IN")}`;
+  const billed = est.total_billed_inr || 0;
+  const pay = est.estimated_you_pay_inr || 0;
+  const cov = est.estimated_covered_inr || 0;
+  const pct = t => billed ? Math.max(t > 0 ? 1.5 : 0, (t / billed) * 100) : 0;
+
+  const costly = (est.lines||[]).filter(l => l.estimated_you_pay_inr > 0);
+  const free   = (est.lines||[]).filter(l => !(l.estimated_you_pay_inr > 0));
+  const freeTotal = free.reduce((s,l)=>s+(l.claimed_inr||0),0);
+
+  // A reason people can take in without reading: what kind of rule bit, first,
+  // then the arithmetic for anyone who wants to check it.
+  const reason = l => {
+    const r = String(l.rule||"");
+    if(/exclud/i.test(r)) return `<span class="tag excl">Not covered</span>${esc(r)}`;
+    if(/sub-limit/i.test(r)) return `<span class="tag limit">Sub-limit</span>${esc(r)}`;
+    if(/no policy/i.test(r)) return `<span class="tag excl">No policy on file</span>${esc(r)}`;
+    return esc(r);
+  };
+
   return `
-  <div class="card">
-    <h2>Bills on this case</h2>
-    <div class="pills" style="margin-bottom:12px">
+  <div class="card edge-red">
+    <div class="headline">
+      <div class="lbl">Estimated to pay</div>
+      <div class="amt">${inr(pay)}</div>
+      <div class="of">of ${inr(billed)} billed across ${est.bills_counted||bills.length} bill(s)</div>
+    </div>
+    <div class="split">
+      <i class="cov" style="width:${pct(cov)}%"></i><i class="pay" style="width:${pct(pay)}%"></i>
+    </div>
+    <div class="legend">
+      <span><span class="key" style="background:var(--teal)"></span>Estimated covered <b>${inr(cov)}</b></span>
+      <span><span class="key" style="background:var(--red)"></span>Estimated to pay <b>${inr(pay)}</b></span>
+    </div>
+    <div class="pills" style="margin-top:12px">
       <span class="pill p-amber">ESTIMATE — NOT THE INSURER'S DECISION</span>
       ${est.needs_review?`<span class="pill p-red">A LINE NEEDS CHECKING</span>`:""}
     </div>
+  </div>
+
+  ${costly.length?`<div class="card">
+    <h2>What you are estimated to pay for</h2>
+    ${costly.map(l=>`
+      <div class="bline">
+        <div class="top">
+          <div class="name">${esc(l.label)}</div>
+          <div class="pay">${inr(l.estimated_you_pay_inr)}</div>
+        </div>
+        ${l.vendor?`<div class="src">${esc(l.vendor)}</div>`:""}
+        <div class="bar">
+          <i class="cov" style="width:${l.claimed_inr?(l.estimated_covered_inr/l.claimed_inr)*100:0}%;background:var(--teal)"></i>
+          <i class="pay" style="width:${l.claimed_inr?(l.estimated_you_pay_inr/l.claimed_inr)*100:0}%;background:var(--red)"></i>
+        </div>
+        <div class="why">${reason(l)}</div>
+        <div class="why" style="margin-top:3px;color:var(--ink-mute)">
+          billed ${inr(l.claimed_inr)} · covered ${inr(l.estimated_covered_inr)}</div>
+      </div>`).join("")}
+  </div>`:""}
+
+  ${free.length?`<div class="card">
+    <details class="covered">
+      <summary><span>${free.length} line(s) estimated fully covered</span>
+        <b>${inr(freeTotal)}</b></summary>
+      ${free.map(l=>`<div class="covrow">
+        <span>${esc(l.label)}${l.vendor?` <span style="color:var(--ink-mute)">· ${esc(l.vendor)}</span>`:""}</span>
+        <b>${inr(l.claimed_inr)}</b></div>`).join("")}
+    </details>
+  </div>`:""}
+
+  <div class="card">
+    <h2 class="mini">The bills these came from</h2>
     ${bills.map(bill=>`
       <div class="row stack">
         <div class="k">${[esc(bill.vendor||"bill"), bill.bill_date?esc(bill.bill_date):null,
@@ -675,25 +784,10 @@ function vBills(){
           ${bill.needs_review?`<span class="why2" style="color:var(--red-ink)">${esc(bill.review_reason||"")}</span>`:""}
         </div>
       </div>`).join("")}
-  </div>
-
-  <div class="card">
-    <h2>What each line is estimated to cost you</h2>
-    ${(est.lines||[]).map(l=>`
-      <div class="row"><div class="k">${esc(l.label)}</div>
-        <div class="v num">${money(l.estimated_you_pay_inr)}
-          <span class="why2">billed ${money(l.claimed_inr)} ·
-            estimated covered ${money(l.estimated_covered_inr)} · ${esc(l.rule)}</span></div></div>`).join("")}
-    <div class="row owe"><div class="k">Estimated to pay</div>
-      <div class="v num">${money(est.estimated_you_pay_inr)}</div></div>
-    <div class="row"><div class="k">Total billed</div>
-      <div class="v num">${money(est.total_billed_inr)}</div></div>
-    <div class="row"><div class="k">Estimated covered</div>
-      <div class="v num">${money(est.estimated_covered_inr)}</div></div>
     <div class="row"><div class="k">Actually settled</div>
       <div class="v">${est.settled_inr===null||est.settled_inr===undefined
         ? unknown("no adjudication yet — nobody has decided anything, which is not the same as nothing being owed")
-        : money(est.settled_inr)}</div></div>
+        : inr(est.settled_inr)}</div></div>
     <p class="mute" style="margin-top:12px">${esc(est.disclaimer||"")}</p>
     <p class="mute" style="margin-top:6px">${esc(est.basis||"")}</p>
   </div>`;
