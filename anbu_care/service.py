@@ -81,6 +81,12 @@ def open_case(parent_id: str, store: Store | None = None) -> Case:
     store = store or get_store()
     case = Case(case_id=new_id("case"), parent_id=parent_id)
     store.put(f"CASE#{case.case_id}", "META", case.model_dump(mode="json"))
+    # Reverse index, so a later arrival on the same WhatsApp thread — a bill
+    # photograph, say — can find which case it belongs to. Additive: nothing
+    # existing reads it, and a case is still fully described by CASE#/META.
+    store.put(f"PARENT#{parent_id}", f"CASE#{case.case_id}",
+              {"case_id": case.case_id, "parent_id": parent_id,
+               "opened_at": case.opened_at.isoformat()})
     append_receipt(
         case.case_id,
         kind="case.opened",
@@ -89,6 +95,21 @@ def open_case(parent_id: str, store: Store | None = None) -> Case:
         store=store,
     )
     return case
+
+
+def latest_case_for_parent(parent_id: str, store: Store | None = None) -> Case | None:
+    """The most recently opened case for a parent, or None.
+
+    None means no case, not "pick something plausible". A bill filed against a
+    guessed case silently moves someone else's money, which is worse than a
+    bill that was not filed at all.
+    """
+    store = store or get_store()
+    rows = store.query_prefix(f"PARENT#{parent_id}", "CASE#")
+    if not rows:
+        return None
+    newest = sorted(rows, key=lambda r: r.get("opened_at", ""))[-1]
+    return load_case(newest["case_id"], store=store)
 
 
 def load_case(case_id: str, store: Store | None = None) -> Case | None:

@@ -302,6 +302,8 @@ async def wellbeing_inbound(request: Request) -> Response:
     # which is the input a breathless seventy-one year old actually sends.
     media = inbound.media_from(fields) if sender is not None else None
     if sender is not None and media is not None:
+        if media.kind == "image":
+            return _handle_bill_photo(sender, media)
         return _handle_voice_note(sender, media)
 
     if sender is None or not body:
@@ -430,6 +432,65 @@ def case_trace(case_id: str, _session: str = Depends(require_case_access)) -> di
         "verify_url": f"/api/cases/{case_id}/verify",
         "verify_is_public": True,
     }
+
+
+@app.get("/api/cases/{case_id}/bills")
+def case_bills(case_id: str, _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """Photographed bills and the estimated split. Credentialed, always.
+
+    Bill content is financial *and* clinical — the line items name the
+    procedures — so this sits behind the same door as `/trail` and `/brief`.
+    Every amount is labelled an estimate, and each line carries the bill and
+    the source image it was read from, so a mis-read number can be checked
+    against the photograph rather than argued about.
+    """
+    from anbu_care.bills import estimate_for_case, list_bills
+
+    if service.load_case(case_id) is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+
+    bills = list_bills(case_id)
+    estimate = estimate_for_case(case_id, bills)
+
+    return {
+        "case_id": case_id,
+        "bills": [
+            {
+                **bill.model_dump(mode="json", exclude={"image_object"}),
+                # The object name is never handed out. A short-lived signed URL
+                # is minted on request, per bill, through the route below.
+                "image_url": f"/api/cases/{case_id}/bills/{bill.bill_id}/image",
+                "computed_total_inr": bill.computed_total_inr,
+            }
+            for bill in bills
+        ],
+        "estimate": estimate.model_dump(mode="json"),
+        "is_estimate_not_settlement": True,
+    }
+
+
+@app.get("/api/cases/{case_id}/bills/{bill_id}/image")
+def case_bill_image(case_id: str, bill_id: str,
+                    _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """A short-lived signed URL for the source photograph.
+
+    The bucket stays private. This is how a family checks INR 96,000 against
+    what the paper actually says, which is the whole reason the image is kept.
+    """
+    from anbu_care.bills import list_bills
+    from anbu_care.comms import storage
+
+    bill = next((b for b in list_bills(case_id) if b.bill_id == bill_id), None)
+    if bill is None:
+        raise HTTPException(status_code=404, detail=f"no bill {bill_id} on case {case_id}")
+    if not bill.image_object:
+        raise HTTPException(status_code=404, detail="no image was stored for this bill")
+
+    signed = storage.signed_url(bill.image_object)
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return {"url": signed.url, "expires_in_seconds": signed.expires_in_seconds,
+            "note": "short-lived signed URL; the bucket itself is not public"}
 
 
 @app.get("/api/cases/{case_id}/verify")
@@ -842,3 +903,49 @@ def _qr_svg(path: str) -> str:
         svgclass=None, lineclass=None, xmldecl=False, svgns=True,
     )
     return buffer.getvalue().decode("utf-8")
+
+
+def _handle_bill_photo(sender: Any, media: Any) -> Response:
+    """A photographed bill arriving over the same WhatsApp thread.
+
+    The reply is deliberately about what was READ, not about what is owed. A
+    family that reads "you owe nothing" off a message will act on it, so the
+    estimate lives behind the credential where the source image sits next to
+    it, and the message says only that the bill was recorded.
+    """
+    from anbu_care.bills import BillRejected, ingest_bill_image
+
+    case_id = _latest_open_case_for(sender.parent_id)
+    if case_id is None:
+        return _twiml(
+            "Thanks. There is no open case to attach that bill to yet, so it "
+            "has not been recorded. Send it again once a case is open."
+        )
+
+    try:
+        bill = ingest_bill_image(case_id, sender.parent_id, media.data, media.mime_type)
+    except BillRejected as rejected:
+        return _twiml(f"That bill could not be read. {rejected}")
+
+    total = sum(line.amount_inr for line in bill.line_items)
+    review = (" One or more lines need checking against the photo."
+              if bill.needs_review else "")
+    return _twiml(
+        f"Bill recorded: {len(bill.line_items)} line(s), INR {total:,} billed."
+        f"{review} Open the dashboard to see the estimated split against the "
+        f"policy. That is an estimate, not the insurer's decision."
+    )
+
+
+def _latest_open_case_for(parent_id: str) -> str | None:
+    """The case a bill belongs to, or None. Never a guess."""
+    case = service.latest_case_for_parent(parent_id)
+    return case.case_id if case else None
+
+
+def _twiml(message: str) -> Response:
+    return Response(
+        content=('<?xml version="1.0" encoding="UTF-8"?>'
+                 f"<Response><Message>{escape(message)}</Message></Response>"),
+        media_type="application/xml",
+    )

@@ -454,6 +454,96 @@ class WellbeingEntry(BaseModel):
     audio_object: str | None = None
 
 
+class BillLineItem(BaseModel):
+    """One line a model read off a photographed bill.
+
+    `label` is what the bill actually said; `item` is the normalised key the
+    coverage rules are looked up under. Both are kept, because a family
+    checking a mis-read needs to see the words that were on the paper, and the
+    rules need a key they recognise.
+    """
+
+    label: str
+    item: str
+    amount_inr: int
+    # Where on the bill this was read from, if the model could say. Free text,
+    # shown to a person checking a number against the photograph.
+    source_hint: str | None = None
+
+
+class ExtractedBill(BaseModel):
+    """What a model read off a bill image. NOT what is owed.
+
+    Every figure here is a reading, not a fact. A model that reads 96,000 where
+    the paper says 9,600 has produced a number that looks exactly as
+    authoritative as a correct one, so the image is kept and the reading stays
+    traceable back to it. `needs_review` is set whenever the extraction itself
+    is uncertain or the arithmetic does not tie out.
+    """
+
+    bill_id: str
+    case_id: str
+    parent_id: str
+    line_items: list[BillLineItem] = Field(default_factory=list)
+    stated_total_inr: int | None = None
+    currency: str = "INR"
+    vendor: str | None = None
+    bill_date: str | None = None
+    # The private object the numbers came from. Credentialed access only; this
+    # is never handed to a browser except through a short-lived signed URL.
+    image_object: str | None = None
+    image_sha256: str = ""
+    extracted_at: datetime = Field(default_factory=utcnow)
+    engine: str = ""
+    needs_review: bool = False
+    review_reason: str | None = None
+
+    @property
+    def computed_total_inr(self) -> int:
+        return sum(line.amount_inr for line in self.line_items)
+
+
+class CoverageLine(BaseModel):
+    """One line of the estimated split. Estimated, never settled."""
+
+    label: str
+    item: str
+    claimed_inr: int
+    estimated_covered_inr: int
+    estimated_you_pay_inr: int
+    rule: str
+
+
+class CoverageEstimate(BaseModel):
+    """What the policy math says about the bills on a case.
+
+    This is an ESTIMATE produced by the same deterministic sub-limit rules the
+    simulated adjudicator uses. It is not the insurer's decision, the insurer
+    has not been asked, and no field here may be presented as settled money.
+    The distinction is carried in the field names on purpose: everything is
+    `estimated_`, and `settled_inr` exists separately and stays None until an
+    adjudication actually says otherwise.
+    """
+
+    case_id: str
+    lines: list[CoverageLine] = Field(default_factory=list)
+    bills_counted: int = 0
+    total_billed_inr: int = 0
+    estimated_covered_inr: int = 0
+    estimated_you_pay_inr: int = 0
+    # Only ever set from a real claim.adjudicated receipt. None means nobody
+    # has decided anything yet, which is different from "nothing is owed".
+    settled_inr: int | None = None
+    basis: str = ""
+    disclaimer: str = (
+        "Estimated split based on your policy, not the insurer's final "
+        "decision. Anbu Care has not asked the insurer and does not decide "
+        "claims. On a reimbursement claim the family usually pays first and is "
+        "repaid later, so an estimated-covered amount is not money you have."
+    )
+    needs_review: bool = False
+
+
 class TraceStep(BaseModel):
     """One step in the decision trace. Always exactly one receipt.
 

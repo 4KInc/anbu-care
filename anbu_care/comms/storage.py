@@ -131,3 +131,41 @@ def store(filename: str, data: bytes, content_type: str = "application/pdf") -> 
         ),
         expires_in_seconds=int(SIGNED_URL_TTL.total_seconds()),
     )
+
+
+def signed_url(object_name: str) -> StoredArtifact:
+    """Mint a fresh short-lived link for an object already in the bucket.
+
+    Separate from `store` because re-signing is not re-uploading. A family
+    checking a bill photograph three days after it arrived needs a link that
+    works now, and the original one expired within the hour — which is the
+    point of it expiring.
+
+    The bucket stays closed throughout. Nothing here makes an object public.
+    """
+    bucket_name = _bucket_name()
+    if not bucket_name:
+        return StoredArtifact(
+            stored=False, url=None,
+            detail="ANBU_ARTIFACT_BUCKET is not set; there is no object to link to.",
+        )
+
+    try:
+        from google.cloud import storage as gcs
+
+        client = gcs.Client()
+        blob = client.bucket(bucket_name).blob(object_name)
+        url = blob.generate_signed_url(
+            version="v4", expiration=SIGNED_URL_TTL, method="GET", **_signing_kwargs(),
+        )
+    except Exception as exc:  # noqa: BLE001 - any failure means "no link"
+        return StoredArtifact(
+            stored=False, url=None,
+            detail=f"could not sign a link for that object: {type(exc).__name__}"[:250],
+        )
+
+    return StoredArtifact(
+        stored=True, url=url, object_name=object_name,
+        detail=f"signed for {int(SIGNED_URL_TTL.total_seconds() // 60)} minutes",
+        expires_in_seconds=int(SIGNED_URL_TTL.total_seconds()),
+    )

@@ -100,26 +100,48 @@ def verify_twilio_signature(url: str, form: list[tuple[str, str]], header: str |
 
 @dataclass(frozen=True)
 class InboundMedia:
-    """A voice note as it arrived."""
+    """An attachment as it arrived — a voice note, or a photographed bill.
+
+    `audio` keeps its name because every existing caller reads it and renaming
+    a field across a working lane to make a new one read better is not a trade
+    worth taking. `kind` is what tells them apart.
+    """
 
     audio: bytes
     mime_type: str
+    kind: str = "audio"          # "audio" | "image"
+
+    @property
+    def data(self) -> bytes:
+        """The bytes, under a name that does not lie about images."""
+        return self.audio
 
 
 def media_from(form: dict[str, str]) -> InboundMedia | None:
-    """Fetch the attached audio, if there is any.
+    """Fetch the attachment, if there is one. Audio or image.
 
     Twilio's media URLs are not public: they need the account credentials, the
-    same ones used to send. So a voice note cannot be read by anyone who merely
+    same ones used to send. So an attachment cannot be read by anyone who merely
     guesses the URL, and it also means an unconfigured deployment gets None
     rather than a broken download.
+
+    Anything that is neither audio nor an image is refused rather than guessed
+    at — a PDF or a vCard arriving here is not a check-in and not a bill, and
+    treating it as either would invent an episode nobody reported.
     """
     if int(form.get("NumMedia") or 0) < 1:
         return None
 
     url = form.get("MediaUrl0")
     mime = (form.get("MediaContentType0") or "audio/ogg").split(";")[0].strip()
-    if not url or not mime.startswith("audio"):
+    if not url:
+        return None
+
+    if mime.startswith("audio"):
+        kind = "audio"
+    elif mime.startswith("image"):
+        kind = "image"
+    else:
         return None
 
     account = os.getenv("TWILIO_ACCOUNT_SID")
@@ -135,10 +157,10 @@ def media_from(form: dict[str, str]) -> InboundMedia | None:
         response = requests.get(url, auth=auth, timeout=20)
         if not response.ok:
             return None
-    except Exception:  # noqa: BLE001 - no audio is a handled outcome
+    except Exception:  # noqa: BLE001 - no attachment is a handled outcome
         return None
 
-    return InboundMedia(audio=response.content, mime_type=mime)
+    return InboundMedia(audio=response.content, mime_type=mime, kind=kind)
 
 
 @dataclass(frozen=True)
