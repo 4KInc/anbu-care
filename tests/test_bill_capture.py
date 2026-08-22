@@ -67,6 +67,14 @@ def _reads(monkeypatch, lines, stated=None, unreadable=False, reason=None):
     monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
     monkeypatch.setattr(vision, "_call_model",
                         lambda image, mime_type: json.dumps(payload))
+    # The webhook classifies before it routes, so the router is stubbed to say
+    # "bill" too. Without this the classifier reaches the real model and the
+    # test both slows down and stops testing what it claims to.
+    from anbu_care.docvision import read as docvision_read
+    monkeypatch.setattr(docvision_read, "read",
+                        lambda image, mime_type="image/jpeg": docvision_read.Reading(
+                            ok=True, kind="bill", engine="stub", detail="stubbed"))
+
     # Stand in for GCS. Ingestion refuses without stored evidence, which is the
     # point — but that guard has its own test rather than blocking every other.
     from anbu_care.comms import storage as gcs
@@ -426,7 +434,7 @@ def test_a_bill_photo_over_whatsapp_is_ingested(client, registered, monkeypatch)
     # Reading a bill takes about fifteen seconds and Twilio abandons a webhook
     # at roughly the same mark, so the work cannot live on this response.
     assert response.status_code == 200
-    assert "got that bill" in response.text.lower()
+    assert "got that" in response.text.lower()
     assert "nothing is recorded until it has been read" in response.text.lower()
     # And it does NOT pre-announce a total it has not read yet.
     assert "130,500" not in response.text
@@ -475,7 +483,7 @@ def test_an_unreadable_photo_over_whatsapp_says_so_and_files_nothing(
 
     # Acknowledged immediately; the failure is reported by the follow-up.
     assert response.status_code == 200
-    assert "got that bill" in response.text.lower()
+    assert "got that" in response.text.lower()
     # Nothing was filed, which is the guarantee that matters.
     assert ingest.list_bills(case_id) == []
 
@@ -833,34 +841,79 @@ def test_the_bills_api_exposes_the_bill_id_the_link_needs(client, case_id, paren
     assert body["bills"][0]["bill_id"]
 
 
-def test_a_capped_room_line_warns_that_the_real_shortfall_is_larger(
+def test_an_over_limit_room_reduces_the_associated_charges_too(
     case_id, parent_id, monkeypatch
 ):
-    """The estimate must not be optimistic about money a family will owe.
+    """Proportionate deduction, which is what actually decides the shortfall.
 
-    Indian insurers do not merely deduct excess room rent. Where the room is
-    above the eligible category they apply a PROPORTIONATE reduction to the
-    associated medical expenses too. This estimate does not model that, so an
-    ICU line over its per-day cap means the real shortfall is larger than the
-    figure shown — and that is the one direction an estimate must never be
-    quietly wrong in.
+    An insurer does not merely refuse the excess room rent. Where the room is
+    above the eligible category, the ASSOCIATED medical expenses are reduced by
+    the same ratio the eligible rent bears to the rent charged. Leaving that out
+    made every estimate optimistic in the one direction that hurts a family.
+
+    Here the ICU is billed 96,000 against a 10,000/day cap over one day, so the
+    ratio is 10,000/96,000. Procedures are reduced by it; pharmacy is not,
+    because medicines are the standard carve-out.
     """
-    _reads(monkeypatch, [ICU, PHARM], stated=130_500)      # ICU 96,000 over a 10,000/day cap
+    proc = {"label": "Angioplasty", "item": "procedures",
+            "amount_inr": 100_000, "source_hint": "row 2"}
+    _reads(monkeypatch, [ICU, proc, PHARM], stated=230_500)
     ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
 
     estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    by = {l.item: l for l in estimate.lines}
 
+    ratio = by["cardiac_icu_room"].estimated_covered_inr / 96_000
+    assert 0 < ratio < 1
+
+    # Procedures reduced in the same proportion.
+    assert by["procedures"].estimated_covered_inr == round(100_000 * ratio)
+    assert "proportionate deduction" in by["procedures"].rule
+
+    # Medicines exempt: still fully covered.
+    assert by["pharmacy"].estimated_covered_inr == PHARM["amount_inr"]
+    assert "proportionate deduction" not in by["pharmacy"].rule
+
+    # And the estimate says which line caused it rather than hedging silently.
     assert estimate.may_understate is True
-    note = estimate.may_understate_note.lower()
-    assert "larger than the figure above" in note
-    assert "does not model" in note
-    # Names which line triggered it, so it is checkable rather than a blanket
-    # hedge attached to every estimate.
-    assert "icu" in note
+    assert "policy wording" in estimate.may_understate_note
+
+
+def test_a_copay_is_taken_off_what_is_left_as_covered(case_id, parent_id, monkeypatch):
+    """A co-pay is a share of the admissible amount, not of the bill."""
+    profile = service.load_profile(parent_id)
+    profile.policy.copay_percent = 10
+    profile.policy.proportionate_deduction = False
+    service.save_profile(profile)
+
+    _reads(monkeypatch, [PHARM], stated=34_500)          # no sub-limit applies
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    line = coverage.estimate_for_case(case_id, ingest.list_bills(case_id)).lines[0]
+    assert line.estimated_covered_inr == round(34_500 * 0.9)
+    assert line.estimated_you_pay_inr == 34_500 - round(34_500 * 0.9)
+    assert "10% co-pay" in line.rule
+
+
+def test_a_policy_stated_limit_beats_the_conventional_percentage(
+    case_id, parent_id, monkeypatch
+):
+    """A photographed schedule is this family's actual terms."""
+    profile = service.load_profile(parent_id)
+    profile.policy.sub_limits_inr = {"icu_per_day": 25_000}
+    profile.policy.proportionate_deduction = False
+    service.save_profile(profile)
+
+    _reads(monkeypatch, [ICU], stated=96_000)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    line = coverage.estimate_for_case(case_id, ingest.list_bills(case_id)).lines[0]
+    assert line.estimated_covered_inr == 25_000        # not the 10,000 default
+    assert "policy limit" in line.rule
 
 
 def test_an_estimate_with_no_capped_line_makes_no_such_claim(case_id, parent_id, monkeypatch):
-    """The warning has to mean something, so it cannot be always-on."""
+    """The caveat has to mean something, so it cannot be always-on."""
     small = {"label": "Ward medication", "item": "pharmacy",
              "amount_inr": 1_240, "source_hint": "row 1"}
     _reads(monkeypatch, [small], stated=1_240)
@@ -869,3 +922,19 @@ def test_an_estimate_with_no_capped_line_makes_no_such_claim(case_id, parent_id,
     estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
     assert estimate.may_understate is False
     assert estimate.may_understate_note == ""
+
+
+def test_the_docvision_package_does_not_shadow_its_own_module():
+    """`from pkg import read` must give the module, not a re-exported function.
+
+    This exact bug shipped in the bills package, was fixed there, and was
+    reintroduced in docvision within the hour. A one-line test is cheaper than
+    finding it a third time from an AttributeError at runtime.
+    """
+    import types
+
+    from anbu_care.bills import extract as bills_extract
+    from anbu_care.docvision import read as docvision_read
+
+    assert isinstance(bills_extract, types.ModuleType)
+    assert isinstance(docvision_read, types.ModuleType)

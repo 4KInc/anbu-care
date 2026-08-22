@@ -48,7 +48,18 @@ class InsurancePolicy(BaseModel):
     sum_insured_inr: int
     cashless_eligible: bool = True
     network_hospitals: list[str] = Field(default_factory=list)
+    # Per-item caps in rupees. Keys ending "_per_day" are per day of stay:
+    # "room_rent_per_day", "icu_per_day". Policies state these as either a
+    # percentage of sum insured or a rupee figure, and both are stored here as
+    # rupees so the coverage rules read one shape.
     sub_limits_inr: dict[str, int] = Field(default_factory=dict)
+    # A share of every admissible claim the insured pays regardless of cover.
+    # Common on policies written for older members.
+    copay_percent: int = 0
+    # Whether exceeding the room limit also reduces the ASSOCIATED charges in
+    # the same proportion. Standard on Indian indemnity policies, and the single
+    # largest reason a family owes more than a naive sub-limit sum suggests.
+    proportionate_deduction: bool = True
     valid_until: str | None = None
 
 

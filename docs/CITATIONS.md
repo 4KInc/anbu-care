@@ -71,16 +71,17 @@ the eligible category: they reduce the *associated medical expenses* in the
 same proportion the eligible rent bears to the rent actually charged, with
 medicines, consumables and implants typically excepted.
 
-The coverage estimate does **not** model this. Where a room or ICU line exceeds
-its per-day limit the real shortfall is therefore larger — potentially much
-larger — than the figure shown. That is the one direction an estimate about
-somebody's money must never be quietly wrong in, so `CoverageEstimate` carries
-`may_understate` and the dashboard says so on the face of the number rather
-than in a footnote.
+This **is** modelled now. `_apply_proportionate_deduction` reduces the
+associated charges on a bill in the ratio that bill's own room line was capped
+by, exempting medicines, consumables and implants. On the demo case it moved
+the estimated shortfall from INR 70,120 to INR 329,412 — which is the size of
+the error that was there before.
 
-Implementing it properly needs a decision about which heads are "associated
-medical expenses" for a given policy, which is policy wording rather than a
-general rule. Until then the warning stands in for the arithmetic.
+What remains policy-specific is **which heads are exempt**. Ours is the common
+carve-out, not a reading of any particular schedule, so `CoverageEstimate` still
+carries `may_understate` — now meaning "the deduction was applied and its
+exemptions are a default" rather than "the deduction was ignored". Check the
+schedule before relying on the exact figure.
 
 ## Hospital knowledge base
 

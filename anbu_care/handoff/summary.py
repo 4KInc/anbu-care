@@ -147,7 +147,7 @@ def _lab_facts(documents: list[ParsedDocument]) -> list[ArrivalFact]:
             source=_missing("no documents have been ingested for this parent"),
         )]
 
-    # analyte key -> (parsed_at, display name, value)
+    # analyte key -> (parsed_at, display name, rendered value)
     newest: dict[str, tuple[datetime, str, str]] = {}
     for doc in documents:
         if doc.parsed_at is None:
@@ -156,8 +156,20 @@ def _lab_facts(documents: list[ParsedDocument]) -> list[ArrivalFact]:
             if not _is_urgent(obs.name):
                 continue
             key = obs.name.strip().lower()
-            if key not in newest or doc.parsed_at > newest[key][0]:
-                newest[key] = (doc.parsed_at, obs.name.strip(), obs.value)
+            if key in newest and doc.parsed_at <= newest[key][0]:
+                continue
+
+            # A bare number is not a result. "Troponin 0.94" means nothing
+            # without ng/mL, and a clinician reading it in a corridor should
+            # not have to remember which assay this hospital runs. The
+            # reference interval rides along for the same reason: "high"
+            # without "against what" is an adjective, not a finding.
+            shown = f"{obs.value} {obs.unit}".strip() if obs.unit else str(obs.value)
+            if obs.flag and obs.flag.lower() in {"high", "low", "abnormal"}:
+                shown = f"{shown}  [{obs.flag.upper()}]"
+            if obs.reference_range:
+                shown = f"{shown}  ref {obs.reference_range}"
+            newest[key] = (doc.parsed_at, obs.name.strip(), shown)
 
     if not newest:
         return [ArrivalFact(

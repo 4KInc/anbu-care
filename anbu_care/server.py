@@ -1008,27 +1008,35 @@ def _handle_bill_photo(sender: Any, media: Any, background: BackgroundTasks) -> 
     background.add_task(_read_bill_and_report, case_id, sender.parent_id,
                         media.data, media.mime_type)
     return _twiml(
-        "Got that bill. Reading it now — the itemised split will follow in "
-        "a moment. Nothing is recorded until it has been read."
+        "Got that. Reading it now — what it turned out to be, and anything it "
+        "changes, will follow in a moment. Nothing is recorded until it has "
+        "been read."
     )
 
 
 def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type: str) -> None:
-    """Ingest the bill, then tell the family what is in it. Never raises.
+    """Classify the photograph, route it, then tell the family. Never raises.
 
     Runs after the response, so an exception here reaches no caller. Every
-    outcome therefore has to end in a message, including the failures — a
-    background task that dies quietly is indistinguishable from one that never
-    ran, which is the silence this whole change exists to remove.
+    outcome therefore ends in a message, including the failures — a background
+    task that dies quietly is indistinguishable from one that never ran.
+
+    Classification costs a call, and a bill then costs a second one for its
+    detailed line-item read. That is deliberate: merging both into one prompt
+    would trade a clear router and a proven bill extractor for a single prompt
+    doing two jobs, and this path has no latency budget left to protect now
+    that it runs off the request.
     """
     from anbu_care.bills import BillRejected, estimate_for_case, ingest_bill_image, list_bills
+    from anbu_care.docvision import DocumentRejected, ingest_document_image
+    from anbu_care.docvision import read as docvision_read
 
     profile = service.load_profile(parent_id)
     first_name = (profile.name.split()[0] if profile and profile.name else "your parent")
     contact = next((c for c in (profile.family_contacts if profile else []) if c.is_primary),
                    None) or next(iter(profile.family_contacts if profile else []), None)
     if contact is None:
-        logger.warning("bill read for %s but no contact to tell", parent_id)
+        logger.warning("document read for %s but no contact to tell", parent_id)
         return
 
     def tell(template: str, params: dict[str, str], klass: str, purpose: str) -> None:
@@ -1039,27 +1047,50 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
                 message_class=klass, purpose_override=purpose,
             )
         except Exception:  # noqa: BLE001 - a failed telling must not hide the outcome
-            logger.exception("could not report the bill outcome")
+            logger.exception("could not report the document outcome")
 
+    def failed(reason: str) -> None:
+        tell("bill_unreadable", {"reason": reason[:200]}, "logistics", consent.STATUS_UPDATES)
+
+    reading = docvision_read.read(image, mime_type)
+    if not reading.ok and reading.kind != "bill":
+        failed(f"{reading.detail}.")
+        return
+
+    # ---- not a bill: a document for the record -----------------------------
+    if not reading.is_bill:
+        try:
+            result = ingest_document_image(parent_id, image, mime_type, case_id=case_id)
+        except DocumentRejected as rejected:
+            failed(str(rejected))
+            return
+        except Exception:  # noqa: BLE001 - never die silently
+            logger.exception("document ingestion failed")
+            failed("something went wrong reading it.")
+            return
+
+        tell("document_recorded", {
+            "parent_name": first_name,
+            "document_kind": result["kind"].replace("_", " "),
+            "summary": result["summary"][:300],
+            "applied_line": (f"{result['applied']}.\n" if result.get("applied") else ""),
+        }, "logistics", consent.STATUS_UPDATES)
+        return
+
+    # ---- a bill: the existing lane, which reads line items in detail -------
     try:
         bill = ingest_bill_image(case_id, parent_id, image, mime_type)
     except BillRejected as rejected:
-        tell("bill_unreadable", {"reason": str(rejected)[:200]},
-             "logistics", consent.STATUS_UPDATES)
+        failed(str(rejected))
         return
     except Exception:  # noqa: BLE001 - never die silently
         logger.exception("bill ingestion failed")
-        tell("bill_unreadable", {"reason": "something went wrong reading it."},
-             "logistics", consent.STATUS_UPDATES)
+        failed("something went wrong reading it.")
         return
 
     bills = list_bills(case_id)
     estimate = estimate_for_case(case_id, bills)
 
-    # This bill's figures and the running total are DIFFERENT numbers, and
-    # putting them in one sentence read as a single wrong number: "16 line
-    # items, INR 765,440 billed" was this bill's line count beside every
-    # bill's total. The running total only appears once there is more than one.
     running = ""
     if len(bills) > 1:
         running = (f"Across {len(bills)} bills on this stay: "

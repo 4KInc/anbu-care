@@ -99,6 +99,19 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "params": ["parent_name", "line_count", "this_bill", "running_total_line",
                    "estimated_covered", "estimated_you_pay"],
     },
+    "document_recorded": {
+        # LOGISTICS. The summary line repeats what the document states and is
+        # written by the extractor, never composed here — but it can carry a
+        # diagnosis, so the gate classifies the rendered body like any other
+        # message and will refuse it if it does.
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: that {document_kind} is on {parent_name}'s record.\n"
+                "{summary}\n"
+                "{applied_line}"
+                "It is a reading of a photograph, and the photograph is kept. "
+                "Check it here: {dashboard_url}",
+        "params": ["parent_name", "document_kind", "summary", "applied_line"],
+    },
     "bill_unreadable": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: that bill could not be read. {reason}\n"

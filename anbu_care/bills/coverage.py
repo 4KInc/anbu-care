@@ -69,7 +69,18 @@ def _line_estimate(item: str, label: str, amount: int,
             rule=f"policy sub-limit for {key}: INR {explicit:,}", **src,
         )
 
-    capped = _cap_for(key, policy.sum_insured_inr, days)
+    # A cap the policy schedule states wins over the conventional percentage.
+    # A photographed schedule is this family's actual terms; SUBLIMIT_RULES is
+    # what most policies do.
+    stated_per_day = None
+    if key in {"room_rent", "room", "ward"}:
+        stated_per_day = policy.sub_limits_inr.get("room_rent_per_day")
+    elif "icu" in key:
+        stated_per_day = policy.sub_limits_inr.get("icu_per_day")
+    capped = ((stated_per_day * days,
+               f"policy limit INR {stated_per_day:,}/day x {days} day(s) "
+               f"= INR {stated_per_day * days:,}")
+              if stated_per_day else _cap_for(key, policy.sum_insured_inr, days))
     if capped is not None:
         cap, rule = capped
         if amount > cap:
@@ -158,20 +169,26 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
             lines.append(_line_estimate(entry.item, entry.label, entry.amount_inr,
                                         policy, days, bill))
 
-    # A line capped by a per-day room or ICU sub-limit is the trigger for
-    # proportionate deduction under a real Indian policy, which this estimate
-    # does not model. Say so, rather than let the number look complete.
-    capped = [l for l in lines if "per day" in l.rule and l.estimated_you_pay_inr > 0]
-    understates = bool(capped)
+    lines = _apply_proportionate_deduction(lines, bills, policy)
+    lines = _apply_copay(lines, policy)
+
+    # The estimate models proportionate deduction now, so it is no longer
+    # silently optimistic. What remains uncertain is narrower and worth saying:
+    # WHICH heads a given policy exempts is its own wording, and ours is the
+    # common carve-out rather than a reading of this schedule.
+    deducted = [l for l in lines if "proportionate deduction" in l.rule]
+    understates = bool(deducted)
     note = ""
     if understates:
-        worst = max(capped, key=lambda l: l.estimated_you_pay_inr)
+        heads = sorted({l.label for l in deducted})[:3]
         note = (
-            f"{worst.label} was charged above the per-day limit. Indian insurers "
-            f"usually also reduce the OTHER hospital charges in the same "
-            f"proportion — medicines, consumables and implants excepted — so the "
-            f"real shortfall is likely to be larger than the figure above. This "
-            f"estimate does not model that reduction."
+            f"A room or ICU charge was above its per-day limit, so the other "
+            f"hospital charges have been reduced in the same proportion — "
+            f"{', '.join(heads)}{' and others' if len(deducted) > len(heads) else ''}. "
+            f"Medicines, consumables and implants are treated as exempt, which is "
+            f"the usual carve-out but is decided by your policy wording rather "
+            f"than by a general rule. Check the schedule before relying on the "
+            f"exact figure."
         )
 
     return CoverageEstimate(
@@ -189,3 +206,108 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
                if policy else "no policy on file"),
         needs_review=any(bill.needs_review for bill in bills),
     )
+
+
+# --------------------------------------------------------------------------
+# The two rules that decide what a family actually owes
+# --------------------------------------------------------------------------
+
+# Heads a proportionate deduction does NOT touch. Indian policies carve out the
+# cost of medicines, consumables and implants: those are what they are whatever
+# room you were in, and reducing them would be charging a patient for the ward.
+_PROPORTION_EXEMPT = (
+    "pharmacy", "medicine", "medicines", "drug", "drugs", "consumable",
+    "consumables", "implant", "implants", "iv_fluids", "injection", "injections",
+    "stent",
+)
+
+_ROOM_KEYS = ("room_rent", "room", "ward", "icu", "icu_room", "cardiac_icu_room", "bed")
+
+
+def _is_room_line(item: str) -> bool:
+    key = item.strip().lower()
+    return any(k in key for k in _ROOM_KEYS)
+
+
+def _exempt_from_proportion(item: str) -> bool:
+    key = item.strip().lower()
+    return any(k in key for k in _PROPORTION_EXEMPT)
+
+
+def _apply_proportionate_deduction(lines, bills, policy):
+    """Reduce associated charges in the ratio the room was over its limit.
+
+    This is the single largest reason a family owes more than a naive sub-limit
+    sum suggests, and leaving it out made every estimate optimistic in the one
+    direction that hurts. An insurer does not merely refuse the excess room
+    rent: where the room occupied is above the eligible category, the ASSOCIATED
+    medical expenses are reduced by the same ratio the eligible rent bears to
+    the rent actually charged.
+
+    Applied per bill, because the ratio comes from that bill's own room line.
+    Medicines, consumables and implants are exempt, as the policy wording says.
+    The room line itself is already capped and is not reduced twice.
+    """
+    if policy is None or not getattr(policy, "proportionate_deduction", True):
+        return lines
+
+    # The ratio each bill's room line implies. covered/claimed on that line is
+    # exactly "eligible rent over actual rent" without needing the day count
+    # again.
+    ratio_by_bill: dict[str, tuple[float, str]] = {}
+    for line in lines:
+        if not _is_room_line(line.item) or line.claimed_inr <= 0:
+            continue
+        if line.estimated_covered_inr >= line.claimed_inr:
+            continue                       # within the limit: nothing to spread
+        ratio = line.estimated_covered_inr / line.claimed_inr
+        current = ratio_by_bill.get(line.bill_id)
+        # The most restrictive room line on a bill governs it.
+        if current is None or ratio < current[0]:
+            ratio_by_bill[line.bill_id] = (ratio, line.label)
+
+    if not ratio_by_bill:
+        return lines
+
+    out = []
+    for line in lines:
+        entry = ratio_by_bill.get(line.bill_id)
+        if (entry is None or _is_room_line(line.item)
+                or _exempt_from_proportion(line.item)
+                or line.estimated_covered_inr <= 0):
+            out.append(line)
+            continue
+        ratio, room_label = entry
+        covered = int(round(line.estimated_covered_inr * ratio))
+        out.append(line.model_copy(update={
+            "estimated_covered_inr": covered,
+            "estimated_you_pay_inr": line.claimed_inr - covered,
+            "rule": (f"{line.rule}; then reduced to {ratio * 100:.0f}% because "
+                     f"{room_label} was above its per-day limit "
+                     f"(proportionate deduction)"),
+        }))
+    return out
+
+
+def _apply_copay(lines, policy):
+    """The share of every admissible claim the insured pays regardless.
+
+    Applied last, on what is left as covered, because a co-pay is a share of
+    the admissible amount rather than of the bill.
+    """
+    percent = getattr(policy, "copay_percent", 0) if policy else 0
+    if not percent:
+        return lines
+
+    out = []
+    for line in lines:
+        if line.estimated_covered_inr <= 0:
+            out.append(line)
+            continue
+        covered = int(round(line.estimated_covered_inr * (100 - percent) / 100))
+        out.append(line.model_copy(update={
+            "estimated_covered_inr": covered,
+            "estimated_you_pay_inr": line.claimed_inr - covered,
+            "rule": f"{line.rule}; then {percent}% co-pay",
+        }))
+    return out

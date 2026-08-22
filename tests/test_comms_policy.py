@@ -136,6 +136,9 @@ def test_every_template_renders_and_passes_its_own_gate():
         "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
         "reason": "the photograph was too dark to read.",
+        "document_kind": "discharge summary",
+        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
+        "applied_line": "",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -240,6 +243,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
         "reason": "the photograph was too dark to read.",
+        "document_kind": "discharge summary",
+        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
+        "applied_line": "",
         "cashless_status": "Cashless approval is in progress",
         "said": "I cannot catch my breath", "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
@@ -250,6 +256,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
         "reason": "the photograph was too dark to read.",
+        "document_kind": "discharge summary",
+        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
+        "applied_line": "",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
