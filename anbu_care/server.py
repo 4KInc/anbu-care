@@ -1050,12 +1050,21 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
             logger.exception("could not report the document outcome")
             return None
 
-    def failed(reason: str) -> None:
-        tell("bill_unreadable", {"reason": reason[:200]}, "logistics", consent.STATUS_UPDATES)
+    def unreadable(subject: str, reason: str) -> None:
+        """Could not be read: there is something for the sender to do."""
+        tell("document_unreadable", {"subject": subject, "reason": reason[:200]},
+             "logistics", consent.STATUS_UPDATES)
+
+    def already(template: str, subject: str) -> None:
+        """Already on file. Nothing to do, and it must not read like a failure."""
+        params = {"parent_name": first_name}
+        if subject:
+            params["subject"] = subject
+        tell(template, params, "logistics", consent.STATUS_UPDATES)
 
     reading = docvision_read.read(image, mime_type)
     if not reading.ok and reading.kind != "bill":
-        failed(f"{reading.detail}.")
+        unreadable("document", f"{reading.detail}.")
         return
 
     # ---- not a bill: a document for the record -----------------------------
@@ -1063,11 +1072,18 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         try:
             result = ingest_document_image(parent_id, image, mime_type, case_id=case_id)
         except DocumentRejected as rejected:
-            failed(str(rejected))
+            # A duplicate is not a failure. It was read, it was recognised, and
+            # it was deliberately not recorded twice — which is the behaviour
+            # this check exists for, so say that rather than asking for a
+            # clearer photograph of something already on file.
+            if rejected.already_recorded:
+                already("document_already_recorded", rejected.subject)
+            else:
+                unreadable(rejected.subject, str(rejected))
             return
         except Exception:  # noqa: BLE001 - never die silently
             logger.exception("document ingestion failed")
-            failed("something went wrong reading it.")
+            unreadable("document", "something went wrong reading it.")
             return
 
         sent = tell("document_recorded", {
@@ -1092,11 +1108,16 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     try:
         bill = ingest_bill_image(case_id, parent_id, image, mime_type)
     except BillRejected as rejected:
-        failed(str(rejected))
+        if rejected.already_recorded:
+            already("bill_already_recorded", "")
+        else:
+            tell("bill_unreadable", {"reason": str(rejected)[:200]},
+                 "logistics", consent.STATUS_UPDATES)
         return
     except Exception:  # noqa: BLE001 - never die silently
         logger.exception("bill ingestion failed")
-        failed("something went wrong reading it.")
+        tell("bill_unreadable", {"reason": "something went wrong reading it."},
+             "logistics", consent.STATUS_UPDATES)
         return
 
     bills = list_bills(case_id)

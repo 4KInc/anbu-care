@@ -110,8 +110,48 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "{applied_line}"
                 "It is a reading of a photograph, and the photograph is kept. "
                 "Check it here: {dashboard_url}",
+        "view": "record",
         "params": ["parent_name", "document_kind", "summary", "applied_line"],
     },
+    # A document that could not be read. Distinct from the bill wording,
+    # because calling a lab report a bill and asking for "the amounts by hand"
+    # is advice that cannot be followed.
+    "document_unreadable": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: that {subject} could not be read. {reason}\n"
+                "The photo is kept, so nothing is lost. Send a clearer one, or "
+                "add it here: {dashboard_url}",
+        "view": "record",
+        "params": ["subject", "reason"],
+    },
+
+    # The same photograph arriving twice. NOT a failure, and it must not read
+    # like one: the record is intact, the earlier reading stands, and there is
+    # nothing for the sender to do. Sending the unreadable template here told a
+    # family their successfully-recorded lab report was an unreadable bill.
+    "document_already_recorded": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: that {subject} is already on {parent_name}'s record. "
+                "It is the same photograph as the one recorded earlier, so it "
+                "has not been added twice.\n"
+                "What was read from it is here: {dashboard_url}",
+        "view": "record",
+        "params": ["parent_name", "subject"],
+    },
+
+    # The bill lane's version. Separate because a duplicated bill has a
+    # specific consequence worth stating plainly: the money was not doubled.
+    # That is the whole reason the check exists.
+    "bill_already_recorded": {
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: that bill is already on {parent_name}'s record. "
+                "It is the same photograph as the one recorded earlier, so the "
+                "amount has not been counted twice.\n"
+                "The itemised breakdown is here: {dashboard_url}",
+        "view": "claim",
+        "params": ["parent_name"],
+    },
+
     "document_recorded_withheld": {
         # The fallback when even the safe summary is refused. Carries a kind and
         # a link and nothing else, so a family is told something arrived rather
@@ -120,6 +160,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "body": "Anbu Care: a {document_kind} for {parent_name} has been recorded. "
                 "What it says is not carried over WhatsApp. Read it here: "
                 "{dashboard_url}",
+        "view": "record",
         "params": ["parent_name", "document_kind"],
     },
     "bill_unreadable": {

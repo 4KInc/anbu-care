@@ -322,3 +322,98 @@ def test_a_withheld_fallback_exists_for_when_the_gate_still_refuses():
     assert gate_message(body, "logistics",
                         template_name="document_recorded_withheld").allowed
     assert "not carried over WhatsApp" in body
+
+
+# =========================================================================
+# A DUPLICATE IS NOT A FAILURE
+# =========================================================================
+
+
+def test_the_second_send_says_it_is_already_on_file_not_that_it_failed(
+        parent_id, monkeypatch):
+    """This shipped, and it read as total failure.
+
+    A lab report was sent twice. The second one was correctly recognised as the
+    same photograph and correctly not recorded again — and the family was told
+    "that bill could not be read. Send a clearer one, or add the amounts by
+    hand." Three lies in one message: it WAS read, it is not a bill, and there
+    is nothing to send again.
+    """
+    _reads(monkeypatch, "lab_report", {"observations": [
+        {"name": "Troponin I", "value": "0.94", "flag": "high"}]})
+    ingest_document_image(parent_id, IMAGE, "image/png")
+
+    with pytest.raises(DocumentRejected) as caught:
+        ingest_document_image(parent_id, IMAGE, "image/png")
+
+    rejected = caught.value
+    assert rejected.already_recorded is True
+    assert rejected.subject == "lab report"
+    assert "could not be read" not in str(rejected)
+    assert "clearer" not in str(rejected)
+
+
+def test_a_document_that_really_is_unreadable_is_not_marked_already_recorded(
+        parent_id, monkeypatch):
+    """The flag has to separate the two, or it has done nothing."""
+    monkeypatch.setenv("ANBU_DOC_VISION_MODE", "gemini")
+    monkeypatch.setattr(dv, "_call_model", lambda image, mime_type: json.dumps(
+        {"kind": "lab_report", "unreadable": True, "unreadable_reason": "too dark"}))
+
+    with pytest.raises(DocumentRejected) as caught:
+        ingest_document_image(parent_id, IMAGE, "image/png")
+    assert caught.value.already_recorded is False
+
+
+def test_a_duplicate_costs_neither_a_stored_object_nor_a_model_call(
+        parent_id, monkeypatch):
+    """The check runs before both, the way the bill lane already does it.
+
+    Reading a photograph that is about to be thrown away is a wasted Gemini
+    call, and storing it is a second copy of a file already held.
+    """
+    _reads(monkeypatch, "prescription", {"medications": [{"name": "Aspirin"}]})
+    ingest_document_image(parent_id, IMAGE, "image/png")
+
+    calls = {"read": 0, "store": 0}
+    from anbu_care.comms import storage as gcs
+
+    monkeypatch.setattr(dv, "_call_model", lambda *a, **k: calls.__setitem__(
+        "read", calls["read"] + 1) or "{}")
+    monkeypatch.setattr(gcs, "store", lambda *a, **k: calls.__setitem__(
+        "store", calls["store"] + 1) or StoredArtifact(
+            stored=True, url="x", object_name="y", detail="", expires_in_seconds=1))
+
+    with pytest.raises(DocumentRejected):
+        ingest_document_image(parent_id, IMAGE, "image/png")
+    assert calls == {"read": 0, "store": 0}
+
+
+def test_no_document_message_ever_calls_it_a_bill():
+    """The document lane borrowed the bill lane's failure template. A lab
+    report described as an unreadable bill is how this was found."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    for name in ("document_recorded", "document_recorded_withheld",
+                 "document_unreadable", "document_already_recorded"):
+        body = str(TEMPLATES[name]["body"])
+        assert "bill" not in body.lower(), f"{name} calls a document a bill"
+        assert "amounts by hand" not in body
+
+
+def test_the_duplicate_messages_do_not_read_as_failures():
+    from anbu_care.comms.policy import TEMPLATES, gate_message, render_template
+
+    doc = render_template("document_already_recorded",
+                          {"parent_name": "Amma", "subject": "lab report"})
+    bill = render_template("bill_already_recorded", {"parent_name": "Amma"})
+    for body in (doc, bill):
+        for wrong in ("could not", "unreadable", "failed", "try again",
+                      "send a clearer"):
+            assert wrong not in body.lower(), f"reads as a failure: {body}"
+        assert "not been" in body.lower()  # says what did NOT happen: no double
+
+    assert gate_message(doc, "logistics",
+                        template_name="document_already_recorded").allowed
+    assert gate_message(bill, "billing",
+                        template_name="bill_already_recorded").allowed

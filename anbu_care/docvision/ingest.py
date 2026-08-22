@@ -38,7 +38,36 @@ from anbu_care.schemas import (
 
 
 class DocumentRejected(Exception):
-    """Not taken in, and the reason is safe to show the sender."""
+    """Not taken in, and the reason is safe to show the sender.
+
+    `already_recorded` separates the two things a refusal can mean, because
+    they read completely differently to whoever sent the photograph. "I could
+    not read this" asks them to do something. "This is already on file" tells
+    them the job is done. Collapsing both into one unreadable-message shipped,
+    and a family who had successfully sent a lab report was told their bill
+    could not be read and to send a clearer one.
+
+    `subject` is what to call it in that message. Never "bill" unless it is one.
+    """
+
+    def __init__(self, message: str, *, already_recorded: bool = False,
+                 subject: str = "document") -> None:
+        super().__init__(message)
+        self.already_recorded = already_recorded
+        self.subject = subject
+
+
+_DOCUMENT_TO_LABEL = {
+    DocumentKind.DISCHARGE_SUMMARY: "discharge summary",
+    DocumentKind.BLOOD_REPORT: "lab report",
+    DocumentKind.PRESCRIPTION: "prescription",
+    DocumentKind.POLICY: "policy schedule",
+}
+
+
+def label_for(kind: DocumentKind) -> str:
+    """What to call a document kind in a message to a family."""
+    return _DOCUMENT_TO_LABEL.get(kind, str(getattr(kind, "value", kind)).replace("_", " "))
 
 
 _KIND_TO_DOCUMENT = {
@@ -239,6 +268,20 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
 
     digest = vision.image_sha256(image)
 
+    # The same photograph twice is one document, for the same reason a bill sent
+    # twice is one bill: a retry must not duplicate the record. Checked FIRST,
+    # before anything is stored or read, so a duplicate costs neither a stored
+    # object nor a model call — and so the message can name what is already on
+    # file rather than describing a reading that never needed to happen.
+    for existing in service.list_documents(parent_id):
+        if (existing.delta_vs_baseline or "").endswith(digest[:16]):
+            existing_label = label_for(existing.kind)
+            raise DocumentRejected(
+                f"that {existing_label} is already on the record as "
+                f"{existing.document_id}. It is the same photograph, so nothing "
+                f"was added twice.",
+                already_recorded=True, subject=existing_label)
+
     from anbu_care.comms import storage
 
     doc_id = service.new_id("doc")
@@ -258,16 +301,8 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         )
     if reading.is_bill:
         raise DocumentRejected(
-            "that is a hospital bill. Send it again and it will be read as one."
-        )
-
-    # The same photograph twice is one document, for the same reason a bill
-    # sent twice is one bill: a retry must not duplicate the record.
-    for existing in service.list_documents(parent_id):
-        if (existing.delta_vs_baseline or "").endswith(digest[:16]):
-            raise DocumentRejected(
-                f"that is the same photograph as {existing.document_id}, which is "
-                f"already on the record. It has not been added again.")
+            "that is a hospital bill. Send it again and it will be read as one.",
+            subject="hospital bill")
 
     kind = _KIND_TO_DOCUMENT[reading.kind]
     doc = ParsedDocument(

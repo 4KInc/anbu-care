@@ -139,6 +139,7 @@ def test_every_template_renders_and_passes_its_own_gate():
         "document_kind": "discharge summary",
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
+        "subject": "lab report",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -259,6 +260,7 @@ def test_a_rendered_template_still_passes_the_gate():
         "document_kind": "discharge summary",
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
+        "subject": "lab report",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -369,10 +371,20 @@ def test_a_template_may_choose_a_view_but_never_an_address():
     assert "evil.example" not in hijacked
 
 
-def test_only_the_bill_templates_redirect_to_a_view():
-    """Every other message still lands on the front page, as before."""
+def test_a_message_opens_on_the_tab_it_is_about():
+    """A link that lands you somewhere else reads as a broken link.
+
+    This got reported once already: a message about a bill opened the triage
+    timeline. The same fault applies to documents, which live on the record
+    tab. Anything without a subject of its own still opens the front page.
+    """
+    ON_CLAIM = {"bill_recorded", "bill_unreadable", "bill_already_recorded"}
+    ON_RECORD = {"document_recorded", "document_recorded_withheld",
+                 "document_unreadable", "document_already_recorded"}
     for name, spec in TEMPLATES.items():
-        if name in {"bill_recorded", "bill_unreadable"}:
-            assert spec.get("view") == "claim"
+        if name in ON_CLAIM:
+            assert spec.get("view") == "claim", f"{name} should open the claim"
+        elif name in ON_RECORD:
+            assert spec.get("view") == "record", f"{name} should open the record"
         else:
             assert "view" not in spec, f"{name} unexpectedly names a view"

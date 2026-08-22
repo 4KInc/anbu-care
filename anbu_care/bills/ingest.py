@@ -35,7 +35,17 @@ from anbu_care.schemas import BillLineItem, ExtractedBill
 
 
 class BillRejected(Exception):
-    """The bill was not taken in, and the reason is safe to show the sender."""
+    """The bill was not taken in, and the reason is safe to show the sender.
+
+    `already_recorded` marks the one refusal that is not a failure: the same
+    photograph arriving twice. Telling someone their bill "could not be read"
+    when it was read, recognised, and deliberately not counted twice is a lie
+    about the one behaviour this lane exists for.
+    """
+
+    def __init__(self, message: str, *, already_recorded: bool = False) -> None:
+        super().__init__(message)
+        self.already_recorded = already_recorded
 
 
 def _reading_sha256(bill: ExtractedBill) -> str:
@@ -85,7 +95,8 @@ def ingest_bill_image(case_id: str, parent_id: str, image: bytes,
         raise BillRejected(
             f"that is the same photograph as bill {existing.bill_id}, which is "
             f"already on this case with {len(existing.line_items)} line item(s). "
-            f"It has not been added again."
+            f"It has not been added again.",
+            already_recorded=True,
         )
 
     # The image goes to private storage FIRST. If the reading turns out wrong,
