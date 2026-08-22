@@ -202,13 +202,66 @@ GENERAL_WARD = {
 }
 
 
+# A LONGER stay at a different hospital, with GST actually charged.
+#
+# Deliberately unlike the other two: six days rather than three, so the per-bill
+# day count has something to differ on, and a non-zero GST line so the subtotal
+# reconciliation meets tax outside a test. The ICU sub-limit bites hard here —
+# 6 days at 2% of a five-lakh policy caps a 1,68,000 line at 60,000.
+ICU_LONG = {
+    "hospital": "Idhayalaya Heart Centre",
+    "address": "Bryant Nagar, Thoothukudi, Tamil Nadu 628008",
+    "gstin": "33AAFCI2298M1ZP", "reg": "Reg. No. TN/THO/1443",
+    "bill_no": "IP/2026/05590", "patient": "Rajeswari Manickam",
+    "uhid": "IHC-441207", "age_sex": "71 / F", "consultant": "Dr K. Raman, Cardiology",
+    "ip_no": "IP-26-5590", "admitted": "02 Aug 2026, 23:15",
+    "discharged": "08 Aug 2026, 09:40", "ward": "ICU",
+    "sections": [
+        ("Room & nursing", [
+            ("ICU bed charges", "6 days", 28000, 168000),
+            ("Nursing charges", "6 days", 1100, 6600),
+        ]),
+        ("Professional fees", [
+            ("Consultant rounds - Cardiology", "6", 1400, 8400),
+            ("Physician fee", "1", 9000, 9000),
+        ]),
+        ("Procedures", [
+            ("Temporary pacemaker insertion", "1", 65000, 65000),
+        ]),
+        ("Investigations", [
+            ("Troponin I (serial)", "6", 1800, 10800),
+            ("Chest X-ray", "3", 600, 1800),
+            ("Renal function test", "2", 900, 1800),
+        ]),
+        ("Pharmacy & consumables", [
+            ("Ward pharmacy", "-", 0, 22400),
+            ("IV fluids and injections", "-", 0, 2900),
+        ]),
+        ("Non-medical items", [
+            ("Admission kit", "1", 900, 900),
+            ("Gloves and PPE kit", "-", 0, 1700),
+            ("Attendant charges", "6 days", 400, 2400),
+        ]),
+    ],
+    "totals": [
+        ("Sub-total", 301700, False),
+        ("Discount", -5700, False),
+        ("GST", 12000, False),
+        ("TOTAL", 308000, True),
+        ("Advance paid", -150000, False),
+        ("BALANCE DUE", 158000, True),
+    ],
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="/tmp/bills")
     args = parser.parse_args()
     out = Path(args.out)
 
-    for name, spec in (("cardiac_icu", CARDIAC), ("general_ward", GENERAL_WARD)):
+    for name, spec in (("cardiac_icu", CARDIAC), ("general_ward", GENERAL_WARD),
+                       ("icu_long_stay", ICU_LONG)):
         path = render(spec, out / f"bill_{name}.png")
         total = next(a for label, a, _ in spec["totals"] if label == "TOTAL")
         print(f"  {path}   TOTAL INR {total:,}")
