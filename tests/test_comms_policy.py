@@ -133,6 +133,9 @@ def test_every_template_renders_and_passes_its_own_gate():
         "words_note": "Those are her own words, not a medical assessment.\n",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
+        "line_count": "16", "total_billed": "3,82,720",
+        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
+        "reason": "the photograph was too dark to read.",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -234,6 +237,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "words_note": "Those are her own words, not a medical assessment.\n",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
+        "line_count": "16", "total_billed": "3,82,720",
+        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
+        "reason": "the photograph was too dark to read.",
         "cashless_status": "Cashless approval is in progress",
         "said": "I cannot catch my breath", "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
@@ -241,6 +247,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "words_note": "Those are her own words, not a medical assessment.\n",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
+        "line_count": "16", "total_billed": "3,82,720",
+        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
+        "reason": "the photograph was too dark to read.",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]

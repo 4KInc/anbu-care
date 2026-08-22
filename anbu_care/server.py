@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
-from fastapi import Depends, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
@@ -269,7 +269,7 @@ def intake_signal(request: IntakeSignalRequest) -> dict[str, Any]:
 
 
 @app.post("/api/wellbeing/inbound")
-async def wellbeing_inbound(request: Request) -> Response:
+async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Response:
     """Twilio's inbound webhook: a check-in arriving over WhatsApp.
 
     Unauthenticated by necessity — Twilio cannot carry a bearer token — so the
@@ -303,7 +303,7 @@ async def wellbeing_inbound(request: Request) -> Response:
     media = inbound.media_from(fields) if sender is not None else None
     if sender is not None and media is not None:
         if media.kind == "image":
-            return _handle_bill_photo(sender, media)
+            return _handle_bill_photo(sender, media, background)
         return _handle_voice_note(sender, media)
 
     if sender is None or not body:
@@ -985,16 +985,19 @@ def _qr_svg(path: str) -> str:
     return buffer.getvalue().decode("utf-8")
 
 
-def _handle_bill_photo(sender: Any, media: Any) -> Response:
+def _handle_bill_photo(sender: Any, media: Any, background: BackgroundTasks) -> Response:
     """A photographed bill arriving over the same WhatsApp thread.
 
-    The reply is deliberately about what was READ, not about what is owed. A
-    family that reads "you owe nothing" off a message will act on it, so the
-    estimate lives behind the credential where the source image sits next to
-    it, and the message says only that the bill was recorded.
-    """
-    from anbu_care.bills import BillRejected, ingest_bill_image
+    Acknowledge now, read it after. Reading a bill takes about fifteen seconds
+    and Twilio abandons a webhook at roughly the same mark — so doing the work
+    inline is a coin flip, and it lost: the bill was ingested correctly and the
+    family got silence, because Twilio had already given up on the reply.
 
+    So the response returns immediately and the extraction runs after it, with
+    the result sent as its own message. That also makes the two things honest
+    about themselves: the acknowledgement says the bill arrived, and only the
+    second message says what is in it.
+    """
     case_id = _latest_open_case_for(sender.parent_id)
     if case_id is None:
         return _twiml(
@@ -1002,19 +1005,62 @@ def _handle_bill_photo(sender: Any, media: Any) -> Response:
             "has not been recorded. Send it again once a case is open."
         )
 
-    try:
-        bill = ingest_bill_image(case_id, sender.parent_id, media.data, media.mime_type)
-    except BillRejected as rejected:
-        return _twiml(f"That bill could not be read. {rejected}")
-
-    total = sum(line.amount_inr for line in bill.line_items)
-    review = (" One or more lines need checking against the photo."
-              if bill.needs_review else "")
+    background.add_task(_read_bill_and_report, case_id, sender.parent_id,
+                        media.data, media.mime_type)
     return _twiml(
-        f"Bill recorded: {len(bill.line_items)} line(s), INR {total:,} billed."
-        f"{review} Open the dashboard to see the estimated split against the "
-        f"policy. That is an estimate, not the insurer's decision."
+        "Got that bill. Reading it now — the itemised split will follow in "
+        "a moment. Nothing is recorded until it has been read."
     )
+
+
+def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type: str) -> None:
+    """Ingest the bill, then tell the family what is in it. Never raises.
+
+    Runs after the response, so an exception here reaches no caller. Every
+    outcome therefore has to end in a message, including the failures — a
+    background task that dies quietly is indistinguishable from one that never
+    ran, which is the silence this whole change exists to remove.
+    """
+    from anbu_care.bills import BillRejected, estimate_for_case, ingest_bill_image, list_bills
+
+    profile = service.load_profile(parent_id)
+    first_name = (profile.name.split()[0] if profile and profile.name else "your parent")
+    contact = next((c for c in (profile.family_contacts if profile else []) if c.is_primary),
+                   None) or next(iter(profile.family_contacts if profile else []), None)
+    if contact is None:
+        logger.warning("bill read for %s but no contact to tell", parent_id)
+        return
+
+    def tell(template: str, params: dict[str, str], klass: str, purpose: str) -> None:
+        try:
+            whatsapp_tools.send_family_update(
+                case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+                template_name=template, template_params=params,
+                message_class=klass, purpose_override=purpose,
+            )
+        except Exception:  # noqa: BLE001 - a failed telling must not hide the outcome
+            logger.exception("could not report the bill outcome")
+
+    try:
+        bill = ingest_bill_image(case_id, parent_id, image, mime_type)
+    except BillRejected as rejected:
+        tell("bill_unreadable", {"reason": str(rejected)[:200]},
+             "logistics", consent.STATUS_UPDATES)
+        return
+    except Exception:  # noqa: BLE001 - never die silently
+        logger.exception("bill ingestion failed")
+        tell("bill_unreadable", {"reason": "something went wrong reading it."},
+             "logistics", consent.STATUS_UPDATES)
+        return
+
+    estimate = estimate_for_case(case_id, list_bills(case_id))
+    tell("bill_recorded", {
+        "parent_name": first_name,
+        "line_count": str(len(bill.line_items)),
+        "total_billed": f"{estimate.total_billed_inr:,}",
+        "estimated_covered": f"{estimate.estimated_covered_inr:,}",
+        "estimated_you_pay": f"{estimate.estimated_you_pay_inr:,}",
+    }, "billing", consent.BILLING_UPDATES)
 
 
 def _latest_open_case_for(parent_id: str) -> str | None:

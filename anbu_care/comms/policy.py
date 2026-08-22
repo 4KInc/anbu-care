@@ -79,6 +79,29 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "The itemised breakdown is here: {dashboard_url}",
         "params": ["parent_name", "total", "line_count"],
     },
+    "bill_recorded": {
+        # BILLING, and the numbers here are the family's own bill read back to
+        # them — what was charged, not what a clinician found. The estimate is
+        # named an estimate in the copy, because a figure in a WhatsApp message
+        # is the version people remember.
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: that bill is on {parent_name}'s record. "
+                "{line_count} line items, INR {total_billed} billed.\n"
+                "Estimated split against her policy: about INR {estimated_covered} "
+                "covered, about INR {estimated_you_pay} to pay.\n\n"
+                "That is an estimate from the policy terms, not the insurer's "
+                "decision. The itemised breakdown, and the photo it was read "
+                "from, are here: {dashboard_url}",
+        "params": ["parent_name", "line_count", "total_billed",
+                   "estimated_covered", "estimated_you_pay"],
+    },
+    "bill_unreadable": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: that bill could not be read. {reason}\n"
+                "The photo is kept. Send a clearer one, or add the amounts by "
+                "hand here: {dashboard_url}",
+        "params": ["reason"],
+    },
     "clinician_handoff_link": {
         # LOGISTICS, and it must stay that way: this message carries a link and
         # an instruction, never a finding. The allergies live behind the link,

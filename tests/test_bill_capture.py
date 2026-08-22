@@ -422,13 +422,17 @@ def test_a_bill_photo_over_whatsapp_is_ingested(client, registered, monkeypatch)
 
     response = client.post("/api/wellbeing/inbound", data=_twilio_form(number))
 
+    # The webhook acknowledges immediately and promises the detail separately.
+    # Reading a bill takes about fifteen seconds and Twilio abandons a webhook
+    # at roughly the same mark, so the work cannot live on this response.
     assert response.status_code == 200
-    assert "Bill recorded" in response.text
-    assert "130,500" in response.text
-    # The reply talks about what was READ, and never about what is owed.
-    assert "estimate" in response.text.lower()
-    assert "you owe" not in response.text.lower()
+    assert "got that bill" in response.text.lower()
+    assert "nothing is recorded until it has been read" in response.text.lower()
+    # And it does NOT pre-announce a total it has not read yet.
+    assert "130,500" not in response.text
 
+    # TestClient runs background tasks after the response, so the work still
+    # happened — just not on the request path.
     bills = ingest.list_bills(case_id)
     assert len(bills) == 1
     assert bills[0].computed_total_inr == 130_500
@@ -469,8 +473,10 @@ def test_an_unreadable_photo_over_whatsapp_says_so_and_files_nothing(
 
     response = client.post("/api/wellbeing/inbound", data=_twilio_form(number))
 
-    assert "could not be read" in response.text.lower()
-    assert "too dark" in response.text.lower()
+    # Acknowledged immediately; the failure is reported by the follow-up.
+    assert response.status_code == 200
+    assert "got that bill" in response.text.lower()
+    # Nothing was filed, which is the guarantee that matters.
     assert ingest.list_bills(case_id) == []
 
 
@@ -584,3 +590,41 @@ def test_subsumed_consumables_are_not_estimated_as_covered(case_id, parent_id, m
     assert line.estimated_covered_inr == 0
     assert line.estimated_you_pay_inr == 1_450
     assert "excluded" in line.rule
+
+
+def test_the_acknowledgement_does_not_claim_the_bill_is_recorded(client, registered, monkeypatch):
+    """Two messages, two different claims, and neither overstates.
+
+    The webhook cannot know what is in the bill yet — it has fifteen seconds of
+    work to do and about fifteen seconds before Twilio hangs up. So the
+    acknowledgement says only that the photo arrived, and the second message
+    says what it contained. An acknowledgement that said "bill recorded" would
+    be claiming an outcome that had not happened yet, which is the same class
+    of false claim as reporting a message delivered when it was only accepted.
+    """
+    number, _, _ = registered
+    _reads(monkeypatch, [ICU], stated=96_000)
+    monkeypatch.setattr("anbu_care.comms.inbound.verify_twilio_signature",
+                        lambda *a, **k: None)
+    import anbu_care.comms.inbound as inbound_mod
+    monkeypatch.setattr(inbound_mod, "media_from", lambda form: inbound_mod.InboundMedia(
+        audio=IMAGE, mime_type="image/jpeg", kind="image"))
+
+    text = client.post("/api/wellbeing/inbound", data=_twilio_form(number)).text.lower()
+
+    assert "recorded" not in text.split("nothing is recorded")[0]
+    for premature in ("96,000", "covered", "you pay", "estimate"):
+        assert premature not in text.split("nothing is recorded")[0]
+
+
+def test_the_follow_up_reports_the_split_and_calls_it_an_estimate(client, registered, monkeypatch):
+    """The second message is where the numbers live, and where the caveat does."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    body = str(TEMPLATES["bill_recorded"]["body"]).lower()
+    assert "estimate" in body
+    assert "not the insurer's decision" in body
+    assert "{dashboard_url}" in body
+    # The photo it was read from is reachable, because a number you cannot
+    # check against the paper is not worth much.
+    assert "photo it was read from" in body
