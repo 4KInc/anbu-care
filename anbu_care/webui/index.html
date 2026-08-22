@@ -294,6 +294,8 @@ function synthOnce(){
 }
 // Every view still calls for it; only the first one to render gets it.
 const SYNTH = "";
+const DOC_LABEL = {blood_report:"Lab report", prescription:"Prescription",
+                   discharge_summary:"Discharge summary", policy:"Policy schedule"};
 const title = (h, p) => `<div class="title"><h1>${esc(h)}</h1><p>${esc(p)}</p></div>`;
 
 async function api(path, {auth=false} = {}) {
@@ -641,8 +643,11 @@ function vRecord(){
     ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
     ${row("Conditions",(pr.chronic_conditions||[]).map(esc).join(", ")||unknown("none recorded"))}
     ${row("Allergies",(pr.allergies||[]).map(esc).join(", ")||unknown("none recorded"))}
+    ${row("Medication",(pr.medications||[]).length
+        ? (pr.medications||[]).map(m=>`${esc(m.name)}${m.dose?` <span class="u">${esc(m.dose)}</span>`:""}`).join(", ")
+        : unknown("none recorded"))}
   </div>
-  <div class="sec">Lab results</div>
+  <div class="sec">Documents on file</div>
   ${docs.length===0?`<div class="card"><p>${unknown("no documents have been ingested for this parent")}</p></div>`:""}
   ${docs.map(d=>{
     // If anything in this document is new and abnormal, the line reads as a
@@ -651,11 +656,18 @@ function vRecord(){
     const txt=d.delta_vs_baseline||"";
     const base=/consistent with baseline/.test(txt) && !/new and abnormal/.test(txt);
     return `<div class="card ${base?"edge-teal":"edge-amber"}">
-      <h2>${esc(d.kind)} · ${esc(d.source_filename||"—")}</h2>
+      <h2>${esc(DOC_LABEL[d.kind]||String(d.kind||"document").replace(/_/g," "))}</h2>
+      <p class="mute" style="margin:-8px 0 10px;font-size:13px">${esc(d.document_id||"")}</p>
+      ${d.summary?`<p style="margin:0 0 12px">${esc(d.summary)}</p>`:""}
       ${arrivedMidEpisode(d)?`<div class="pills" style="margin:-6px 0 12px">
         <span class="pill p-slate">added during this episode · ${esc(new Date(d.parsed_at).toLocaleTimeString())}</span>
       </div>`:""}
-      ${(d.observations||[]).length===0?`<p>${unknown("this document carries no structured observations")}</p>`
+      ${(d.observations||[]).length===0
+        // A prescription has no lab values, and saying so as an "unknown"
+        // reports a normal document as missing data. Only a lab report with
+        // nothing read off it is genuinely an unknown.
+        ? (d.kind==="blood_report"
+            ? `<p>${unknown("no results could be read off this report")}</p>` : "")
         :d.observations.map(o=>`<div class="obs">
             <div class="n">${esc(o.name)}</div>
             <div class="v num">${esc(o.value)} <span class="u">${esc(o.unit||"")}</span>

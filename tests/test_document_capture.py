@@ -9,6 +9,7 @@ kind, and when the same photograph arrives twice.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -417,3 +418,32 @@ def test_the_duplicate_messages_do_not_read_as_failures():
                         template_name="document_already_recorded").allowed
     assert gate_message(bill, "billing",
                         template_name="bill_already_recorded").allowed
+
+
+def test_the_record_view_reports_a_prescription_as_a_prescription():
+    """A prescription filed under "Lab results" and rendered as "not yet known"
+    is a successfully-read document reported as missing data.
+
+    Six medications came off that photograph and reached the profile. The view
+    showed an unknown, because it asked every document for lab observations and
+    treated their absence as a gap rather than as what a prescription is.
+    """
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+
+    assert '<div class="sec">Documents on file</div>' in page
+    assert '<div class="sec">Lab results</div>' not in page
+    assert 'DOC_LABEL' in page and 'prescription:"Prescription"' in page
+    # The unknown is now reserved for a lab report that read nothing.
+    assert 'this document carries no structured observations' not in page
+    assert 'd.kind==="blood_report"' in page
+    # The extractor's own sentence is shown rather than discarded.
+    assert 'd.summary?`<p' in page
+
+
+def test_the_baseline_shows_medication():
+    """It is what a treating clinician reads immediately after allergies, and
+    it is what a photographed prescription updates."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+    assert 'row("Medication"' in page
