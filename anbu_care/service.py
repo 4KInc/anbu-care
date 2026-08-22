@@ -81,12 +81,7 @@ def open_case(parent_id: str, store: Store | None = None) -> Case:
     store = store or get_store()
     case = Case(case_id=new_id("case"), parent_id=parent_id)
     store.put(f"CASE#{case.case_id}", "META", case.model_dump(mode="json"))
-    # Reverse index, so a later arrival on the same WhatsApp thread — a bill
-    # photograph, say — can find which case it belongs to. Additive: nothing
-    # existing reads it, and a case is still fully described by CASE#/META.
-    store.put(f"PARENT#{parent_id}", f"CASE#{case.case_id}",
-              {"case_id": case.case_id, "parent_id": parent_id,
-               "opened_at": case.opened_at.isoformat()})
+    index_case(case, store=store)
     append_receipt(
         case.case_id,
         kind="case.opened",
@@ -95,6 +90,20 @@ def open_case(parent_id: str, store: Store | None = None) -> Case:
         store=store,
     )
     return case
+
+
+def index_case(case: Case, store: Store | None = None) -> None:
+    """Write the parent -> case reverse index row. Idempotent.
+
+    Called on open AND on every update, so a case written before this index
+    existed repairs itself the first time anything touches it. Cases opened
+    earlier and never touched since need the backfill in
+    `scripts/backfill_case_index.py`.
+    """
+    store = store or get_store()
+    store.put(f"PARENT#{case.parent_id}", f"CASE#{case.case_id}",
+              {"case_id": case.case_id, "parent_id": case.parent_id,
+               "opened_at": case.opened_at.isoformat()})
 
 
 def latest_case_for_parent(parent_id: str, store: Store | None = None) -> Case | None:
@@ -121,6 +130,10 @@ def load_case(case_id: str, store: Store | None = None) -> Case | None:
 def update_case(case: Case, store: Store | None = None) -> None:
     store = store or get_store()
     store.put(f"CASE#{case.case_id}", "META", case.model_dump(mode="json"))
+    # Self-healing: a case written before the reverse index existed gets one
+    # the first time anything touches it, so the gap closes on its own rather
+    # than only by a backfill somebody has to remember to run.
+    index_case(case, store=store)
 
 
 # --------------------------------------------------------------------------

@@ -379,3 +379,133 @@ def test_a_small_but_legitimate_bill_is_not_refused_for_its_size(monkeypatch):
 
     # A few bytes is still junk and is still refused.
     assert vision.extract(b"tiny", "image/png").ok is False
+
+
+# =========================================================================
+# THE WHATSAPP PATH — the entry point the brief actually asked for
+#
+# Every piece below this was already tested. The handler joining them was not,
+# and unexercised glue is exactly where the last two live-only defects lived.
+# =========================================================================
+
+
+def _twilio_form(parent_number: str, mime: str = "image/jpeg") -> dict:
+    return {
+        "From": f"whatsapp:{parent_number}", "To": "whatsapp:+14155238886",
+        "Body": "", "NumMedia": "1", "MediaUrl0": "https://api.twilio.com/media/1",
+        "MediaContentType0": mime,
+    }
+
+
+@pytest.fixture
+def registered(parent_id, case_id, monkeypatch):
+    """A parent whose WhatsApp number is registered, with an open case."""
+    number = "+16692167706"
+    onboarding_tools.record_family_contact(
+        parent_id, name="Karthik", relationship="son", whatsapp_e164=number,
+        timezone_name="America/Los_Angeles", is_primary=True,
+        consent_purposes=["status_updates", "inbound_wellbeing"],
+    )
+    return number, parent_id, case_id
+
+
+def test_a_bill_photo_over_whatsapp_is_ingested(client, registered, monkeypatch):
+    """The whole point of the feature, end to end through the webhook."""
+    number, parent_id, case_id = registered
+    _reads(monkeypatch, [ICU, PHARM], stated=130_500)
+    monkeypatch.setattr("anbu_care.comms.inbound.verify_twilio_signature",
+                        lambda *a, **k: None)
+
+    import anbu_care.comms.inbound as inbound_mod
+    monkeypatch.setattr(inbound_mod, "media_from", lambda form: inbound_mod.InboundMedia(
+        audio=IMAGE, mime_type="image/jpeg", kind="image"))
+
+    response = client.post("/api/wellbeing/inbound", data=_twilio_form(number))
+
+    assert response.status_code == 200
+    assert "Bill recorded" in response.text
+    assert "130,500" in response.text
+    # The reply talks about what was READ, and never about what is owed.
+    assert "estimate" in response.text.lower()
+    assert "you owe" not in response.text.lower()
+
+    bills = ingest.list_bills(case_id)
+    assert len(bills) == 1
+    assert bills[0].computed_total_inr == 130_500
+
+
+def test_a_bill_photo_with_no_case_is_refused_not_filed_against_a_guess(
+    client, parent_id, monkeypatch
+):
+    """A bill on the wrong case silently moves someone else's money."""
+    number = "+16692167707"
+    onboarding_tools.record_family_contact(
+        parent_id, name="K", relationship="son", whatsapp_e164=number,
+        timezone_name="UTC", is_primary=True, consent_purposes=["inbound_wellbeing"])
+    _reads(monkeypatch, [ICU], stated=96_000)
+    monkeypatch.setattr("anbu_care.comms.inbound.verify_twilio_signature",
+                        lambda *a, **k: None)
+    import anbu_care.comms.inbound as inbound_mod
+    monkeypatch.setattr(inbound_mod, "media_from", lambda form: inbound_mod.InboundMedia(
+        audio=IMAGE, mime_type="image/jpeg", kind="image"))
+
+    response = client.post("/api/wellbeing/inbound", data=_twilio_form(number))
+
+    assert response.status_code == 200
+    assert "no open case" in response.text.lower()
+    assert "not been recorded" in response.text.lower()
+
+
+def test_an_unreadable_photo_over_whatsapp_says_so_and_files_nothing(
+    client, registered, monkeypatch
+):
+    number, _, case_id = registered
+    _reads(monkeypatch, [], unreadable=True, reason="the photo is too dark")
+    monkeypatch.setattr("anbu_care.comms.inbound.verify_twilio_signature",
+                        lambda *a, **k: None)
+    import anbu_care.comms.inbound as inbound_mod
+    monkeypatch.setattr(inbound_mod, "media_from", lambda form: inbound_mod.InboundMedia(
+        audio=IMAGE, mime_type="image/jpeg", kind="image"))
+
+    response = client.post("/api/wellbeing/inbound", data=_twilio_form(number))
+
+    assert "could not be read" in response.text.lower()
+    assert "too dark" in response.text.lower()
+    assert ingest.list_bills(case_id) == []
+
+
+# =========================================================================
+# THE REVERSE INDEX — and the backfill gap that broke old cases
+# =========================================================================
+
+
+def test_a_case_opened_before_the_index_existed_repairs_itself(parent_id):
+    """The bug: the index only existed for cases opened after it was added.
+
+    An old case returned None from latest_case_for_parent, so a bill
+    photographed against it was refused as "no open case" — which on camera
+    reads as the feature being broken rather than as data being missing.
+    """
+    from anbu_care.provenance.store import get_store
+
+    case = service.open_case(parent_id)
+    # Simulate a case written before the index existed.
+    get_store().delete(f"PARENT#{parent_id}", f"CASE#{case.case_id}")
+    assert service.latest_case_for_parent(parent_id) is None
+
+    # Anything touching the case repairs it.
+    service.update_case(case)
+    found = service.latest_case_for_parent(parent_id)
+    assert found is not None and found.case_id == case.case_id
+
+
+def test_latest_case_for_parent_returns_the_most_recent(parent_id):
+    first = service.open_case(parent_id)
+    second = service.open_case(parent_id)
+
+    found = service.latest_case_for_parent(parent_id)
+    assert found.case_id == second.case_id != first.case_id
+
+
+def test_latest_case_for_parent_is_none_for_a_stranger():
+    assert service.latest_case_for_parent("parent-nobody") is None

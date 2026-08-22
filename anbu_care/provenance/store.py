@@ -37,6 +37,7 @@ class Store(Protocol):
     def put(self, pk: str, sk: str, data: dict[str, Any]) -> None: ...
     def get(self, pk: str, sk: str) -> dict[str, Any] | None: ...
     def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]: ...
+    def query_by_sk(self, sk: str) -> list[dict[str, Any]]: ...
     def delete(self, pk: str, sk: str) -> None: ...
 
 
@@ -58,6 +59,15 @@ class MemoryStore:
         with self._lock:
             rows = [dict(v) for (p, s), v in self._data.items() if p == pk and s.startswith(sk_prefix)]
         return sorted(rows, key=lambda r: r["sk"])
+
+    def query_by_sk(self, sk: str) -> list[dict[str, Any]]:
+        """Every row with this exact sort key, across partitions.
+
+        Only used by maintenance that has to walk one entity type — a backfill,
+        not a request path. Nothing in the serving code fans out like this.
+        """
+        with self._lock:
+            return [dict(v) for (_, s_), v in self._data.items() if s_ == sk]
 
     def delete(self, pk: str, sk: str) -> None:
         with self._lock:
@@ -97,6 +107,14 @@ class FirestoreStore:
             .where(filter=FieldFilter("sk", "<", sk_prefix + ""))
             .order_by("sk")
         )
+        return [doc.to_dict() for doc in query.stream()]
+
+    def query_by_sk(self, sk: str) -> list[dict[str, Any]]:
+        """Cross-partition read on one sort key. Maintenance only."""
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        query = self._client.collection(COLLECTION).where(
+            filter=FieldFilter("sk", "==", sk))
         return [doc.to_dict() for doc in query.stream()]
 
     def delete(self, pk: str, sk: str) -> None:
