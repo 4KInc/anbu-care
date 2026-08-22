@@ -12,6 +12,7 @@ either one failing breaks the pitch in a different direction.
 
 from __future__ import annotations
 
+import pathlib
 import re
 
 import pytest
@@ -362,3 +363,69 @@ def test_no_view_function_is_declared_twice():
     names = re.findall(r"^(?:async )?function (\w+)\s*\(", script, re.M)
     duplicated = [n for n, c in Counter(names).items() if c > 1]
     assert not duplicated, f"declared more than once: {duplicated}"
+
+
+# =========================================================================
+# A SIGNED LINK IS A CREDENTIAL, AND IT IS SCOPED
+# =========================================================================
+
+
+def test_a_signed_link_opens_the_health_record_it_was_minted_for(client, seeded):
+    """The message says "what was read from it is here". The link must arrive.
+
+    A family member who followed the link they were sent was shown a credential
+    wall, because the browser refused to ask for a record the server would have
+    given it. The server was never the thing saying no.
+    """
+    from anbu_care.webauth import make_link_token
+
+    parent_id, case_id = seeded
+    token = make_link_token(parent_id, case_id)
+    assert token, "no link secret configured for the test"
+
+    response = client.get(f"/api/parents/{parent_id}?t={token}&case={case_id}")
+    assert response.status_code == 200
+    assert "profile" in response.json()
+
+
+def test_a_link_minted_for_one_parent_cannot_read_another(client, seeded):
+    """Scope is the whole reason this is a credential rather than a URL."""
+    from anbu_care.webauth import make_link_token
+
+    parent_id, case_id = seeded
+    other = onboarding_tools.create_parent_profile(
+        name="Someone Else", age=64, city="Madurai", lat=9.9, lon=78.1,
+        chronic_conditions=[], allergies=[])["profile"]["parent_id"]
+
+    token = make_link_token(parent_id, case_id)
+    assert client.get(f"/api/parents/{other}?t={token}&case={case_id}").status_code == 401
+
+
+def test_an_expired_link_reads_nothing(client, seeded):
+    from anbu_care.webauth import make_link_token
+
+    parent_id, case_id = seeded
+    stale = make_link_token(parent_id, case_id, now=1)
+    assert client.get(f"/api/parents/{parent_id}?t={stale}&case={case_id}"
+                      ).status_code == 401
+
+
+def test_a_tampered_link_reads_nothing(client, seeded):
+    from anbu_care.webauth import make_link_token
+
+    parent_id, case_id = seeded
+    token = make_link_token(parent_id, case_id)
+    tampered = token[:-4] + ("aaaa" if not token.endswith("aaaa") else "bbbb")
+    assert client.get(f"/api/parents/{parent_id}?t={tampered}&case={case_id}"
+                      ).status_code == 401
+
+
+def test_the_browser_is_not_stricter_than_the_server():
+    """The record view gated on a full session while the server accepted a
+    signed link, so the link in every document message led to a locked door."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+
+    assert "if(!S.token && !S.linkToken) return gate();" in page
+    assert "if(S.parentId && (S.token || S.linkToken)){" in page
+    assert "if(!S.token) return gate();" not in page

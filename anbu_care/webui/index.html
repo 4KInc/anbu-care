@@ -622,7 +622,7 @@ function copyHandoff(){
 
 function vRecord(){
   if(!S.parentId) return vOpen();
-  if(!S.token) return gate();
+  if(!S.token && !S.linkToken) return gate();
   if(S.record?.__denied) return denied(S.record.detail,"The health record");
   if(!S.record) return `<div class="card"><p class="mute">Reading the record…</p></div>`;
   const docs=S.record.documents||[], pr=S.record.profile||{};
@@ -899,10 +899,11 @@ function gate(){
   <div class="card edge-teal">
     <h2>Clinical view</h2>
     <p style="font-size:15px;line-height:1.6">The health record holds lab values and diagnoses. It is
-    refused by the server without a family session — that refusal is what lets the WhatsApp gate
+    refused by the server without a credential — that refusal is what lets the WhatsApp gate
     promise this data lives somewhere protected.</p>
-    <p class="mute" style="margin-top:10px">The demo credential is not a secret; it is published in the
-    README. Secrecy is not what is being shown here — server-side enforcement is.</p>
+    <p class="mute" style="margin-top:10px">A signed link sent to a consented family member is also a
+    credential, and opens this view directly. The demo credential is not a secret; it is published in
+    the README. Secrecy is not what is being shown here — server-side enforcement is.</p>
     <div class="btns"><button class="btn" onclick="signIn()">Sign in as the family (demo)</button></div>
   </div>`;
 }
@@ -1033,7 +1034,7 @@ async function load(){
     S.bills=await api(`/api/cases/${S.caseId}/bills`,{auth:true});
     if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
-  if(S.parentId && S.token){
+  if(S.parentId && (S.token || S.linkToken)){
     S.record=await api(`/api/parents/${S.parentId}`,{auth:true});
     S.wellbeing=await api(`/api/parents/${S.parentId}/wellbeing`,{auth:true});
     S.careCircle=await api(`/api/parents/${S.parentId}/care-circle`,{auth:true});
