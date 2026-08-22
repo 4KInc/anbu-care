@@ -446,6 +446,41 @@ class WellbeingEntry(BaseModel):
     audio_object: str | None = None
 
 
+class EmergencySummary(BaseModel):
+    """What a treating team is handed when the family is not there.
+
+    Composed deterministically from stored fields. Nothing here is inferred by
+    a model, and nothing here is advice.
+
+    The shape is the guarantee. There is no `recommendation`, no `guidance`, no
+    `suggested_treatment`, no `severity` and no `notes` field, because a record
+    that offers somewhere for an instruction to sit will eventually have one
+    sitting in it. Anbu Care reports what is stored about a patient. What to do
+    about it is the clinician's job, and this system is not qualified to have an
+    opinion — a test asserts these fields never appear.
+
+    `allergies` is first and separate for the same reason it is first on the
+    page: it is the field that kills people when it is missed, and no future
+    layout change should be able to fold it into a list of equals.
+    """
+
+    parent_id: str
+    generated_at: datetime = Field(default_factory=utcnow)
+    allergies: list[ArrivalFact] = Field(default_factory=list)
+    identity: list[ArrivalFact] = Field(default_factory=list)
+    conditions: list[ArrivalFact] = Field(default_factory=list)
+    medications: list[ArrivalFact] = Field(default_factory=list)
+    recent_labs: list[ArrivalFact] = Field(default_factory=list)
+    source_documents: list[ArrivalFact] = Field(default_factory=list)
+
+    # Stated on the artifact itself, not left to the reader to infer.
+    disclaimer: str = (
+        "Emergency clinical summary for the treating team. Read-only, and not "
+        "connected to any hospital system. This is a record of what the family "
+        "has provided, not a clinical assessment and not advice."
+    )
+
+
 class ArrivalBrief(BaseModel):
     """What is waiting when the family lands.
 
