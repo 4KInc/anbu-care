@@ -539,6 +539,86 @@ def mint_handoff_link(
     }
 
 
+@app.post("/api/cases/{case_id}/handoff-link/send")
+def send_handoff_link(
+    case_id: str, to_care_circle: bool = False,
+    _session: str = Depends(require_family_session),
+) -> dict[str, Any]:
+    """Mint a handoff link and send it over WhatsApp.
+
+    A QR on a dashboard assumes someone is holding a laptop next to the nurse.
+    In the situation this exists for, the family is asleep eleven time zones
+    away and the person at the hospital is whoever answered the phone. So the
+    link goes where they already are.
+
+    **Two consents, and they are not the same consent.** The parent must have
+    agreed her record may be disclosed to a treating clinician
+    (`emergency_clinical_share`, enforced when the link is minted). The
+    recipient must separately have agreed to receive messages — a neighbour
+    listed as a care-circle contact holds `outbound_notify`, and the family
+    decision-maker holds `admission_alerts`. Neither implies the other, and
+    neither implies the first.
+
+    The message itself carries a link and an instruction and no clinical
+    detail. The allergies live behind the link, because the comms gate would
+    rightly refuse to carry them over WhatsApp — and a link is not the thing it
+    points at.
+    """
+    from anbu_care.care_circle import notify as circle
+    from anbu_care.handoff import access
+
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    profile = service.load_profile(case.parent_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="no parent record on this case")
+
+    try:
+        token = access.mint(case_id)
+    except access.HandoffDenied as denied:
+        raise HTTPException(status_code=409, detail=str(denied)) from None
+
+    base = os.getenv("ANBU_PUBLIC_BASE_URL", "").rstrip("/")
+    url = f"{base}/handoff/{token}" if base else f"/handoff/{token}"
+    params = {
+        "parent_name": profile.name.split()[0] or profile.name,
+        "handoff_url": url,
+        "expires_minutes": str(access.HANDOFF_TTL_SECONDS // 60),
+    }
+
+    recipients = (circle.care_circle(case.parent_id) if to_care_circle
+                  else [c for c in profile.family_contacts if c.is_primary]
+                  or profile.family_contacts)
+    purpose = (consent.OUTBOUND_NOTIFY if to_care_circle else consent.ADMISSION_ALERTS)
+
+    results = []
+    for contact in recipients:
+        sent = whatsapp_tools.send_family_update(
+            case_id=case_id, parent_id=case.parent_id, to_e164=contact.whatsapp_e164,
+            template_name="clinician_handoff_link", template_params=params,
+            message_class="logistics", purpose_override=purpose,
+        )
+        results.append({
+            "name": contact.name, "to": contact.whatsapp_e164,
+            "consented": sent.get("consented", sent.get("allowed")),
+            "allowed": sent.get("allowed"),
+            "delivered": bool(sent.get("delivered")),
+            "detail": sent.get("detail") or sent.get("reason"),
+        })
+
+    return {
+        "status": "sent" if any(r["delivered"] for r in results) else "not_delivered",
+        "url": url,
+        "expires_in_seconds": access.HANDOFF_TTL_SECONDS,
+        "purpose_required": purpose,
+        "recipients": results,
+        "note": ("The message carries a link, never a finding. Delivery is "
+                 "reported per recipient, and a permitted-but-undelivered "
+                 "message is not a sent one."),
+    }
+
+
 @app.post("/api/cases/{case_id}/handoff-link/revoke")
 def revoke_handoff_links(
     case_id: str, _session: str = Depends(require_family_session)

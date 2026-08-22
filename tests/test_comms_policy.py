@@ -131,6 +131,8 @@ def test_every_template_renders_and_passes_its_own_gate():
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "understood_as": "Understood as: chest pain.\n",
         "words_note": "Those are her own words, not a medical assessment.\n",
+        "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
+        "expires_minutes": "60",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -175,12 +177,20 @@ def test_templates_read_like_a_person_wrote_them():
 # record, so their notice carries no link at all.
 LINKLESS = {"care_circle_notice", "care_circle_unclear"}
 
+# The handoff message carries exactly ONE link, and it is not the dashboard.
+# Two links in one message read by a frightened person at 2am is how the wrong
+# one gets shown to a nurse — and the dashboard would answer that nurse with a
+# 401, which looks like the system failing rather than like a boundary holding.
+# So this template is deliberately single-link, and a separate test below pins
+# that the one link it carries is the handoff.
+SINGLE_LINK = {"clinician_handoff_link"}
+
 
 def test_every_family_template_links_to_the_dashboard():
     """The gate refuses to send clinical detail. The least it can do is say
     where that detail lives, in the same message, as something tappable."""
     for name, spec in TEMPLATES.items():
-        if name in LINKLESS:
+        if name in LINKLESS or name in SINGLE_LINK:
             continue
         assert "{dashboard_url}" in str(spec["body"]), f"{name} has no dashboard link"
 
@@ -222,11 +232,15 @@ def test_a_rendered_template_still_passes_the_gate():
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "understood_as": "Understood as: chest pain.\n",
         "words_note": "Those are her own words, not a medical assessment.\n",
+        "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
+        "expires_minutes": "60",
         "cashless_status": "Cashless approval is in progress",
         "said": "I cannot catch my breath", "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
         "understood_as": "Understood as: chest pain.\n",
         "words_note": "Those are her own words, not a medical assessment.\n",
+        "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
+        "expires_minutes": "60",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -275,3 +289,43 @@ def test_a_case_id_is_optional():
     )
     assert "?case=" not in body
     assert "/app" in body
+
+
+def test_the_handoff_message_carries_the_handoff_link_and_only_that():
+    """One link, and it is the one a nurse can actually open.
+
+    The dashboard would 401 for them, so offering both links invites showing
+    the wrong one to the person who needs the right one.
+    """
+    body = str(TEMPLATES["clinician_handoff_link"]["body"])
+    assert "{handoff_url}" in body
+    assert "{dashboard_url}" not in body
+    assert body.count("{") - body.count("{parent_name}") - body.count(
+        "{expires_minutes}") == body.count("{handoff_url}")
+
+
+def test_the_handoff_message_carries_no_clinical_detail():
+    """The allergies live BEHIND the link. That is the point of the link.
+
+    A message naming what she is allergic to would be exactly what the comms
+    gate exists to refuse, and putting it in a pre-approved template would be
+    the most damaging way to get it past the gate.
+    """
+    from anbu_care.comms.policy import MessageClass, classify_message
+
+    body = str(TEMPLATES["clinician_handoff_link"]["body"]).format(
+        parent_name="Rajeswari", handoff_url="https://x/handoff/abc",
+        expires_minutes="60")
+
+    klass, hits = classify_message(body)
+    assert klass is not MessageClass.CLINICAL, f"handoff message classified clinical: {hits}"
+    for leak in ("penicillin", "troponin", "diabetes", "hypertension", "mg/dL"):
+        assert leak not in body.lower()
+
+
+def test_the_handoff_template_says_the_link_expires_and_is_recorded():
+    """Both are true and both are load-bearing for the person receiving it."""
+    body = str(TEMPLATES["clinician_handoff_link"]["body"]).lower()
+    assert "stops working" in body
+    assert "recorded" in body
+    assert "no login" in body

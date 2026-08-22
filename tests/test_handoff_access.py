@@ -346,3 +346,107 @@ def _svg_of(qr) -> str:
     qr.save(buffer, kind="svg", scale=5, border=2, dark="#12212e", light="#ffffff",
             svgclass=None, lineclass=None, xmldecl=False, svgns=True)
     return buffer.getvalue().decode("utf-8")
+
+
+# =========================================================================
+# SENDING THE LINK — the realistic path
+#
+# A QR assumes someone is holding a laptop beside the nurse. In the situation
+# this feature exists for, the family is asleep eleven time zones away.
+# =========================================================================
+
+
+def _contact(parent_id, number, purposes, name="Karthik", primary=True):
+    onboarding_tools.record_family_contact(
+        parent_id, name=name, relationship="son", whatsapp_e164=number,
+        timezone_name="America/Los_Angeles", is_primary=primary,
+        consent_purposes=purposes,
+    )
+
+
+def test_the_link_is_sent_over_whatsapp_to_the_family(client):
+    from anbu_care.webauth import DEMO_TOKEN
+
+    parent_id = _parent()
+    _contact(parent_id, "+14155550142", ["admission_alerts"])
+    case_id = _case(parent_id)
+
+    body = client.post(f"/api/cases/{case_id}/handoff-link/send",
+                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+
+    assert body["purpose_required"] == consent_purposes.ADMISSION_ALERTS
+    assert body["recipients"], "nobody was messaged"
+    assert body["url"].startswith("/handoff/") or "/handoff/" in body["url"]
+    # And the link it sent actually works.
+    token = body["url"].rsplit("/handoff/", 1)[1]
+    assert client.get(f"/handoff/{token}").status_code == 200
+
+
+def test_sending_requires_the_recipient_s_own_consent(client):
+    """Two consents, and neither implies the other.
+
+    The parent agreed her record may be disclosed. That is not the son
+    agreeing to be messaged, and a system that conflated them would be making
+    the same mistake `consent.py` was written about.
+    """
+    from anbu_care.webauth import DEMO_TOKEN
+
+    parent_id = _parent()                       # has emergency_clinical_share
+    _contact(parent_id, "+14155550142", ["status_updates"])   # but NOT admission_alerts
+    case_id = _case(parent_id)
+
+    body = client.post(f"/api/cases/{case_id}/handoff-link/send",
+                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+
+    assert body["status"] == "not_delivered"
+    assert all(not r["delivered"] for r in body["recipients"])
+
+
+def test_sending_without_the_parent_s_disclosure_consent_mints_nothing(client):
+    from anbu_care.webauth import DEMO_TOKEN
+
+    parent_id = _parent(consented=False)
+    _contact(parent_id, "+14155550142", ["admission_alerts"])
+    case_id = _case(parent_id)
+
+    response = client.post(f"/api/cases/{case_id}/handoff-link/send",
+                           headers={"Authorization": f"Bearer {DEMO_TOKEN}"})
+    assert response.status_code == 409
+    assert consent_purposes.EMERGENCY_CLINICAL_SHARE in response.json()["detail"]
+
+
+def test_the_care_circle_variant_requires_outbound_notify(client):
+    from anbu_care.webauth import DEMO_TOKEN
+
+    parent_id = _parent()
+    _contact(parent_id, "+14155550143", ["outbound_notify"], name="Neighbour", primary=False)
+    case_id = _case(parent_id)
+
+    body = client.post(f"/api/cases/{case_id}/handoff-link/send?to_care_circle=true",
+                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+
+    assert body["purpose_required"] == consent_purposes.OUTBOUND_NOTIFY
+    assert [r["name"] for r in body["recipients"]] == ["Neighbour"]
+
+
+def test_sending_requires_a_family_session(client):
+    case_id = _case(_parent())
+    assert client.post(f"/api/cases/{case_id}/handoff-link/send").status_code == 401
+
+
+def test_a_permitted_send_is_not_reported_as_a_delivered_one(client):
+    """Per recipient, never aggregated, and never optimistic."""
+    from anbu_care.webauth import DEMO_TOKEN
+
+    parent_id = _parent()
+    _contact(parent_id, "+14155550142", ["admission_alerts"])
+    case_id = _case(parent_id)
+
+    body = client.post(f"/api/cases/{case_id}/handoff-link/send",
+                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+
+    for r in body["recipients"]:
+        assert set(r) >= {"name", "to", "delivered", "detail"}
+        assert isinstance(r["delivered"], bool)
+    assert body["status"] in {"sent", "not_delivered"}
+    assert "never a finding" in body["note"]

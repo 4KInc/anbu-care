@@ -487,6 +487,20 @@ function vHandoff(){
     <div class="btns" style="margin-top:12px">
       <button class="btn" onclick="mintHandoff()">Try again</button></div></div>`;
 
+  if(h?.__sent) return `<div class="card edge-teal">
+    <h2 class="mini">Sent to the treating team</h2>
+    ${(h.recipients||[]).map(r=>`<div class="row"><div class="k">${esc(r.name)}</div>
+      <div class="v">${r.delivered?"delivered"
+        : r.allowed===false ? "blocked" : r.consented===false ? "no consent" : "not delivered"}
+        <span class="why2">${esc(r.detail||"")}</span></div></div>`).join("")}
+    <p class="mute" style="margin-top:10px">The message carries a link, never a finding.
+      It expires in ${Math.round((h.expires_in_seconds||3600)/60)} minutes, and every time it is
+      opened a receipt is written to this case.</p>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="mintHandoff()">Show a QR too</button>
+      <button class="btn" onclick="revokeHandoff()">Stop sharing</button></div>
+  </div>`;
+
   if(h?.url) return `<div class="card edge-teal">
     <h2 class="mini">Share with the treating team</h2>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
@@ -514,8 +528,25 @@ function vHandoff(){
       read-only view of her allergies, conditions, medication and recent results. No login, expires
       in an hour, and you can stop it at any time.</p>
     <div class="btns" style="margin-top:12px">
-      <button class="btn" onclick="mintHandoff()">Create a link</button></div>
+      <button class="btn" onclick="sendHandoff(false)">Send it to my WhatsApp</button>
+      <button class="btn" onclick="sendHandoff(true)">Send to the care circle</button>
+      <button class="btn" onclick="mintHandoff()">Show a QR instead</button></div>
   </div>`;
+}
+
+// The realistic path. A QR assumes someone is holding a laptop next to the
+// nurse; in the situation this exists for the family is asleep eleven time
+// zones away, so the link goes to the phone they already have.
+async function sendHandoff(toCareCircle){
+  S.handoff = {__working:true}; render();
+  try{
+    const q = toCareCircle ? "?to_care_circle=true" : "";
+    const r = await fetch(API + `/api/cases/${encodeURIComponent(S.caseId)}/handoff-link/send${q}`,
+      {method:"POST", headers:{Authorization:`Bearer ${S.token}`}});
+    const body = await r.json();
+    S.handoff = r.ok ? {...body, __sent:true} : {__error: body.detail || `HTTP ${r.status}`};
+  }catch(e){ S.handoff = {__error:String(e)}; }
+  render();
 }
 
 async function mintHandoff(){

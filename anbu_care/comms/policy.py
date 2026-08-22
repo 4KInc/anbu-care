@@ -79,6 +79,22 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "The itemised breakdown is here: {dashboard_url}",
         "params": ["parent_name", "total", "line_count"],
     },
+    "clinician_handoff_link": {
+        # LOGISTICS, and it must stay that way: this message carries a link and
+        # an instruction, never a finding. The allergies live behind the link,
+        # which is the whole point — the gate would block them travelling over
+        # WhatsApp, and a link is not the thing it points at.
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: if you are with {parent_name} at the hospital, or you "
+                "can reach whoever is, show the treating team this link.\n"
+                "{handoff_url}\n\n"
+                "It opens a read-only summary of her allergies, conditions, "
+                "medication and recent results. No login is needed. It stops "
+                "working in {expires_minutes} minutes and you can stop it sooner "
+                "from the dashboard.\n"
+                "Every time it is opened, that is recorded on her case.",
+        "params": ["parent_name", "handoff_url", "expires_minutes"],
+    },
     "urgent_family_alert": {
         "message_class": MessageClass.STATUS,
         # Written for one reader: the son or daughter who wakes at 2am to this.
