@@ -275,14 +275,34 @@ def compose_brief(case_id: str) -> ArrivalBrief:
             _from_receipt(submitted, "sla_deadline"),
         ))
 
+    # "Nothing outstanding" and "not yet known" are different answers, and the
+    # brief was giving the second when it had computed the first. But the
+    # negative is only meaningful once the thing that produces open items has
+    # actually run: before adjudication, an empty pending list means the claim
+    # has not been looked at, NOT that the insurer wants nothing. Reporting
+    # "nothing outstanding" there would be the omission guarantee inverted —
+    # reassurance derived from absence. So the definite answer is gated on the
+    # adjudication receipt, and it cites that receipt as its source.
     if not brief.pending:
-        brief.pending.append(_unknown_fact(
-            "Open items", "nothing on this case is recorded as pending"))
+        if adjudication is not None:
+            brief.pending.append(ArrivalFact(
+                label="Open items", value="Nothing outstanding", known=True,
+                source=_from_receipt(adjudication, "outcome"),
+            ))
+        else:
+            brief.pending.append(_unknown_fact(
+                "Open items", "nothing on this case is recorded as pending"))
 
     if not brief.bring_with_you:
-        brief.bring_with_you.append(_unknown_fact(
-            "Documents to bring",
-            "no outstanding document request is recorded on this case"))
+        if adjudication is not None:
+            brief.bring_with_you.append(ArrivalFact(
+                label="Documents to bring", value="Nothing requested", known=True,
+                source=_from_receipt(adjudication, "outcome"),
+            ))
+        else:
+            brief.bring_with_you.append(_unknown_fact(
+                "Documents to bring",
+                "no outstanding document request is recorded on this case"))
 
     # ---- who to talk to ----------------------------------------------------
     if profile is not None and profile.family_contacts:
