@@ -92,6 +92,11 @@ This matters more than any feature list, so it comes first.
 - **Clinician notes, typed or spoken.** A voice note is transcribed by Gemini
   and shown back for confirmation; **an unconfirmed transcript writes nothing**.
   The receipt carries the hash of the confirmed text, never the words.
+- **Bill capture.** A family member photographs a hospital bill over the same
+  WhatsApp thread, Gemini reads the line items, and the existing sub-limit rules
+  produce an itemised covered / not-covered / you-pay split with a running total
+  across the stay. The photograph is kept privately so every number stays
+  checkable against the paper it came from.
 - **A decision trace**: the chain rendered as the sequence a person can follow —
   the counterparty raising a query, the agent gathering what was asked for, the
   re-adjudication that followed. One step per receipt, so the view cannot
@@ -175,6 +180,20 @@ This matters more than any feature list, so it comes first.
   recording it rather than by inferring it.
 - **Nothing here is a hospital integration.** No EHR is connected, nobody writes
   back, and the clinician view says so on its own face.
+- **A bill split is an estimate, not a settlement.** It comes from the policy
+  rules, not from the insurer, who has not been asked and does not know this
+  system exists. Every field is named `estimated_`, and `settled_inr` stays
+  None until a real adjudication says otherwise — because nobody having decided
+  is a different thing from nothing being owed. On a reimbursement claim the
+  family pays first and is repaid later, so even a correct estimate is not
+  money they hold.
+- **An extracted amount is a reading, not a fact.** A model that reads ₹96,000
+  where the paper says ₹9,600 produces a number that looks exactly as
+  authoritative as a correct one. So the lines are checked against the bill's
+  own printed total, a mismatch is flagged rather than reconciled, and the
+  image is retained — credentialed — so the figure can be checked. A bill whose
+  photograph could not be stored is refused outright rather than recorded as
+  unverifiable numbers.
 
 Every market figure quoted in the project brief is directional and unverified.
 See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
@@ -185,7 +204,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 473 tests, no GCP or model access needed
+make test             # 499 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -339,7 +358,7 @@ anbu_care/
 scripts/
   demo_spine.py         end-to-end run, no model in the loop
   verify_stack.py       confirms Vertex / Firestore / Pub/Sub are reachable
-tests/                  473 tests, no GCP or model access needed
+tests/                  499 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -371,6 +390,8 @@ Beyond ADK's own agent API:
 | `GET /api/cases/{id}/trace` | The decision sequence — one step per receipt, nothing synthesised |
 | `POST /api/cases/{id}/handoff-link` | Mint an emergency-access link for a treating clinician |
 | `POST /api/cases/{id}/handoff-link/revoke` | Kill every outstanding link for the case |
+| `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
+| `GET /api/cases/{id}/bills/{bill_id}/image` | Short-lived signed URL for the source photograph |
 | `GET /handoff/{token}` | The clinician's read-only summary. No login, by design |
 | `POST /handoff/{token}/note/draft` | Transcribe a spoken note for review. Writes nothing |
 | `POST /handoff/{token}/note/confirm` | Record a confirmed note |
