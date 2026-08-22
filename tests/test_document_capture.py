@@ -447,3 +447,23 @@ def test_the_baseline_shows_medication():
     page = (pathlib.Path(__file__).resolve().parents[1]
             / "anbu_care" / "webui" / "index.html").read_text()
     assert 'row("Medication"' in page
+
+
+def test_the_record_view_does_not_explain_itself_to_a_judge():
+    """Copy that argues for the architecture belongs on the audit tab.
+
+    The record is what a family reads when someone is in hospital. A panel
+    explaining why the WhatsApp gate can refuse lab values, and a counter
+    labelled "ground truth", are addressed to a reviewer rather than to them.
+    """
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+    record = page[page.index("function vRecord()"):page.index("function openBillPhoto")]
+
+    for pitch in ("This is the clinical view", "ground truth",
+                  "not from what an agent said", "server-enforced"):
+        assert pitch not in record, f"the record view still pitches: {pitch}"
+    # The state chip stays: it labels the view, it does not argue for it.
+    assert "Credentialed access" in record
+    # And nothing in this view speaks the system's vocabulary at the reader.
+    assert "ingested" not in record

@@ -631,13 +631,6 @@ function vRecord(){
   return `${synthOnce()}
   ${title("Health record","Parsed from uploaded documents. New readings are compared with the baseline.")}
   <span class="lock">🔒 Credentialed access</span>
-  <div class="strip note">This is the clinical view. It is the reason the WhatsApp gate can refuse to
-    send lab values — they live here, behind a server-enforced credential.</div>
-  <div class="card">
-    <h2 class="mini">Documents stored — ground truth</h2>
-    <div class="big num">${docs.length}</div>
-    <p class="mute" style="margin-top:6px">read back from the record, not from what an agent said</p>
-  </div>
   ${vHandoff()}
   <div class="card"><h2 class="mini">Baseline</h2>
     ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
@@ -648,7 +641,7 @@ function vRecord(){
         : unknown("none recorded"))}
   </div>
   <div class="sec">Documents on file</div>
-  ${docs.length===0?`<div class="card"><p>${unknown("no documents have been ingested for this parent")}</p></div>`:""}
+  ${docs.length===0?`<div class="card"><p>${unknown("no documents have been added yet")}</p></div>`:""}
   ${docs.map(d=>{
     // If anything in this document is new and abnormal, the line reads as a
     // warning even when other values were stable — a mixed result must not be
