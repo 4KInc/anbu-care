@@ -295,6 +295,43 @@ of the typed path.
 Reuses `transcribe.transcribe()` unchanged. The confirmation gate is new code on
 a new path and does not touch the emergency wellbeing lane.
 
+### B2. Fields a clinician note must be able to update
+
+Raised 2026-08-22: a discharge date is unknown at admission, and once the doctor
+says it, the brief should show it. Correct, and there is no path today.
+
+`discharged_on` lives only on `ClaimPacket` (`schemas.py:226`) and is written
+only by `assemble_claim_packet` (`insurer_tools.py:37`, `:74`). The composer
+reads it from the stored packet and nowhere else (`composer.py:198`). So the
+field cannot move until a claim packet is assembled, which in a real stay
+happens long after the doctor has said when she is going home.
+
+**The constraint that decides the design.** `discharged_on` is not display-only.
+`adjudicator.py:156` feeds it to `stay_days()`, which multiplies the per-day
+sub-limit in `_cap_for()`, which sets `disallowed_inr` — **the out-of-pocket
+figure the family is shown**. A date that reaches the packet changes what the
+family is told they owe.
+
+So a spoken discharge date must be **two different facts, kept apart**:
+
+| | Expected discharge | Recorded discharge |
+| --- | --- | --- |
+| Source | confirmed clinician note | claim packet |
+| Provenance shown | "told by Dr X, 14:37, via voice note" | "packet.discharged_on" |
+| Reaches the adjudicator | **never** | yes |
+| Affects money | no | yes |
+
+A clinician's expectation is information for the family and must never silently
+become an input to a coverage calculation. If a misheard "the 22nd" for "the
+2nd" changed the sub-limit day count, a transcription error would become a rupee
+figure — the exact failure the confirmation gate exists to prevent, arriving
+through a side door.
+
+Implementation, when Stream B is approved: the composer prefers a confirmed
+clinician note for **Expected discharge**, falls back to the packet, and labels
+which one it used. `assemble_claim_packet` keeps taking its date from the
+document record, never from a note.
+
 ---
 
 ## Stream C — bill capture *(largest; premises corrected)*
