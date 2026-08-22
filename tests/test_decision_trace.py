@@ -302,3 +302,55 @@ def test_an_unknown_case_is_a_404_not_an_empty_trace(client):
 
     assert client.get("/api/cases/case-does-not-exist/trace",
                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).status_code == 404
+
+
+# =========================================================================
+# THE GATHER IS NOW A REAL STEP
+# =========================================================================
+
+
+def test_the_fork_shows_the_gather_from_a_real_receipt(parent_id):
+    """gathered@ was empty on the deployed path because nothing recorded it.
+
+    Now it points at claim.query_answered — and it is still a real receipt, so
+    synthesized stays zero. That is the distinction the whole view rests on:
+    the step became visible because it started being recorded, not because the
+    renderer started inferring it.
+    """
+    from anbu_care.tools import insurer_tools as it
+
+    case_id = triage_tools.run_triage(
+        parent_id=parent_id, symptoms=["chest pain"], free_text="",
+        reported_by="caregiver", lat=0.0, lon=0.0, case_id="",
+    )["case_id"]
+    pkt = it.assemble_claim_packet(
+        case_id=case_id, parent_id=parent_id, admission_summary="Cardiac ICU.",
+        itemized_bills_inr={"cardiac_icu_room": 96_000}, diagnostics=["ECG"],
+        attached_document_ids=[], admitted_on="2026-08-19", discharged_on="2026-08-22",
+    )
+    submitted = it.submit_claim(case_id, pkt["packet"]["packet_id"], "reimbursement")
+
+    doc = onboarding_tools.ingest_document(
+        parent_id, kind="discharge_summary", source_filename="d.pdf",
+        summary="Admitted 19 Aug, discharged 22 Aug.", observations=[],
+    )["document"]["document_id"]
+    it.respond_to_query(case_id, submitted["submission"]["submission_id"], [doc])
+
+    trace = compose_trace(case_id)
+    fork = trace.query_fork
+
+    assert fork["gathered_at_seqs"], "the gather is still invisible"
+
+    gather_seq = fork["gathered_at_seqs"][0]
+    step = next(s for s in trace.steps if s.seq == gather_seq)
+    assert step.kind == "claim.query_answered"
+    assert "attached" in step.detail
+    assert "discharge summary" in step.detail
+
+    # queried -> gathered -> resolved, in that order, all real receipts.
+    assert fork["queried_at_seq"] < gather_seq < fork["resolved_at_seq"]
+
+    # The guarantee is untouched by the new kind.
+    assert trace.synthesized_steps == 0
+    assert len(trace.steps) == len(service.get_chain(case_id).receipts)
+    assert trace.chain_verified is True

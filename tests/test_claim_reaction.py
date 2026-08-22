@@ -268,3 +268,94 @@ def test_the_order_fix_did_not_change_the_adjudication(queried):
                     if r.kind == "claim.adjudicated")
     assert on_chain.payload["outcome"] == adjudication["outcome"]
     assert on_chain.payload["missing_documents"] == adjudication["missing_documents"]
+
+
+# ---- the gather is a step, and steps are receipts -------------------------
+
+
+def test_answering_a_query_records_what_was_gathered(queried):
+    """The middle of the flagship beat used to leave no trace.
+
+    The chain jumped from "the counterparty asked for a discharge summary" to
+    "the counterparty answered", with the agent locating and attaching that
+    document in between and recording nothing. A decision that is real and
+    invisible is the worst combination for a system arguing its decisions are
+    checkable.
+    """
+    case_id, parent_id, submitted = queried
+    doc_id = _add_discharge_summary(parent_id)
+
+    insurer_tools.respond_to_query(
+        case_id, submitted["submission"]["submission_id"], [doc_id])
+
+    answered = [r for r in service.get_chain(case_id).receipts
+                if r.kind == "claim.query_answered"]
+    assert len(answered) == 1
+
+    payload = answered[0].payload
+    assert payload["attached_document_ids"] == [doc_id]
+    assert payload["attached_kinds"] == ["discharge_summary"]
+    assert payload["found_nothing"] is False
+    # Read back from the QUERY it answers, not restated by the caller.
+    assert "discharge_summary" in payload["asked_for"]
+    assert payload["submission_id"] == submitted["submission"]["submission_id"]
+
+    assert service.verify_case(case_id).ok
+
+
+def test_the_gather_receipt_precedes_the_readjudication_it_triggered(queried):
+    """Same causal discipline as submit-before-adjudicate."""
+    case_id, parent_id, submitted = queried
+    doc_id = _add_discharge_summary(parent_id)
+    insurer_tools.respond_to_query(
+        case_id, submitted["submission"]["submission_id"], [doc_id])
+
+    receipts = service.get_chain(case_id).receipts
+    gather = next(r for r in receipts if r.kind == "claim.query_answered")
+    later = [r for r in receipts if r.kind == "claim.adjudicated" and r.seq > gather.seq]
+
+    assert later, "no adjudication followed the gather"
+    assert gather.seq < later[0].seq
+
+
+def test_a_gather_that_found_nothing_says_so_rather_than_inventing_an_attach(queried):
+    """A gather that came back empty is still a real step."""
+    case_id, _, submitted = queried
+
+    insurer_tools.respond_to_query(
+        case_id, submitted["submission"]["submission_id"], [])
+
+    answered = next(r for r in service.get_chain(case_id).receipts
+                    if r.kind == "claim.query_answered")
+    assert answered.payload["attached_document_ids"] == []
+    assert answered.payload["found_nothing"] is True
+    assert answered.payload["attached_kinds"] == []
+
+
+def test_the_gather_receipt_carries_ids_not_clinical_content(queried):
+    """Provenance of an action, not a second copy of the record."""
+    case_id, parent_id, submitted = queried
+    doc_id = _add_discharge_summary(parent_id)
+    insurer_tools.respond_to_query(
+        case_id, submitted["submission"]["submission_id"], [doc_id])
+
+    payload = str(next(r for r in service.get_chain(case_id).receipts
+                       if r.kind == "claim.query_answered").payload)
+
+    # The document's own summary text must not ride along on the chain.
+    assert "Admitted 19 Aug" not in payload
+    assert "Rajeswari" not in payload
+
+
+def test_the_gather_receipt_did_not_change_the_adjudication(queried):
+    """Additive only: the verdict is what it was before this receipt existed."""
+    case_id, parent_id, submitted = queried
+    doc_id = _add_discharge_summary(parent_id)
+
+    responded = insurer_tools.respond_to_query(
+        case_id, submitted["submission"]["submission_id"], [doc_id])
+    adjudication = responded["adjudication"]
+
+    assert adjudication["outcome"] == AdjudicationOutcome.PARTIAL.value
+    assert adjudication["total_disallowed_inr"] == 66_000
+    assert adjudication["simulated"] is True

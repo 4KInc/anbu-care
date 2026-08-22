@@ -443,10 +443,56 @@ def respond_to_query(
                     "Do not describe a document that is not on file as though it were.",
         }
 
-    for doc_id in attach_document_ids:
-        if doc_id not in packet.attached_document_ids:
-            packet.attached_document_ids.append(doc_id)
+    newly_attached = [doc_id for doc_id in attach_document_ids
+                      if doc_id not in packet.attached_document_ids]
+    packet.attached_document_ids.extend(newly_attached)
     service.save_packet(packet)
+
+    # What was asked for, read back from the QUERY this answers rather than
+    # restated by the caller — so the receipt cannot claim to have satisfied a
+    # request that was never made.
+    asked_for: list[str] = []
+    for receipt in reversed(service.get_chain(case_id).receipts):
+        if (receipt.kind == "claim.adjudicated"
+                and receipt.payload.get("submission_id") == submission.submission_id
+                and receipt.payload.get("outcome") == AdjudicationOutcome.QUERY.value):
+            asked_for = list(receipt.payload.get("missing_documents") or [])
+            break
+
+    # The gather itself, recorded before the re-adjudication it triggers.
+    #
+    # Without this the chain jumped straight from "the counterparty asked for a
+    # discharge summary" to "the counterparty answered", and the step in
+    # between — the agent locating a document and attaching it — left no trace
+    # at all. The decision was real and invisible, which is the worst
+    # combination for a system whose argument is that its decisions are
+    # checkable.
+    #
+    # Ids and kinds only, never the contents of what was attached: this is a
+    # provenance record of an action, not a second copy of the record.
+    service.append_receipt(
+        case_id,
+        kind="claim.query_answered",
+        actor="insurer_liaison_agent",
+        payload={
+            "submission_id": submission.submission_id,
+            "packet_id": packet.packet_id,
+            "asked_for": asked_for,
+            "attached_document_ids": newly_attached,
+            "attached_kinds": sorted({stored[d].kind.value for d in newly_attached}),
+            "already_attached_document_ids": [
+                d for d in attach_document_ids if d not in newly_attached
+            ],
+            # A gather that found nothing is still a real step, and saying so is
+            # the whole point. Never a phantom attach to make the story tidy.
+            "found_nothing": not newly_attached,
+            "note": (
+                "The documents attached in answer to the query. This records "
+                "what was gathered, not whether it is enough — that verdict is "
+                "the adjudicator's, and it is the next receipt."
+            ),
+        },
+    )
 
     result = _run_adjudication(case_id, submission, packet)
 

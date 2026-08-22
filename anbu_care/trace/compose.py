@@ -45,6 +45,7 @@ _WHAT = {
     "claim.packet_assembled": "A claim packet was assembled",
     "claim.submitted": "The claim was submitted",
     "claim.adjudicated": "The counterparty answered",
+    "claim.query_answered": "The agent gathered what was asked for",
     "claim.stage_changed": "The claim moved stage",
     "wellbeing.recorded": "A check-in was recorded",
     "wellbeing.escalated": "The check-in was escalated",
@@ -105,6 +106,16 @@ def _detail(receipt: Receipt) -> str:
             amount = f"INR {total:,}" if isinstance(total, int) else "an amount"
             return f"{amount} claimed, {docs} document(s) attached"
 
+        case "claim.query_answered":
+            attached = p.get("attached_document_ids") or []
+            kinds = p.get("attached_kinds") or []
+            if p.get("found_nothing"):
+                asked = ", ".join(a.replace("_", " ") for a in (p.get("asked_for") or []))
+                return f"nothing on file satisfied the request for {asked}" if asked else \
+                       "nothing was found to attach"
+            what = ", ".join(k.replace("_", " ") for k in kinds) or "document"
+            return f"attached {len(attached)} {what}"
+
         case "claim.submitted":
             return f"{p.get('sla_kind', 'claim')}, SLA to {p.get('sla_deadline') or 'unset'}"
 
@@ -138,8 +149,8 @@ def _fork(receipts: list[Receipt]) -> dict | None:
     # What happened after the query, in the order it happened.
     after = [r for r in receipts if r.seq > first_query.seq]
     gathered = [r.seq for r in after
-                if r.kind in {"evidence.assessed", "evidence.enriched",
-                              "claim.packet_assembled"}]
+                if r.kind in {"claim.query_answered", "evidence.assessed",
+                              "evidence.enriched", "claim.packet_assembled"}]
     resolved = next((r for r in after if r.kind == "claim.adjudicated"
                      and r.payload.get("outcome") != "QUERY"), None)
 
