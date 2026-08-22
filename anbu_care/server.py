@@ -214,6 +214,13 @@ def demo_seed() -> dict[str, Any]:
             consent.INBOUND_WELLBEING, consent.OUTBOUND_NOTIFY,
         ],
     )
+    # The parent's own agreement that her record may be shown to a treating
+    # clinician. Recorded on HER profile, separately from the six purposes
+    # above, because those are the son's agreements about his own traffic and
+    # this is hers about her own data. Without it the handoff link is refused,
+    # which is correct but makes a seeded demo look broken.
+    onboarding_tools.record_emergency_disclosure_consent(parent_id)
+
     return {
         "status": "seeded",
         "parent_id": parent_id,
@@ -415,7 +422,8 @@ def case_verify(case_id: str) -> dict[str, Any]:
 
 @app.post("/api/cases/{case_id}/handoff-link")
 def mint_handoff_link(
-    case_id: str, _session: str = Depends(require_family_session)
+    case_id: str, allow_notes: bool = False,
+    _session: str = Depends(require_family_session)
 ) -> dict[str, Any]:
     """Mint an emergency-access link for the treating team.
 
@@ -426,7 +434,7 @@ def mint_handoff_link(
     from anbu_care.handoff import access
 
     try:
-        token = access.mint(case_id)
+        token = access.mint(case_id, allow_notes=allow_notes)
     except access.HandoffDenied as denied:
         raise HTTPException(status_code=409, detail=str(denied)) from None
 
@@ -439,7 +447,10 @@ def mint_handoff_link(
         # page, and survives a hospital network that blocks everything.
         "qr_svg": _qr_svg(path),
         "expires_in_seconds": access.HANDOFF_TTL_SECONDS,
-        "grants": "the emergency clinical summary for this case, read only",
+        "grants": ("the emergency clinical summary for this case, plus leaving a note"
+                   if allow_notes else
+                   "the emergency clinical summary for this case, read only"),
+        "may_write_note": allow_notes,
         "does_not_grant": ["/api/cases/{id}/trail", "/api/parents/{id}", "any other case"],
     }
 
@@ -480,6 +491,57 @@ def handoff_page(token: str) -> HTMLResponse:
 
     composed = handoff_summary.compose_emergency_summary(grant.parent_id)
     return HTMLResponse(_handoff_html(composed, grant))
+
+
+class NoteConfirmRequest(BaseModel):
+    text: str
+    # Present only when the text came out of the transcriber. Without it the
+    # note is still recorded — as typed, which is what it would be.
+    ticket: str = ""
+    recorded_by: str = ""
+
+
+@app.post("/handoff/{token}/note/draft")
+async def handoff_note_draft(token: str, request: Request) -> dict[str, Any]:
+    """Transcribe a spoken note for review. Writes nothing.
+
+    The response is a draft and a ticket. Until `confirm` is called with them,
+    no receipt exists, no brief field moves, and the record is untouched.
+    """
+    from anbu_care.handoff import access, notes
+
+    try:
+        grant = access.resolve(token)
+        audio = await request.body()
+        draft = notes.draft_from_voice(
+            grant, audio,
+            mime_type=request.headers.get("content-type", "audio/ogg").split(";")[0],
+        )
+    except access.HandoffDenied as denied:
+        raise HTTPException(status_code=403, detail=str(denied)) from None
+
+    return {
+        "status": "draft",
+        "written": False,
+        "text": draft.text,
+        "ticket": draft.ticket,
+        "engine": draft.engine,
+        "next": "check the words, correct anything wrong, then POST .../note/confirm",
+        "warning": "Nothing has been recorded yet. An unconfirmed transcript is discarded.",
+    }
+
+
+@app.post("/handoff/{token}/note/confirm")
+def handoff_note_confirm(token: str, body: NoteConfirmRequest) -> dict[str, Any]:
+    """Record a confirmed note. The only write a handoff link can perform."""
+    from anbu_care.handoff import access, notes
+
+    try:
+        grant = access.resolve(token)
+        return notes.confirm(grant, body.text, ticket=body.ticket,
+                             recorded_by=body.recorded_by)
+    except access.HandoffDenied as denied:
+        raise HTTPException(status_code=403, detail=str(denied)) from None
 
 
 @app.post("/api/cases/{case_id}/notify-claim")
