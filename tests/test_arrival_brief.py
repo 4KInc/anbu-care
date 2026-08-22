@@ -356,3 +356,92 @@ def test_a_priced_partial_does_report_the_figure(full_parent):
     by_label = {f.label: f for f in compose_brief(case_id).facts}
     assert by_label["Likely out of pocket"].known is True
     assert "66,000" in by_label["Likely out of pocket"].value
+
+
+# =========================================================================
+# DEFINITE NEGATIVES — the opposite failure from fabrication
+# =========================================================================
+#
+# "Nothing outstanding" and "not yet known" are different claims. Saying the
+# second when you computed the first understates what the record holds. Saying
+# the first when you computed the second is reassurance derived from absence,
+# which is the omission guarantee running backwards and is far worse. Both
+# directions are pinned here.
+
+
+def test_unadjudicated_case_says_not_yet_known_never_nothing_outstanding(full_parent):
+    """Before adjudication, an empty pending list means NOT LOOKED AT.
+
+    This is the inversion that matters. A family reading "nothing outstanding"
+    on a claim the insurer has not opened would be reassured by the absence of
+    a check, not by its result.
+    """
+    triage = triage_tools.run_triage(
+        parent_id=full_parent, symptoms=["chest pain"], free_text="",
+        reported_by="neighbour", lat=0.0, lon=0.0, case_id="",
+    )
+    brief = compose_brief(triage["case_id"])
+
+    pending = {f.label: f for f in brief.pending}
+    bring = {f.label: f for f in brief.bring_with_you}
+
+    assert pending["Open items"].known is False
+    assert pending["Open items"].value is None
+    assert bring["Documents to bring"].known is False
+    assert bring["Documents to bring"].value is None
+
+    rendered = render_brief_text(brief)
+    assert "Nothing outstanding" not in rendered
+    assert "Nothing requested" not in rendered
+
+
+def test_holed_state_still_degrades_to_unknown_everywhere(bare_parent):
+    """The adversarial-omission run must be untouched by definite negatives."""
+    case_id = service.open_case(bare_parent).case_id
+    brief = compose_brief(case_id)
+
+    assert all(not f.known for f in brief.pending)
+    assert all(not f.known for f in brief.bring_with_you)
+    assert "Nothing outstanding" not in render_brief_text(brief)
+
+
+def test_adjudicated_clean_claim_reports_the_negative_it_computed(full_parent):
+    """Once adjudication has run and raised no query, the answer is known."""
+    triage = triage_tools.run_triage(
+        parent_id=full_parent, symptoms=["chest pain"], free_text="",
+        reported_by="neighbour", lat=0.0, lon=0.0, case_id="",
+    )
+    case_id = triage["case_id"]
+    doc = onboarding_tools.ingest_document(
+        full_parent, kind="discharge_summary", source_filename="d.pdf",
+        summary="Discharged 22 Aug.", observations=[],
+    )["document"]["document_id"]
+    pkt = insurer_tools.assemble_claim_packet(
+        case_id=case_id, parent_id=full_parent, admission_summary="ICU",
+        itemized_bills_inr={"cardiac_icu_room": 96_000}, diagnostics=["ECG"],
+        attached_document_ids=[doc],
+        admitted_on="2026-08-19", discharged_on="2026-08-22",
+    )
+    insurer_tools.submit_claim(case_id, pkt["packet"]["packet_id"], "reimbursement")
+
+    brief = compose_brief(case_id)
+    bring = {f.label: f for f in brief.bring_with_you}
+
+    # The insurer raised no document request, and that is a computed answer.
+    assert bring["Documents to bring"].known is True
+    assert bring["Documents to bring"].value == "Nothing requested"
+    # And it cites the receipt that establishes it, not thin air.
+    assert bring["Documents to bring"].source.kind == "receipt"
+    assert bring["Documents to bring"].source.receipt_kind == "claim.adjudicated"
+
+
+def test_a_definite_negative_never_counts_as_an_unknown(full_parent):
+    """The count must drop because state exists, not because wording changed."""
+    triage = triage_tools.run_triage(
+        parent_id=full_parent, symptoms=["chest pain"], free_text="",
+        reported_by="neighbour", lat=0.0, lon=0.0, case_id="",
+    )
+    before = compose_brief(triage["case_id"])
+    unknown_labels = {f.label for f in _all_facts(before) if not f.known}
+    assert "Open items" in unknown_labels
+    assert "Documents to bring" in unknown_labels
