@@ -68,6 +68,13 @@ class ParentProfile(BaseModel):
     # The parent's own WhatsApp number, if they have one. Only used to label a
     # check-in as coming from the registered parent number.
     whatsapp_e164: str | None = None
+    # Consent to DISCLOSE this record to a third party, held by the parent
+    # rather than by a family member, because it is her data being shown. A son
+    # agreeing to receive claim updates has not agreed that a stranger may read
+    # her allergies — those are different people agreeing to different things,
+    # and storing them in the same place is how that distinction gets lost.
+    # Purpose -> when it was granted, same shape as FamilyContact.consents.
+    disclosure_consents: dict[str, datetime] = Field(default_factory=dict)
     # Her local time, so an alert can say whether a message arrived at 2am or
     # at lunchtime. Set at onboarding rather than guessed from coordinates.
     timezone: str = "Asia/Kolkata"
@@ -513,6 +520,12 @@ class Case(BaseModel):
     opened_at: datetime = Field(default_factory=utcnow)
     closed_at: datetime | None = None
     stage: str = "intake"
+    # Bumped to revoke every outstanding emergency-handoff link at once. The
+    # epoch is signed into each token, so incrementing it invalidates them all
+    # without storing a list of what was ever issued. A family that wants to
+    # stop sharing wants to stop sharing — not to pick which of several links
+    # they half-remember sending should die.
+    handoff_epoch: int = 0
     triage_decision_id: str | None = None
     packet_id: str | None = None
     submission_id: str | None = None

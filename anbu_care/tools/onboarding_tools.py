@@ -161,6 +161,43 @@ def record_family_contact(
     return {"status": "recorded", "contact": contact.model_dump(mode="json")}
 
 
+def record_emergency_disclosure_consent(parent_id: str, granted: bool = True) -> dict[str, Any]:
+    """Record whether the PARENT agrees her record may be shown to a treating team.
+
+    Held on her profile, not on a family member's contact record, because it is
+    her data being disclosed. A son consenting to receive claim updates has not
+    agreed that a stranger in a corridor may read her allergies.
+
+    Args:
+        parent_id: Whose record this governs.
+        granted: True to grant, False to withdraw. Withdrawing takes effect on
+            the next link mint; already-issued links are killed by revoking the
+            case's handoff links, which is a separate and immediate action.
+
+    Returns:
+        The purpose and whether it is now held.
+    """
+    from anbu_care.comms import consent as consent_purposes
+
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return {"status": "unknown_parent", "parent_id": parent_id}
+
+    purpose = consent_purposes.EMERGENCY_CLINICAL_SHARE
+    if granted:
+        profile.disclosure_consents[purpose] = service._now()
+    else:
+        profile.disclosure_consents.pop(purpose, None)
+    service.save_profile(profile)
+
+    return {
+        "status": "recorded",
+        "purpose": purpose,
+        "granted": granted,
+        "means": consent_purposes.describe(purpose),
+    }
+
+
 def ingest_document(
     parent_id: str,
     kind: str,

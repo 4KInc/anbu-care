@@ -35,11 +35,25 @@ OUTBOUND_NOTIFY = "outbound_notify"
 # with what they may receive.
 INBOUND_WELLBEING = "inbound_wellbeing"
 
+# ---- disclosure: showing the parent's OWN RECORD to a third party --------
+# A third direction, and it needs to be one. The two above are both about
+# messages to or from a person. This is about handing someone the record
+# itself, which is a different act with a different subject: the others are
+# agreements held by a family member about their own traffic, and this one is
+# the PARENT's agreement about her own data.
+#
+# It is deliberately not reachable from any outbound message purpose. Being
+# willing to receive claim updates is not agreeing that a stranger in a
+# hospital corridor may read your allergies, and if those two ever share a
+# flag the collapse will be invisible in exactly the way status_updates was.
+EMERGENCY_CLINICAL_SHARE = "emergency_clinical_share"
+
 OUTBOUND_PURPOSES = frozenset({
     ADMISSION_ALERTS, STATUS_UPDATES, BILLING_UPDATES, CLAIM_UPDATES, OUTBOUND_NOTIFY,
 })
 INBOUND_PURPOSES = frozenset({INBOUND_WELLBEING})
-ALL_PURPOSES = OUTBOUND_PURPOSES | INBOUND_PURPOSES
+DISCLOSURE_PURPOSES = frozenset({EMERGENCY_CLINICAL_SHARE})
+ALL_PURPOSES = OUTBOUND_PURPOSES | INBOUND_PURPOSES | DISCLOSURE_PURPOSES
 
 
 def describe(purpose: str) -> str:
@@ -51,4 +65,8 @@ def describe(purpose: str) -> str:
         CLAIM_UPDATES: "receive insurance claim updates",
         OUTBOUND_NOTIFY: "be notified, as a care-circle contact, where your parent was taken",
         INBOUND_WELLBEING: "send wellbeing check-ins about your parent",
+        EMERGENCY_CLINICAL_SHARE: (
+            "allow your allergies, conditions, medication and recent results to "
+            "be shown to a treating clinician in an emergency"
+        ),
     }.get(purpose, purpose)
