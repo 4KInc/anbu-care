@@ -409,6 +409,29 @@ def case_trail(case_id: str, _session: str = Depends(require_case_access)) -> di
     return result
 
 
+@app.get("/api/cases/{case_id}/trace")
+def case_trace(case_id: str, _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """The decision sequence, as the chain recorded it.
+
+    Credentialed, because the steps carry case content. The integrity half —
+    `/verify` — stays public, so a reader can watch the agent decide here and
+    check that it did over there, without either view leaking the other's
+    property.
+    """
+    from anbu_care.trace import compose_trace
+
+    if service.load_case(case_id) is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+
+    trace = compose_trace(case_id)
+    return {
+        **trace.model_dump(mode="json"),
+        # The pairing this view exists to make: autonomy you can check.
+        "verify_url": f"/api/cases/{case_id}/verify",
+        "verify_is_public": True,
+    }
+
+
 @app.get("/api/cases/{case_id}/verify")
 def case_verify(case_id: str) -> dict[str, Any]:
     """Independently verify a case's chain.

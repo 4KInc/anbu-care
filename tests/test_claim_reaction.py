@@ -214,3 +214,57 @@ def test_sla_breach_still_reported_after_adjudication(queried):
     submission.sla_deadline = datetime.now(UTC) - timedelta(minutes=5)
     service.save_submission(submission)
     assert insurer_tools.check_claim_sla(case_id, submission.submission_id)["sla"]["breached"] is True
+
+
+# ---- the chain records causality, not just contents ----------------------
+
+
+def test_a_claim_is_submitted_before_it_is_adjudicated(queried):
+    """The chain must not say the insurer replied before the claim was sent.
+
+    These two receipts are written by the same call, so their order is decided
+    by us rather than by the world, and for a while we wrote it backwards. That
+    was invisible until the trace view rendered the chain as a sequence a human
+    reads top to bottom, where it read as "answered, then asked".
+
+    Only the sequence position was ever wrong — the adjudication is computed
+    from the same packet either way. But a provenance chain whose whole claim is
+    "this is what happened, in order" cannot be out of order.
+    """
+    case_id, _, _ = queried
+    receipts = service.get_chain(case_id).receipts
+
+    submitted = [r for r in receipts if r.kind == "claim.submitted"]
+    adjudicated = [r for r in receipts if r.kind == "claim.adjudicated"]
+    assert submitted and adjudicated
+
+    # Pair them by submission, so a second round cannot mask a regression in
+    # the first by being globally later.
+    for adj in adjudicated:
+        submission_id = adj.payload.get("submission_id")
+        its_submission = next(
+            (r for r in submitted if r.payload.get("submission_id") == submission_id), None
+        )
+        assert its_submission is not None, "an adjudication with no submission receipt"
+        assert its_submission.seq < adj.seq, (
+            f"claim.adjudicated (seq {adj.seq}) precedes its own claim.submitted "
+            f"(seq {its_submission.seq}) — the chain claims the insurer replied "
+            f"before the claim was sent"
+        )
+
+    assert service.verify_case(case_id).ok
+
+
+def test_the_order_fix_did_not_change_the_adjudication(queried):
+    """Guard on the fix: only the sequence position moved."""
+    case_id, _, submission = queried
+    adjudication = submission["adjudication"]
+
+    assert adjudication["outcome"] == AdjudicationOutcome.QUERY.value
+    assert "discharge_summary" in adjudication["missing_documents"]
+    assert adjudication["simulated"] is True
+
+    on_chain = next(r for r in service.get_chain(case_id).receipts
+                    if r.kind == "claim.adjudicated")
+    assert on_chain.payload["outcome"] == adjudication["outcome"]
+    assert on_chain.payload["missing_documents"] == adjudication["missing_documents"]
