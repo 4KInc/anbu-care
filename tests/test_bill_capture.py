@@ -778,3 +778,56 @@ def test_a_claim_packet_still_overrides_every_bill(case_id, parent_id, monkeypat
     estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
     assert "from the claim packet" in estimate.basis
     assert estimate.lines[0].estimated_covered_inr == 30_000     # 3 days, not 1
+
+
+def test_the_bill_image_route_is_credentialed_and_the_link_token_works(
+    client, case_id, parent_id, monkeypatch
+):
+    """The photograph link 401'd because an anchor carries no credential.
+
+    The endpoint was right to refuse. The dashboard was wrong to point a plain
+    href at it: an <a> sends no bearer token and no signed link parameters, so
+    "open the photograph" reliably produced a 401 page. It is fetched through
+    the same authenticated path as every other credentialed read now, and this
+    pins that BOTH ways of holding a credential reach it.
+    """
+    from anbu_care.comms import storage as gcs
+    from anbu_care.webauth import DEMO_TOKEN, make_link_token
+
+    _reads(monkeypatch, [ICU], stated=96_000)
+    bill = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    monkeypatch.setattr(gcs, "signed_url", lambda obj: StoredArtifact(
+        stored=True, url="https://signed.example/photo", object_name=obj,
+        detail="stub", expires_in_seconds=900))
+
+    path = f"/api/cases/{case_id}/bills/{bill.bill_id}/image"
+
+    # No credential at all: refused, and the refusal explains itself.
+    denied = client.get(path)
+    assert denied.status_code == 401
+    assert "family session" in denied.json()["detail"]
+
+    # A family session reaches it.
+    with_session = client.get(path, headers={"Authorization": f"Bearer {DEMO_TOKEN}"})
+    assert with_session.status_code == 200
+    assert with_session.json()["url"] == "https://signed.example/photo"
+
+    # And so does the signed link a family member was sent at 2am, which is the
+    # credential they will actually be holding when they tap through.
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-link-secret")
+    token = make_link_token(parent_id, case_id)
+    if token:
+        via_link = client.get(f"{path}?t={token}&case={case_id}")
+        assert via_link.status_code == 200
+
+
+def test_the_bills_api_exposes_the_bill_id_the_link_needs(client, case_id, parent_id, monkeypatch):
+    """The client builds the image URL from bill_id, so it has to be served."""
+    from anbu_care.webauth import DEMO_TOKEN
+
+    _reads(monkeypatch, [ICU], stated=96_000)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    body = client.get(f"/api/cases/{case_id}/bills",
+                      headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+    assert body["bills"][0]["bill_id"]

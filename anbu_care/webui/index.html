@@ -626,6 +626,29 @@ function vRecord(){
     </div>`;}).join("")}`;
 }
 
+// The photograph sits behind the credential, so a plain href cannot reach it —
+// an anchor carries no bearer token and no signed link parameters, and the
+// endpoint correctly answered 401 every time. Fetch it the way every other
+// credentialed read is fetched, then send the tab to the short-lived signed URL.
+//
+// The tab is opened synchronously on the click, before the await: a window
+// opened from a resolved promise is a popup, and browsers block it.
+function openBillPhoto(billId){
+  const tab = window.open("", "_blank");
+  api(`/api/cases/${encodeURIComponent(S.caseId)}/bills/${encodeURIComponent(billId)}/image`,
+      {auth:true}).then(r=>{
+    if(!tab) return;
+    if(r && r.url){ tab.location = r.url; return; }
+    // Say what happened rather than leaving a blank tab, which reads as a
+    // browser failure rather than as a boundary or a missing bucket.
+    tab.document.title = "Photograph unavailable";
+    tab.document.body.style.font = "16px system-ui";
+    tab.document.body.style.padding = "24px";
+    tab.document.body.textContent = (r && (r.detail || r.__error))
+      || "That photograph could not be opened. Sign in on the dashboard and try again.";
+  }).catch(()=>{ if(tab) tab.document.body.textContent = "That photograph could not be opened."; });
+}
+
 // What was billed, before what an insurer said about it. The photograph is one
 // tap away from every figure, because a number you cannot check against the
 // paper it came from is worth very little.
@@ -648,7 +671,7 @@ function vBills(){
         <div class="k">${[esc(bill.vendor||"bill"), bill.bill_date?esc(bill.bill_date):null,
             `${bill.line_items.length} line items`].filter(Boolean).join(" · ")}</div>
         <div class="v">
-          <a href="${API}${esc(bill.image_url)}" target="_blank" rel="noopener">open the photograph</a>
+          <a href="#" onclick="openBillPhoto('${esc(bill.bill_id)}');return false">open the photograph</a>
           ${bill.needs_review?`<span class="why2" style="color:var(--red-ink)">${esc(bill.review_reason||"")}</span>`:""}
         </div>
       </div>`).join("")}
