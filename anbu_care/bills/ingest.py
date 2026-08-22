@@ -72,6 +72,22 @@ def ingest_bill_image(case_id: str, parent_id: str, image: bytes,
 
     digest = vision.image_sha256(image)
 
+    # The same photograph twice is one bill, not two.
+    #
+    # A retry, a double-tap, or a second send after no reply arrived — all of
+    # them produce the identical image, and counting it twice doubles the money
+    # the family is told they owe. That is the exact failure this feature is
+    # supposed to prevent, arriving through the door marked "user sent it
+    # again". Matched on the image hash, which is computed before anything is
+    # stored or read.
+    existing = next((b for b in list_bills(case_id) if b.image_sha256 == digest), None)
+    if existing is not None:
+        raise BillRejected(
+            f"that is the same photograph as bill {existing.bill_id}, which is "
+            f"already on this case with {len(existing.line_items)} line item(s). "
+            f"It has not been added again."
+        )
+
     # The image goes to private storage FIRST. If the reading turns out wrong,
     # the evidence still exists to correct it against — and storing after a
     # successful read would mean an unreadable bill left no trace of having

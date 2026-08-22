@@ -232,7 +232,7 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 <script>
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
-            record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null,
+            record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null, bills:null,
             hospitals:null,
             notified:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -626,15 +626,71 @@ function vRecord(){
     </div>`;}).join("")}`;
 }
 
+// What was billed, before what an insurer said about it. The photograph is one
+// tap away from every figure, because a number you cannot check against the
+// paper it came from is worth very little.
+function vBills(){
+  const b = S.bills;
+  if(!b || b.__denied || b.__error) return "";
+  const bills = b.bills || [], est = b.estimate || {};
+  if(!bills.length) return "";
+
+  const money = n => `INR ${Number(n||0).toLocaleString("en-IN")}`;
+  return `
+  <div class="card">
+    <h2>Bills on this case</h2>
+    <div class="pills" style="margin-bottom:12px">
+      <span class="pill p-amber">ESTIMATE — NOT THE INSURER'S DECISION</span>
+      ${est.needs_review?`<span class="pill p-red">A LINE NEEDS CHECKING</span>`:""}
+    </div>
+    ${bills.map(bill=>`
+      <div class="row stack">
+        <div class="k">${esc(bill.vendor||"bill")} · ${esc(bill.bill_date||"")}
+          · ${bill.line_items.length} line items</div>
+        <div class="v">
+          <a href="${API}${esc(bill.image_url)}" target="_blank" rel="noopener">open the photograph</a>
+          ${bill.needs_review?`<span class="why2" style="color:var(--red-ink)">${esc(bill.review_reason||"")}</span>`:""}
+        </div>
+      </div>`).join("")}
+  </div>
+
+  <div class="card">
+    <h2>What each line is estimated to cost you</h2>
+    ${(est.lines||[]).map(l=>`
+      <div class="row"><div class="k">${esc(l.label)}</div>
+        <div class="v num">${money(l.estimated_you_pay_inr)}
+          <span class="why2">billed ${money(l.claimed_inr)} ·
+            estimated covered ${money(l.estimated_covered_inr)} · ${esc(l.rule)}</span></div></div>`).join("")}
+    <div class="row owe"><div class="k">Estimated to pay</div>
+      <div class="v num">${money(est.estimated_you_pay_inr)}</div></div>
+    <div class="row"><div class="k">Total billed</div>
+      <div class="v num">${money(est.total_billed_inr)}</div></div>
+    <div class="row"><div class="k">Estimated covered</div>
+      <div class="v num">${money(est.estimated_covered_inr)}</div></div>
+    <div class="row"><div class="k">Actually settled</div>
+      <div class="v">${est.settled_inr===null||est.settled_inr===undefined
+        ? unknown("no adjudication yet — nobody has decided anything, which is not the same as nothing being owed")
+        : money(est.settled_inr)}</div></div>
+    <p class="mute" style="margin-top:12px">${esc(est.disclaimer||"")}</p>
+    <p class="mute" style="margin-top:6px">${esc(est.basis||"")}</p>
+  </div>`;
+}
+
 function vClaim(){
   if(!S.trail) return vOpen();
   if(S.trail.__denied) return denied(S.trail.detail,"The claim status");
   const adjs=kinds("claim.adjudicated"), sub=last("claim.submitted");
-  if(!adjs.length && !sub) return `${synthOnce()}<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`;
+  const bills = vBills();
+  if(!adjs.length && !sub) return `${synthOnce()}
+    ${title("Bills and claim","What was billed, and what the policy is estimated to cover.")}
+    ${bills || `<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`}`;
   const a=adjs.length?adjs[adjs.length-1].payload:null;
   const priced=a && ["PASS","PARTIAL"].includes(a.outcome);
+  const billsBlock = bills;
   return `${synthOnce()}
-  ${title("Claim status","What the insurer allowed, what it did not, and why.")}
+  ${title("Bills and claim","What was billed, what the policy is estimated to cover, and what the insurer said.")}
+  ${billsBlock}
+  <div class="sec">Claim status</div>
   <div class="pills" style="margin-bottom:12px"><span class="pill p-violet">SIMULATED TPA</span></div>
   <div class="strip note">No production insurer API is integrated. The packet, the policy arithmetic,
     the SLA clocks and the receipts are real; the counterparty's answer is not.</div>
@@ -854,6 +910,7 @@ async function load(){
     S.trail=await api(`/api/cases/${S.caseId}/trail`,{auth:true});
     S.brief=await api(`/api/cases/${S.caseId}/brief`,{auth:true});
     S.verify=await api(`/api/cases/${S.caseId}/verify`);
+    S.bills=await api(`/api/cases/${S.caseId}/bills`,{auth:true});
     if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
   if(S.parentId && S.token){
@@ -885,6 +942,11 @@ document.querySelectorAll("nav button").forEach(b=>
   if(!linked) return;
   S.caseId = linked;
   S.linkToken = tokenFromLink();
+  // A message about a bill should open on the bill, not on the front page.
+  try {
+    const wanted = new URLSearchParams(location.search).get("view");
+    if(wanted && document.querySelector(`nav button[data-v="${wanted}"]`)) S.view = wanted;
+  } catch { /* no view param, stay on the default */ }
   const box = document.getElementById("cid");
   if(box) box.value = linked;
   load();

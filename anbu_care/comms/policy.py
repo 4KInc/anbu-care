@@ -86,13 +86,17 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # is the version people remember.
         "message_class": MessageClass.BILLING,
         "body": "Anbu Care: that bill is on {parent_name}'s record. "
-                "{line_count} line items, INR {total_billed} billed.\n"
-                "Estimated split against her policy: about INR {estimated_covered} "
-                "covered, about INR {estimated_you_pay} to pay.\n\n"
+                "{line_count} line items, INR {this_bill} on this bill.\n"
+                "{running_total_line}"
+                "Estimated split so far: about INR {estimated_covered} covered, "
+                "about INR {estimated_you_pay} to pay.\n\n"
                 "That is an estimate from the policy terms, not the insurer's "
                 "decision. The itemised breakdown, and the photo it was read "
                 "from, are here: {dashboard_url}",
-        "params": ["parent_name", "line_count", "total_billed",
+        # Opens on the bill rather than the front page: a message about money
+        # that lands you on a triage timeline reads as a broken link.
+        "view": "claim",
+        "params": ["parent_name", "line_count", "this_bill", "running_total_line",
                    "estimated_covered", "estimated_you_pay"],
     },
     "bill_unreadable": {
@@ -316,6 +320,12 @@ def render_template(template_name: str, params: dict[str, str],
             token = make_link_token(parent_id, case_id)
             if token:
                 url = f"{url}&t={token}"
+        # A template may name which tab it is about, so a message about a bill
+        # opens on the bill. Still injected here rather than passed in: the
+        # template chooses a view, never an address.
+        view = template.get("view")
+        if view:
+            url = f"{url}&view={view}"
     return str(template["body"]).format(**{**params, "dashboard_url": url})
 
 

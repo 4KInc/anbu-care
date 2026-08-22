@@ -628,3 +628,53 @@ def test_the_follow_up_reports_the_split_and_calls_it_an_estimate(client, regist
     # The photo it was read from is reachable, because a number you cannot
     # check against the paper is not worth much.
     assert "photo it was read from" in body
+
+
+def test_the_same_photograph_twice_is_one_bill(case_id, parent_id, monkeypatch):
+    """A retry must not double the money.
+
+    This shipped: a bill sent at 2:44 got no reply because the webhook timed
+    out, the same bill was sent again at 2:55, and the running total reported
+    INR 765,440 for a INR 382,720 bill. Photographing the same paper twice is
+    one bill, and the image hash already knew that.
+    """
+    _reads(monkeypatch, [ICU, PHARM], stated=130_500)
+
+    first = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    before = len(service.get_chain(case_id).receipts)
+
+    with pytest.raises(ingest.BillRejected) as rejected:
+        ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    assert first.bill_id in str(rejected.value)
+    assert "not been added again" in str(rejected.value)
+    assert len(ingest.list_bills(case_id)) == 1
+    assert len(service.get_chain(case_id).receipts) == before
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    assert estimate.total_billed_inr == 130_500      # not 261,000
+    assert estimate.bills_counted == 1
+
+
+def test_a_genuinely_different_bill_still_adds(case_id, parent_id, monkeypatch):
+    """Deduplication must not swallow the second bill of a real stay."""
+    _reads(monkeypatch, [ICU], stated=96_000)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    _reads(monkeypatch, [PHARM], stated=34_500)
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE + b"different", "image/jpeg")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    assert estimate.bills_counted == 2
+    assert estimate.total_billed_inr == 130_500
+
+
+def test_the_message_does_not_mix_this_bill_with_every_bill():
+    """"16 line items, INR 765,440 billed" was two different scopes in one
+    sentence: this bill's line count beside every bill's total. It read as a
+    single wrong number, and the number it looked wrong about was money."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    body = str(TEMPLATES["bill_recorded"]["body"])
+    assert "{this_bill}" in body and "on this bill" in body
+    assert "{running_total_line}" in body
+    assert "{total_billed}" not in body, "the ambiguous total is back"

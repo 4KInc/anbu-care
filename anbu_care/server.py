@@ -1053,11 +1053,23 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
              "logistics", consent.STATUS_UPDATES)
         return
 
-    estimate = estimate_for_case(case_id, list_bills(case_id))
+    bills = list_bills(case_id)
+    estimate = estimate_for_case(case_id, bills)
+
+    # This bill's figures and the running total are DIFFERENT numbers, and
+    # putting them in one sentence read as a single wrong number: "16 line
+    # items, INR 765,440 billed" was this bill's line count beside every
+    # bill's total. The running total only appears once there is more than one.
+    running = ""
+    if len(bills) > 1:
+        running = (f"Across {len(bills)} bills on this stay: "
+                   f"INR {estimate.total_billed_inr:,} billed.\n")
+
     tell("bill_recorded", {
         "parent_name": first_name,
         "line_count": str(len(bill.line_items)),
-        "total_billed": f"{estimate.total_billed_inr:,}",
+        "this_bill": f"{bill.computed_total_inr:,}",
+        "running_total_line": running,
         "estimated_covered": f"{estimate.estimated_covered_inr:,}",
         "estimated_you_pay": f"{estimate.estimated_you_pay_inr:,}",
     }, "billing", consent.BILLING_UPDATES)

@@ -133,7 +133,7 @@ def test_every_template_renders_and_passes_its_own_gate():
         "words_note": "Those are her own words, not a medical assessment.\n",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
-        "line_count": "16", "total_billed": "3,82,720",
+        "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
         "reason": "the photograph was too dark to read.",
     }
@@ -237,7 +237,7 @@ def test_a_rendered_template_still_passes_the_gate():
         "words_note": "Those are her own words, not a medical assessment.\n",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
-        "line_count": "16", "total_billed": "3,82,720",
+        "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
         "reason": "the photograph was too dark to read.",
         "cashless_status": "Cashless approval is in progress",
@@ -247,7 +247,7 @@ def test_a_rendered_template_still_passes_the_gate():
         "words_note": "Those are her own words, not a medical assessment.\n",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
-        "line_count": "16", "total_billed": "3,82,720",
+        "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
         "reason": "the photograph was too dark to read.",
     }
@@ -338,3 +338,32 @@ def test_the_handoff_template_says_the_link_expires_and_is_recorded():
     assert "stops working" in body
     assert "recorded" in body
     assert "no login" in body
+
+
+def test_a_template_may_choose_a_view_but_never_an_address():
+    """The link is still injected. A template names a tab, not a host."""
+    from anbu_care.comms.policy import render_template
+
+    body = render_template("bill_recorded", {
+        "parent_name": "Rajeswari", "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
+        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
+    }, case_id="case-x", parent_id="parent-x")
+
+    assert "&view=claim" in body, "a bill message must open on the bill"
+    assert "case=case-x" in body
+    # And a caller still cannot supply the address.
+    hijacked = render_template("bill_recorded", {
+        "parent_name": "R", "line_count": "1", "this_bill": "1", "running_total_line": "",
+        "estimated_covered": "1", "estimated_you_pay": "1",
+        "dashboard_url": "https://evil.example/steal",
+    }, case_id="case-x", parent_id="parent-x")
+    assert "evil.example" not in hijacked
+
+
+def test_only_the_bill_template_redirects_to_a_view():
+    """Every other message still lands on the front page, as before."""
+    for name, spec in TEMPLATES.items():
+        if name == "bill_recorded":
+            assert spec.get("view") == "claim"
+        else:
+            assert "view" not in spec, f"{name} unexpectedly names a view"
