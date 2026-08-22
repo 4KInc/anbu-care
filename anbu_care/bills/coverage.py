@@ -110,25 +110,19 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
     profile = service.load_profile(case.parent_id) if case else None
     policy = profile.policy if profile else None
 
-    # Days come from the claim packet when one exists, because that is where
-    # admission and discharge are recorded as structured fields. Absent one,
-    # a single day is used and the basis says so — never inferred from a bill.
-    days = 1
-    basis_days = "one day assumed: no admission or discharge date is on record"
-
-    # The bill itself usually prints the stay. Preferred over assuming one day,
-    # because a per-day sub-limit is multiplied by it: a three-day ICU stay read
-    # as one day understated coverage by 20,000 and overstated what the family
-    # was told they owe. The claim packet still wins where one exists — those
-    # dates are structured fields somebody entered, not a model's reading.
-    for bill in bills:
-        stay = stay_days(bill.admitted_on, bill.discharged_on)
-        if stay:
-            days = max(days, stay)
-            basis_days = (f"{stay} day(s) as printed on the bill "
-                          f"({bill.admitted_on} to {bill.discharged_on})")
-            break
-
+    # A per-day sub-limit is multiplied by the length of THAT bill's stay.
+    #
+    # One case can carry bills from two different admissions — a general ward
+    # stay in August and a cardiac ICU stay a week later are two stays, two
+    # date ranges and two day counts. Computing one number per case and
+    # applying it to every line was right only by coincidence when both stays
+    # happened to be three days, and silently wrong the moment they differ.
+    #
+    # The claim packet still wins where one exists, for every bill: those dates
+    # are structured fields somebody entered rather than a model's reading of a
+    # photograph, and a packet describes the admission being claimed for.
+    packet_days: int | None = None
+    packet_basis = ""
     if case is not None:
         for receipt in reversed(service.get_chain(case_id).receipts):
             if receipt.kind == "claim.packet_assembled":
@@ -136,13 +130,26 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
                 if packet is not None:
                     computed = stay_days(packet.admitted_on, packet.discharged_on)
                     if computed:
-                        days, basis_days = computed, (
-                            f"{computed} day(s) from the claim packet "
-                            f"({packet.admitted_on} to {packet.discharged_on})")
+                        packet_days = computed
+                        packet_basis = (f"{computed} day(s) from the claim packet "
+                                        f"({packet.admitted_on} to {packet.discharged_on})")
                 break
 
+    def days_for(bill: ExtractedBill) -> tuple[int, str]:
+        if packet_days:
+            return packet_days, packet_basis
+        stay = stay_days(bill.admitted_on, bill.discharged_on)
+        if stay:
+            return stay, (f"{stay} day(s) as printed on the bill "
+                          f"({bill.admitted_on} to {bill.discharged_on})")
+        return 1, "one day assumed: no admission or discharge date is on record"
+
     lines: list[CoverageLine] = []
+    bases: list[str] = []
     for bill in bills:
+        days, basis_days = days_for(bill)
+        if basis_days not in bases:
+            bases.append(basis_days)
         for entry in bill.line_items:
             lines.append(_line_estimate(entry.item, entry.label, entry.amount_inr,
                                         policy, days))
@@ -155,7 +162,7 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
         estimated_covered_inr=sum(line.estimated_covered_inr for line in lines),
         estimated_you_pay_inr=sum(line.estimated_you_pay_inr for line in lines),
         settled_inr=_settled_so_far(case_id),
-        basis=(f"policy sub-limits applied over {basis_days}. "
+        basis=(f"policy sub-limits applied over {'; '.join(bases) or 'no bills'}. "
                f"{'Cashless eligible at network hospitals.' if policy and policy.cashless_eligible else 'Reimbursement: the family pays first and is repaid later.'}"
                if policy else "no policy on file"),
         needs_review=any(bill.needs_review for bill in bills),

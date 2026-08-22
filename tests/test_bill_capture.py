@@ -717,3 +717,64 @@ def test_a_bill_without_dates_still_says_it_assumed_one_day(case_id, parent_id, 
 
     estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
     assert "one day assumed" in estimate.basis
+
+
+def test_each_bill_uses_its_own_length_of_stay(case_id, parent_id, monkeypatch):
+    """One case can hold bills from two different admissions.
+
+    A general ward stay in one week and a cardiac ICU stay in another are two
+    stays with two date ranges. Computing one day count per case and applying
+    it to every line was right only by coincidence while both happened to be
+    three days, and wrong the moment they differ — which is exactly when a
+    per-day sub-limit starts producing the wrong number.
+    """
+    from anbu_care.comms import storage as gcs
+
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="": StoredArtifact(
+        stored=True, url="x", object_name=f"artifacts/{filename}", detail="stub"))
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+
+    def reading(lines, admitted, discharged, total):
+        return lambda image, mime_type: json.dumps({
+            "line_items": lines, "subtotal_inr": total, "stated_total_inr": total,
+            "admitted_on": admitted, "discharged_on": discharged, "unreadable": False})
+
+    # A ONE-day ICU stay: cap is 10,000, so 96,000 leaves 86,000 to pay.
+    monkeypatch.setattr(vision, "_call_model",
+                        reading([ICU], "2026-08-01", "2026-08-02", 96_000))
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    # A FIVE-day ICU stay on the same case: cap is 50,000.
+    monkeypatch.setattr(vision, "_call_model",
+                        reading([ICU], "2026-08-10", "2026-08-15", 96_000))
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE + b"second", "image/jpeg")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    covered = sorted(l.estimated_covered_inr for l in estimate.lines)
+
+    assert covered == [10_000, 50_000], covered
+    assert "1 day(s)" in estimate.basis and "5 day(s)" in estimate.basis
+
+
+def test_a_claim_packet_still_overrides_every_bill(case_id, parent_id, monkeypatch):
+    """Packet dates are entered fields, not a model's reading of a photograph."""
+    from anbu_care.comms import storage as gcs
+    from anbu_care.tools import insurer_tools
+
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="": StoredArtifact(
+        stored=True, url="x", object_name=f"artifacts/{filename}", detail="stub"))
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps({
+        "line_items": [ICU], "subtotal_inr": 96_000, "stated_total_inr": 96_000,
+        "admitted_on": "2026-08-01", "discharged_on": "2026-08-02",  # one day
+        "unreadable": False}))
+    ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    insurer_tools.assemble_claim_packet(
+        case_id=case_id, parent_id=parent_id, admission_summary="ICU",
+        itemized_bills_inr={"cardiac_icu_room": 96_000}, diagnostics=[],
+        attached_document_ids=[], admitted_on="2026-08-19", discharged_on="2026-08-22")
+
+    estimate = coverage.estimate_for_case(case_id, ingest.list_bills(case_id))
+    assert "from the claim packet" in estimate.basis
+    assert estimate.lines[0].estimated_covered_inr == 30_000     # 3 days, not 1

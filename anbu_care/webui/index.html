@@ -645,8 +645,8 @@ function vBills(){
     </div>
     ${bills.map(bill=>`
       <div class="row stack">
-        <div class="k">${esc(bill.vendor||"bill")} · ${esc(bill.bill_date||"")}
-          · ${bill.line_items.length} line items</div>
+        <div class="k">${[esc(bill.vendor||"bill"), bill.bill_date?esc(bill.bill_date):null,
+            `${bill.line_items.length} line items`].filter(Boolean).join(" · ")}</div>
         <div class="v">
           <a href="${API}${esc(bill.image_url)}" target="_blank" rel="noopener">open the photograph</a>
           ${bill.needs_review?`<span class="why2" style="color:var(--red-ink)">${esc(bill.review_reason||"")}</span>`:""}
