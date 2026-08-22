@@ -263,7 +263,15 @@ def submit_claim(case_id: str, packet_id: str, sla_kind: str) -> dict[str, Any]:
     service.save_submission(submission)
 
     ack = _simulated_ack(packet)
-    adjudication = _run_adjudication(case_id, submission, packet)
+
+    # The submission receipt is appended BEFORE adjudication runs, because that
+    # is the order the events actually happen in: you submit, then a
+    # counterparty answers. Written the other way round the chain claimed the
+    # insurer replied before the claim was sent, which is not what occurred and
+    # reads as a bug to anyone following the trail.
+    #
+    # Only the sequence position moves. The adjudication is computed from the
+    # same packet and submission and returns the same result.
     receipt = service.append_receipt(
         case_id,
         kind="claim.submitted",
@@ -277,6 +285,7 @@ def submit_claim(case_id: str, packet_id: str, sla_kind: str) -> dict[str, Any]:
             "counterparty_ack": ack,
         },
     )
+    adjudication = _run_adjudication(case_id, submission, packet)
 
     case = service.load_case(case_id)
     if case is not None:

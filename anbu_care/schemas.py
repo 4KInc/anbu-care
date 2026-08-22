@@ -4,6 +4,7 @@ returns one of these shapes so agents stay swappable."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
@@ -451,6 +452,46 @@ class WellbeingEntry(BaseModel):
     # is derived from it. Credentialed, and served through a short-lived
     # signed URL so her son can hear her voice rather than read a paraphrase.
     audio_object: str | None = None
+
+
+class TraceStep(BaseModel):
+    """One step in the decision trace. Always exactly one receipt.
+
+    `seq` and `receipt_hash` are carried so any step can be checked against the
+    chain it claims to come from — a trace whose steps could not be traced back
+    would be a story, not a record.
+    """
+
+    seq: int
+    at: datetime
+    actor: str
+    kind: str
+    what: str
+    detail: str = ""
+    receipt_hash: str = ""
+
+
+class DecisionTrace(BaseModel):
+    """The chain rendered as a sequence a person can follow.
+
+    Read-only, and structurally incapable of inventing a beat: `steps` is built
+    one-per-receipt, so `len(steps) == receipt_count` always. If a step is not a
+    receipt it does not exist here.
+    """
+
+    case_id: str
+    steps: list[TraceStep] = Field(default_factory=list)
+    receipt_count: int = 0
+    chain_head_hash: str = ""
+    chain_verified: bool = False
+    # Present only when the chain actually contains a QUERY. Describes real
+    # receipts by their sequence numbers; it never causes one to be rendered.
+    query_fork: dict[str, Any] | None = None
+
+    @property
+    def synthesized_steps(self) -> int:
+        """Must always be zero. Stated as code because it is the guarantee."""
+        return len(self.steps) - self.receipt_count
 
 
 class EmergencySummary(BaseModel):
