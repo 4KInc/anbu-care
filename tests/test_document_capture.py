@@ -236,7 +236,7 @@ def test_the_summary_repeats_the_document_and_never_characterises_it(parent_id, 
     result = ingest_document_image(parent_id, IMAGE, "image/png")
 
     summary = result["summary"].lower()
-    assert "2 result(s)" in summary
+    assert "2 results" in summary
     assert "troponin i" in summary                 # names what was flagged
     for verdict in ("serious", "urgent", "concerning", "suggests", "consistent with"):
         assert verdict not in summary
@@ -267,7 +267,7 @@ def test_the_message_summary_never_names_a_clinical_finding(parent_id, monkeypat
         {"name": "Sodium", "value": "138", "flag": "normal"}]}
 
     safe = message_summary_for("lab_report", payload)
-    assert "3 result(s)" in safe and "2 outside" in safe
+    assert "3 results" in safe and "2 outside" in safe
     for analyte in ("troponin", "ck-mb", "sodium"):
         assert analyte not in safe.lower()
 
@@ -567,3 +567,34 @@ def test_the_record_view_can_open_the_paper_it_read(parent_id, monkeypatch):
     assert "openDocPhoto" in page
     assert "documents/${encodeURIComponent(documentId)}/image" in page
     assert "docDetails(d)" in page
+
+
+def test_a_dosing_schedule_is_shown_as_a_schedule_not_a_sentence():
+    """"1 - 0 - 0 after breakfast 30 days" is three doses, a food rule and a
+    duration, printed as one string because that is how the paper prints it."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+    assert "function parseDose(" in page
+    assert 'const SLOT_TITLES = ["morning", "afternoon", "night"]' in page
+    assert ".slot.on{" in page
+
+
+def test_the_renderer_never_invents_a_dosing_time():
+    """Where the prescription says "once daily" rather than 1-0-0, the words
+    are shown as written. Choosing a slot would be a renderer inventing a
+    dosing time, which is exactly the kind of thing nobody double-takes at."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+    body = page[page.index("function parseDose("):page.index("const SLOT_TITLES")]
+    # The only thing that can produce slots is the printed d-d-d pattern.
+    assert body.count("slots =") == 2          # the null init and the pattern branch
+    assert "slots = [pattern[1], pattern[2], pattern[3]]" in body
+    for guess in ("once daily", "twice", "morning", "night"):
+        assert guess not in body, f"parseDose infers a slot from {guess!r}"
+
+
+def test_counts_read_as_sentences():
+    from anbu_care.docvision.ingest import _plural
+
+    assert _plural(1, "result") == "1 result"
+    assert _plural(2, "result") == "2 results"

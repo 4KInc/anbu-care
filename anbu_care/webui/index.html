@@ -226,6 +226,45 @@ input{width:100%;min-height:46px;background:var(--card);border:1px solid var(--l
       border-radius:var(--r);padding:11px 12px;font-family:inherit;font-size:15px;color:var(--ink)}
 input:focus{outline:0;border:2px solid var(--teal);padding:10px 11px}
 .mute{color:var(--ink-mute);font-size:13.5px;line-height:1.55}
+/* A prescription line is a schedule, not a sentence. "1 - 0 - 0 after
+   breakfast 30 days" is three doses, a food rule and a duration, printed as
+   one string because that is how the paper prints it. Shown as what it is:
+   three slots, then the qualifiers. */
+.meds{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+.meds-head{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;margin-bottom:4px}
+.meds-head h3{font-size:12px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-soft);margin:0}
+.meds-head .count{font-size:12.5px;color:var(--ink-mute)}
+.meds-legend{font-size:12px;color:var(--ink-mute);margin:0 0 10px}
+.med{display:grid;grid-template-columns:1fr auto;align-items:baseline;
+  gap:6px 14px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.med:last-child{border-bottom:0;padding-bottom:2px}
+.med .mname{font-size:15.5px;font-weight:700;display:flex;align-items:center;
+  gap:8px;flex-wrap:wrap;min-width:0}
+.med .form{font-size:10.5px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-mute);background:var(--slate-bg);
+  padding:2px 6px;border-radius:var(--r-sm);flex:0 0 auto}
+.med .dose{font-size:15.5px;font-weight:800;text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.med .when{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.slots{display:inline-flex;gap:4px}
+.slot{min-width:26px;height:22px;border-radius:var(--r-sm);
+  background:var(--line-soft);border:1px solid var(--line);
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;color:var(--ink-mute);
+  font-variant-numeric:tabular-nums}
+.slot.on{background:var(--teal-bg);border-color:var(--teal);color:var(--teal-ink)}
+.chip{font-size:12.5px;color:var(--ink-soft);background:var(--slate-bg);
+  padding:3px 9px;border-radius:999px;white-space:nowrap}
+.chip.warn{background:var(--amber-bg);color:var(--amber)}
+/* The source line, kept openable but no longer a full-weight green button
+   competing with the content it is a footnote to. */
+.paper{display:inline-flex;align-items:center;gap:7px;background:none;border:0;
+  padding:6px 0;margin-top:10px;font-family:inherit;font-size:13.5px;
+  font-weight:700;color:var(--teal-ink);cursor:pointer;text-decoration:underline;
+  text-underline-offset:3px;text-decoration-thickness:1.5px}
+.paper:hover{color:var(--teal)}
 .big{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1}
 
 /* ---- nav -------------------------------------------------------------- */
@@ -651,9 +690,13 @@ function vRecord(){
     ${row("Name",esc(pr.name))}${row("Age",esc(pr.age))}
     ${row("Conditions",(pr.chronic_conditions||[]).map(esc).join(", ")||unknown("none recorded"))}
     ${row("Allergies",(pr.allergies||[]).map(esc).join(", ")||unknown("none recorded"))}
-    ${row("Medication",(pr.medications||[]).length
-        ? (pr.medications||[]).map(m=>`${esc(m.name)}${m.dose?` <span class="u">${esc(m.dose)}</span>`:""}`).join(", ")
-        : unknown("none recorded"))}
+    ${(pr.medications||[]).length
+        ? `<div class="row stack"><div class="k">Medication</div><div class="v">
+             ${(pr.medications||[]).map(m=>`<span class="chip">${esc(titleCase(
+                 String(m.name||"").replace(/^(tab|tablet|cap|capsule)\b\.?\s*/i,"")))}${
+                 m.dose?` ${esc(m.dose)}`:""}</span>`).join(" ")}
+           </div></div>`
+        : row("Medication", unknown("none recorded"))}
   </div>
   <div class="sec">Documents on file</div>
   ${docs.length===0?`<div class="card"><p>${unknown("no documents have been added yet")}</p></div>`:""}
@@ -682,9 +725,8 @@ function vRecord(){
             <div class="v num">${esc(o.value)} <span class="u">${esc(o.unit||"")}</span>
               ${o.flag?`<span class="pill ${["high","low","abnormal"].includes((o.flag||"").toLowerCase())?"p-red":"p-teal"}">${esc(o.flag)}</span>`:""}
             </div></div>`).join("")}
-      <div class="btns" style="margin-top:12px">
-        <button class="btn" onclick="openDocPhoto('${esc(d.document_id)}')">Open the photograph</button>
-      </div>
+      <button class="paper" onclick="openDocPhoto('${esc(d.document_id)}')">
+        <span aria-hidden="true">◱</span> Open the photograph it was read from</button>
       ${d.delta_vs_baseline?`<div class="deltas">
         ${d.delta_vs_baseline.split("; ").map(n=>{
           const material=/new and abnormal/.test(n);
@@ -715,6 +757,9 @@ const DETAIL_ROWS = {
 };
 const MONEY_KEYS = new Set(["sum_insured_inr"]);
 const PERCENT_KEYS = new Set(["copay_percent","room_rent_percent_per_day","icu_percent_per_day"]);
+// Prose belongs on its own line. A diagnosis right-aligned in bold against a
+// label is a sentence pretending to be a figure.
+const PROSE_KEYS = new Set(["diagnosis","condition_at_discharge"]);
 
 function detailValue(key, value){
   if(MONEY_KEYS.has(key)) return `INR ${Number(value).toLocaleString("en-IN")}`;
@@ -722,32 +767,96 @@ function detailValue(key, value){
   return esc(value);
 }
 
+// "1 - 0 - 0 after breakfast 30 days" is a transcription of what the paper
+// prints. The three numbers are morning, afternoon and night.
+//
+// The slots are rendered ONLY when that pattern is actually on the page. Where
+// the prescription says "once daily, after breakfast" instead, the words are
+// shown as they were written — deciding which slot that meant would be this
+// code inventing a dosing time, and a dosing time invented by a renderer is
+// exactly the kind of thing nobody double-takes at.
+function parseDose(frequency){
+  let rest = String(frequency||"").trim();
+  if(!rest) return {slots:null, chips:[]};
+
+  let slots = null;
+  const pattern = rest.match(/(\d+)\s*[-–—]\s*(\d+)\s*[-–—]\s*(\d+)/);
+  if(pattern){
+    slots = [pattern[1], pattern[2], pattern[3]];
+    rest = rest.replace(pattern[0], " ");
+  }
+
+  const chips = [];
+  const duration = rest.match(/\b\d+\s*(days?|weeks?|months?)\b/i);
+  if(duration){ rest = rest.replace(duration[0], " "); }
+
+  rest.split(/[,;·]/).map(t=>t.trim()).filter(Boolean).forEach(t=>chips.push(t));
+  if(duration) chips.push(duration[0].trim());
+  return {slots, chips};
+}
+
+const SLOT_TITLES = ["morning", "afternoon", "night"];
+
+function medRow(m){
+  const {slots, chips} = parseDose(m.frequency);
+  // "Tab ASPIRIN" is a form and a name. Splitting them lets the name be read.
+  const raw = String(m.name||"").trim();
+  const form = raw.match(/^(tab|tablet|cap|capsule|syp|syrup|inj|injection)\b\.?/i);
+  const name = form ? raw.slice(form[0].length).trim() : raw;
+
+  const slotHtml = slots ? `<span class="slots">${slots.map((n,i)=>
+    `<span class="slot ${Number(n)>0?"on":""}" title="${SLOT_TITLES[i]}">${esc(n)}</span>`
+    ).join("")}</span>` : "";
+
+  return `<div class="med">
+    <div class="mname">${form?`<span class="form">${esc(form[0].replace(/\.$/,""))}</span>`:""}
+      <span>${esc(titleCase(name))}</span></div>
+    <div class="dose">${esc(m.dose||"")}</div>
+    ${slotHtml||chips.length?`<div class="when">${slotHtml}
+      ${chips.map(c=>`<span class="chip">${esc(c)}</span>`).join("")}</div>`:""}
+  </div>`;
+}
+
+// ASPIRIN shouted at a reader is harder to read than Aspirin, and the paper
+// only shouts because prescriptions are printed in caps.
+function titleCase(text){
+  if(text !== text.toUpperCase()) return text;
+  return text.toLowerCase().replace(/\b[a-z]/g, c=>c.toUpperCase());
+}
+
 function docDetails(d){
   const det = d.details || {};
   const rows = (DETAIL_ROWS[d.kind]||[])
     .filter(([,key]) => det[key] !== null && det[key] !== undefined && det[key] !== "")
-    .map(([label,key]) => row(label, detailValue(key, det[key])))
+    .map(([label,key]) => PROSE_KEYS.has(key)
+      ? `<div class="row stack"><div class="k">${esc(label)}</div>
+           <div class="v">${detailValue(key, det[key])}</div></div>`
+      : row(label, detailValue(key, det[key])))
     .join("");
 
-  // Medication is a list, not a row, and it is the thing a treating clinician
-  // reads first. A prescription carries it under one key, a discharge summary
-  // under another.
-  const meds = det.medications || det.discharge_medications || [];
-  const medList = meds.length ? `<div class="obs-wrap">${meds.map(m=>`
-      <div class="obs"><div class="n">${esc(m.name||"")}</div>
-        <div class="v">${esc(m.dose||"")}${m.frequency?` <span class="u">${esc(m.frequency)}</span>`:""}</div>
-      </div>`).join("")}</div>` : "";
-
   const allergies = (det.allergies||[]).filter(Boolean);
-  const allergyRow = allergies.length
-    ? row("Allergies on this document", allergies.map(esc).join(", ")) : "";
+  const allergyBlock = allergies.length ? `<div class="row stack">
+      <div class="k">Allergies on this document</div>
+      <div class="v"><span class="chip warn">${allergies.map(esc).join('</span> <span class="chip warn">')}</span></div>
+    </div>` : "";
 
   const network = (det.network_hospitals||[]).filter(Boolean);
-  const networkRow = network.length
-    ? row("Network hospitals", network.map(esc).join(", ")) : "";
+  const networkBlock = network.length ? `<div class="row stack">
+      <div class="k">Network hospitals</div>
+      <div class="v">${network.map(h=>`<span class="chip">${esc(h)}</span>`).join(" ")}</div>
+    </div>` : "";
 
-  if(!rows && !medList && !allergyRow && !networkRow) return "";
-  return `${rows}${allergyRow}${networkRow}${medList}`;
+  const meds = det.medications || det.discharge_medications || [];
+  const heading = det.discharge_medications ? "Discharge medication" : "On this prescription";
+  const anySlots = meds.some(m => parseDose(m.frequency).slots);
+  const medBlock = meds.length ? `<div class="meds">
+      <div class="meds-head"><h3>${heading}</h3>
+        <span class="count num">${meds.length} item${meds.length===1?"":"s"}</span></div>
+      ${anySlots?`<p class="meds-legend">Doses read as morning · afternoon · night.</p>`:""}
+      ${meds.map(medRow).join("")}
+    </div>` : "";
+
+  return `${rows}${allergyBlock}${networkBlock}${medBlock}`;
 }
 
 // Same shape as the bill photograph: the bucket is private, so the URL is

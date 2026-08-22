@@ -112,7 +112,7 @@ def test_a_lab_report_is_reported_as_recorded(case, sent, monkeypatch):
     assert _templates(sent) == ["document_recorded"]
     params = sent[0]["template_params"]
     assert params["document_kind"] == "lab report"
-    assert "2 result(s)" in params["summary"]
+    assert "2 results" in params["summary"]
     assert "troponin" not in json.dumps(params).lower()
 
 

@@ -85,6 +85,11 @@ def _content_sha256(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _plural(count: int, noun: str) -> str:
+    """"6 medication(s)" is a form field. A record reads as a sentence."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _summary_for(kind: str, payload: dict) -> str:
     """One line describing the document, for the record listing.
 
@@ -100,10 +105,10 @@ def _summary_for(kind: str, payload: dict) -> str:
         obs = payload.get("observations") or []
         flagged = [o.get("name") for o in obs if o.get("flag") in {"high", "low", "abnormal"}]
         tail = f" Flagged: {', '.join(str(f) for f in flagged if f)}." if flagged else ""
-        return f"Lab report, {len(obs)} result(s).{tail}"[:400]
+        return f"Lab report, {_plural(len(obs), 'result')}.{tail}"[:400]
     if kind == "prescription":
         meds = payload.get("medications") or []
-        return f"Prescription, {len(meds)} medication(s)."
+        return f"Prescription, {_plural(len(meds), 'medication')}."
     if kind == "policy_schedule":
         return (f"Policy schedule, {payload.get('insurer') or 'insurer not read'}, "
                 f"sum insured INR {payload.get('sum_insured_inr') or 'not read'}.")
@@ -127,17 +132,17 @@ def message_summary_for(kind: str, payload: dict) -> str:
         flagged = sum(1 for o in obs
                       if str(o.get("flag") or "").lower() in {"high", "low", "abnormal"})
         if flagged:
-            return (f"{len(obs)} result(s) recorded, {flagged} outside the "
+            return (f"{_plural(len(obs), 'result')} recorded, {flagged} outside the "
                     f"reference range.")
-        return f"{len(obs)} result(s) recorded."
+        return f"{_plural(len(obs), 'result')} recorded."
     if kind == "discharge_summary":
         span = " to ".join(x for x in (payload.get("admitted_on"),
                                        payload.get("discharged_on")) if x)
         meds = len(payload.get("discharge_medications") or [])
         return (f"Admission {span}." if span else "Discharge summary recorded.") + (
-            f" {meds} medication(s) listed on discharge." if meds else "")
+            f" {_plural(meds, 'medication')} listed on discharge." if meds else "")
     if kind == "prescription":
-        return f"{len(payload.get('medications') or [])} medication(s) recorded."
+        return f"{_plural(len(payload.get('medications') or []), 'medication')} recorded."
     if kind == "policy_schedule":
         # Money and cover, not clinical detail, so this one can say the figures.
         sum_insured = payload.get("sum_insured_inr")
