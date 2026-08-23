@@ -231,3 +231,92 @@ def test_the_sweeper_actually_runs_under_the_real_lifespan(monkeypatch):
         time.sleep(7)
 
     assert fired, "the startup sweep never ran"
+
+
+# ---- seeding twice is seeding once ---------------------------------------
+
+
+def test_seeding_twice_does_not_mint_a_second_family(monkeypatch):
+    """Eighty-three parent profiles accumulated one re-seed at a time.
+
+    Each seed created a new parent and repointed the family's WhatsApp number
+    at it, so the previous record kept its cases, receipts and documents behind
+    a parent nothing resolved to any more. A demo then read its settings off
+    whichever record happened to be seeded last, which is how a contact set to
+    English sent Tamil.
+    """
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server, service
+
+    monkeypatch.setenv("ANBU_DEMO_FAMILY_E164", "+16692167706")
+
+    with TestClient(server.app) as client:
+        first = client.post("/api/demo/seed").json()["parent_id"]
+        second = client.post("/api/demo/seed").json()["parent_id"]
+
+    assert first == second, "a re-seed orphaned the first family"
+    assert service.lookup_whatsapp_number("+16692167706")["parent_id"] == first
+
+
+def test_a_re_seed_keeps_the_history_already_on_the_record(monkeypatch):
+    """The point of not minting a new one: the old case is still reachable."""
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server, service
+
+    monkeypatch.setenv("ANBU_DEMO_FAMILY_E164", "+16692167706")
+
+    with TestClient(server.app) as client:
+        parent_id = client.post("/api/demo/seed").json()["parent_id"]
+        case = service.open_case(parent_id)
+        client.post("/api/demo/seed")
+
+    assert service.load_case(case.case_id) is not None
+    assert service.latest_case_for_parent(parent_id).case_id == case.case_id
+
+
+def test_recording_the_same_number_twice_corrects_it_rather_than_duplicating(monkeypatch):
+    """Three identical sons is three copies of every care-circle message.
+
+    Appearing twice in a roster is not two people. The number is the identity,
+    because that is what inbound WhatsApp resolves and what outbound sends to.
+    """
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools
+
+    pid = onboarding_tools.create_parent_profile(
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+
+    for language in ("en", "ta", "en+ta"):
+        onboarding_tools.record_family_contact(
+            parent_id=pid, name="Heartlin Machado", relationship="son",
+            whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+            is_primary=True, consent_purposes=["status_updates"], language=language,
+        )
+
+    contacts = service.load_profile(pid).family_contacts
+    assert len(contacts) == 1, f"{len(contacts)} entries for one person"
+    assert contacts[0].language == "en+ta", "the correction did not take"
+
+
+def test_a_second_person_is_still_a_second_contact(monkeypatch):
+    """The de-duplication must not collapse a family into one member."""
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools
+
+    pid = onboarding_tools.create_parent_profile(
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+
+    for name, number in (("Heartlin", "+16692167706"), ("Priya", "+919000000077")):
+        onboarding_tools.record_family_contact(
+            parent_id=pid, name=name, relationship="family",
+            whatsapp_e164=number, timezone_name="Asia/Kolkata",
+            is_primary=False, consent_purposes=["status_updates"], language="en",
+        )
+
+    assert len(service.load_profile(pid).family_contacts) == 2

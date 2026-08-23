@@ -166,7 +166,19 @@ def record_family_contact(
         is_primary=is_primary,
         consents={purpose: now for purpose in consent_purposes},
     )
-    profile.family_contacts.append(contact)
+    # One entry per number. Recording the same person twice is a correction,
+    # not a second contact: appending gave a re-seeded family three identical
+    # sons, which is three copies of every care-circle message and three rows
+    # in the roster for one person. The number is the identity here, because
+    # that is what inbound resolves and what outbound sends to.
+    same_number = [i for i, existing in enumerate(profile.family_contacts)
+                   if existing.whatsapp_e164 == whatsapp_e164]
+    if same_number:
+        profile.family_contacts[same_number[0]] = contact
+        for index in reversed(same_number[1:]):
+            del profile.family_contacts[index]
+    else:
+        profile.family_contacts.append(contact)
     service.save_profile(profile)
     # So an inbound message from this number can be matched to this parent.
     service.register_whatsapp_number(whatsapp_e164, parent_id, contact.name)

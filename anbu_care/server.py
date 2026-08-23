@@ -324,16 +324,48 @@ def demo_seed() -> dict[str, Any]:
     This is the shortcut the demo and any smoke test need — it uses the same
     onboarding tools the agent does, so nothing here is a special path.
     """
-    created = onboarding_tools.create_parent_profile(
-        name="Ashanthi Machado",
-        age=71,
-        city="Thoothukudi",
-        lat=8.7642,
-        lon=78.1400,
-        chronic_conditions=["Hypertension", "High cholesterol", "Type 2 diabetes"],
-        allergies=["Penicillin"],
-    )
-    parent_id = created["profile"]["parent_id"]
+    # Reuse the family this handset already belongs to. Seeding used to mint a
+    # new parent every time and repoint the number at it, so each re-seed left
+    # the previous record orphaned and every case, receipt and document on it
+    # stranded behind a parent nothing resolved to any more. Eighty-three
+    # profiles accumulated that way, and a demo would read settings off
+    # whichever one was seeded last, which is the bug this closes.
+    #
+    # Matched on the family handset rather than the name, because the number is
+    # what inbound WhatsApp resolves and therefore what has to stay single.
+    family_e164 = os.getenv("ANBU_DEMO_FAMILY_E164") or "+14155550142"
+    existing = service.lookup_whatsapp_number(family_e164)
+    parent_id = (existing or {}).get("parent_id") if existing else None
+    if parent_id and service.load_profile(parent_id) is None:
+        # An index entry pointing at a profile that is gone. Treat it as absent
+        # rather than seeding onto a parent that cannot be loaded.
+        parent_id = None
+
+    if parent_id:
+        # Refresh the baseline in place. Everything below already updates the
+        # record it is given, so only the fields create_parent_profile would
+        # have set need restating here.
+        logger.info("demo seed reusing %s for %s", parent_id, family_e164)
+        profile = service.load_profile(parent_id)
+        profile.name = "Ashanthi Machado"
+        profile.age = 71
+        profile.city = "Thoothukudi"
+        profile.lat, profile.lon = 8.7642, 78.1400
+        profile.chronic_conditions = ["Hypertension", "High cholesterol",
+                                      "Type 2 diabetes"]
+        profile.allergies = ["Penicillin"]
+        service.save_profile(profile)
+    else:
+        created = onboarding_tools.create_parent_profile(
+            name="Ashanthi Machado",
+            age=71,
+            city="Thoothukudi",
+            lat=8.7642,
+            lon=78.1400,
+            chronic_conditions=["Hypertension", "High cholesterol", "Type 2 diabetes"],
+            allergies=["Penicillin"],
+        )
+        parent_id = created["profile"]["parent_id"]
 
     onboarding_tools.record_medications(parent_id, [
         {"name": "Telmisartan", "dose": "40 mg", "frequency": "once daily"},
