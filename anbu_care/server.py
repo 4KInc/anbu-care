@@ -117,6 +117,21 @@ def dashboard() -> FileResponse:
                         headers={"Cache-Control": "no-cache"})
 
 
+LOGO = Path(__file__).resolve().parent / "webui" / "static" / "logo.png"
+
+
+@app.get("/logo.png")
+def logo() -> FileResponse:
+    """The mark, served publicly.
+
+    WhatsApp fetches a business profile photo from a URL it can reach without
+    a credential, so this one route is deliberately open. It carries no case
+    content — it is a letter on a teal square.
+    """
+    return FileResponse(LOGO, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/api/auth-config")
 def auth_config() -> dict[str, Any]:
     """What sign-in methods this deployment offers.

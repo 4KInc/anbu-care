@@ -457,3 +457,14 @@ def test_the_sign_in_is_reachable_from_the_view_it_gates():
     credential_check = record.index("if(!S.token && !S.linkToken)")
     parent_check = record.index("if(!S.parentId) return vOpen();")
     assert credential_check < parent_check, "the gate is behind the parent id again"
+
+
+def test_the_logo_is_public_and_carries_nothing(client):
+    """WhatsApp fetches a business profile photo with no credential, so this
+    one route has to be open. It is a letter on a teal square — the test exists
+    so nobody later "tidies" it behind the session check and silently breaks
+    the profile photo, or widens it into something that serves case content."""
+    response = client.get("/logo.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
