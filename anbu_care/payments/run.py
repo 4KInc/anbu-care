@@ -226,7 +226,8 @@ def confirm(*, case_id: str, payment_id: str) -> dict:
             "amount_inr": record.amount_inr, "settlement_note": result.detail}
 
 
-def confirm_by_reference(*, reference: str, note: str, failed: bool = False) -> dict:
+def confirm_by_reference(*, reference: str, note: str, failed: bool = False,
+                        amount_paise: int | None = None) -> dict:
     """Settle or fail the payment carrying this provider reference.
 
     The webhook knows an order id and nothing about our cases, so the lookup
@@ -250,6 +251,26 @@ def confirm_by_reference(*, reference: str, note: str, failed: bool = False) -> 
 
         if payment.confirmed_at is not None:
             return {"status": "already_confirmed", "payment_id": payment.payment_id}
+
+        # A capture for LESS than the bill is a part payment, and a part
+        # payment is not a settled one. Razorpay fires payment.captured for
+        # whatever was actually paid, so confirming on the event alone would
+        # mark a 38,450 bill settled off a 5,000 payment.
+        if amount_paise is not None and amount_paise != payment.amount_inr * 100:
+            service.append_receipt(
+                payment.case_id, kind="payment.partial", actor="payment_rail",
+                payload={"payment_id": payment.payment_id,
+                         "bill_id": payment.bill_id,
+                         "expected_inr": payment.amount_inr,
+                         "received_inr": amount_paise // 100,
+                         "note": ("The provider reported a different amount from "
+                                  "the one this payment is for. Nothing is "
+                                  "marked settled and it needs a person.")})
+            return {"status": "amount_mismatch",
+                    "payment_id": payment.payment_id,
+                    "expected_inr": payment.amount_inr,
+                    "received_inr": amount_paise // 100}
+
         return confirm(case_id=payment.case_id, payment_id=payment.payment_id)
 
     return {"status": "ignored", "reason": "no payment carries that reference"}

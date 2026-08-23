@@ -806,15 +806,27 @@ async def razorpay_webhook(request: Request) -> dict[str, Any]:
     if not references:
         return {"status": "ignored", "reason": "nothing on this event identifies a payment"}
 
-    failed = kind in {"payment.failed", "payment_link.cancelled"}
-    if kind not in {"payment.captured", "payment.failed", "payment_link.paid",
-                    "payment_link.cancelled"}:
+    # A part payment is explicitly NOT a settlement, and it is listed here so
+    # that ignoring it is a decision rather than an omission.
+    if kind == "payment_link.partially_paid":
+        return {"status": "ignored",
+                "reason": "a part payment does not settle the bill"}
+
+    FAILURES = {"payment.failed", "payment_link.cancelled", "payment_link.expired"}
+    SETTLEMENTS = {"payment.captured", "payment_link.paid"}
+    if kind not in FAILURES | SETTLEMENTS:
         return {"status": "ignored", "event": kind}
+    failed = kind in FAILURES
+
+    # Paise, as the provider reports them. Checked against what this payment is
+    # for, so a capture of the wrong size cannot mark a bill settled.
+    raw_amount = payment.get("amount") if payment else None
+    amount_paise = raw_amount if isinstance(raw_amount, int) else None
 
     for reference in references:
         result = confirm_by_reference(
             reference=reference, note="failed" if failed else "captured",
-            failed=failed)
+            failed=failed, amount_paise=None if failed else amount_paise)
         if result.get("status") != "ignored":
             return result
     return {"status": "ignored", "reason": "no payment carries any of those references"}

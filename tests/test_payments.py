@@ -1378,15 +1378,70 @@ def test_a_payment_link_callback_is_matched_by_the_link_not_the_order(case, monk
     assert source.index('link.get("id")') < source.index('payment.get("order_id")')
 
 
-def test_a_cancelled_link_is_a_failure_not_a_settlement():
+def test_which_events_settle_and_which_do_not():
+    """Razorpay has four payment-link events and they do not all mean paid.
+
+    Cancelled and expired are failures. A PART payment is neither: Razorpay
+    fires payment.captured for whatever was actually paid, so confirming on the
+    event alone would settle a 38,450 bill off a 5,000 payment.
+    """
     import inspect
 
     from anbu_care import server
 
     source = inspect.getsource(server.razorpay_webhook)
-    assert '"payment_link.cancelled"' in source
-    failed_line = next(ln for ln in source.splitlines() if "failed = kind in" in ln)
-    assert "payment.failed" in failed_line and "cancelled" in failed_line
+
+    failures = source[source.index("FAILURES = {"):source.index("SETTLEMENTS = {")]
+    assert "payment.failed" in failures
+    assert "payment_link.cancelled" in failures
+    assert "payment_link.expired" in failures
+
+    settlements = source[source.index("SETTLEMENTS = {"):source.index("if kind not in")]
+    assert "payment.captured" in settlements
+    assert "payment_link.paid" in settlements
+    assert "partially_paid" not in settlements
+
+    # And the part payment is refused by name rather than by omission.
+    assert '"a part payment does not settle the bill"' in source
+
+
+def test_a_capture_for_the_wrong_amount_settles_nothing(case):
+    """The gap the event list surfaced. A capture smaller than the bill is a
+    part payment, and marking it settled would tell a family they owe nothing
+    when they owe most of it."""
+    from anbu_care.payments.run import confirm_by_reference
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=38_450)
+    stored = service.list_payments(case_id)[0]
+
+    out = confirm_by_reference(reference=stored.settlement_ref, note="captured",
+                               amount_paise=500_000)          # INR 5,000 of 38,450
+
+    assert out["status"] == "amount_mismatch"
+    assert out["expected_inr"] == 38_450 and out["received_inr"] == 5_000
+    assert money_view(case_id)["paid_inr"] == 0
+
+    kinds = [r.kind for r in service.get_chain(case_id).receipts]
+    assert "payment.partial" in kinds
+    assert "payment.confirmed" not in kinds
+
+
+def test_the_right_amount_still_settles(case):
+    from anbu_care.payments.run import confirm_by_reference
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=38_450)
+    stored = service.list_payments(case_id)[0]
+
+    out = confirm_by_reference(reference=stored.settlement_ref, note="captured",
+                               amount_paise=38_450 * 100)
+    assert out["outcome"] == "confirmed"
+    assert money_view(case_id)["paid_inr"] == 38_450
 
 
 def test_the_link_is_a_page_a_person_can_open(monkeypatch):
