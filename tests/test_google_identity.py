@@ -330,3 +330,27 @@ def test_the_seeded_family_cannot_sign_in_by_default(monkeypatch, client):
     profile = client.get(f"/api/parents/{parent_id}",
                          headers=_auth("anbu-demo-family-token")).json()["profile"]
     assert profile["family_contacts"][0]["email"] == ""
+
+
+def test_the_seeded_contact_can_be_named(monkeypatch, client):
+    """Whoever records the demo is the person on camera, and the family contact
+    should be them rather than a placeholder they have to explain away."""
+    monkeypatch.setenv("ANBU_DEMO_FAMILY_NAME", "Heartlin Machado")
+    parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    profile = client.get(f"/api/parents/{parent_id}",
+                         headers=_auth("anbu-demo-family-token")).json()["profile"]
+    contact = profile["family_contacts"][0]
+    assert contact["name"] == "Heartlin Machado"
+    assert contact["relationship"] == "son"
+
+
+def test_the_default_stays_synthetic(monkeypatch, client):
+    """Unset, the repo seeds a synthetic family, so a stranger cloning this
+    does not get somebody's real name in their demo data."""
+    monkeypatch.delenv("ANBU_DEMO_FAMILY_NAME", raising=False)
+    parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    profile = client.get(f"/api/parents/{parent_id}",
+                         headers=_auth("anbu-demo-family-token")).json()["profile"]
+    assert profile["family_contacts"][0]["name"] == "Karthik Manickam"

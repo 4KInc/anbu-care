@@ -275,7 +275,10 @@ def demo_seed() -> dict[str, Any]:
     )
     onboarding_tools.record_family_contact(
         parent_id,
-        name="Karthik Manickam",
+        # Overridable for the same reason as the number and the address: whoever
+        # records the demo is the person on camera, and the family contact
+        # should be them rather than a placeholder they have to explain away.
+        name=os.getenv("ANBU_DEMO_FAMILY_NAME", "Karthik Manickam"),
         relationship="son",
         # Overridable so a recorded demo can point at a real opted-in handset.
         # Defaults to a Twilio test number, which accepts sends and delivers

@@ -30,9 +30,10 @@ one with a state trap in it — see pre-flight §5.
 
 ## The one thing to say early, or a judge will spot it
 
-The demo handset is registered as **Karthik, the son**. So when you send a
-message, you are playing the mother, and the alerts come back to the same
-thread. Say it out loud once:
+The demo handset is registered as **you, the son** — set by
+`ANBU_DEMO_FAMILY_NAME`, so the record says your name rather than a placeholder
+you would have to explain. When you send a message you are playing the mother,
+and the alerts come back to the same thread. Say it out loud once:
 
 > "One phone is doing two jobs here — she sends, and the family contact
 > receives. In production those are different handsets."
@@ -448,8 +449,8 @@ consented family member is a credential. Now open the **avatar menu**, top
 right, and sign out. Sign in with Google.
 
 > "That is a real Google account, verified server-side against Google's keys.
-> But look at what the menu says: signed in as me, **on the record as Karthik,
-> son** — and that second line is the one doing the work."
+> But look at what the menu says: signed in as me, **on the record as her son**
+> — and that second line is the one doing the work."
 
 Now the part worth the ten seconds. Paste `$OTHER_PARENT` (pre-flight §6) into
 the URL and hit enter.
