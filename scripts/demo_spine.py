@@ -67,9 +67,11 @@ def main() -> int:
 
     contact = onboarding_tools.record_family_contact(
         parent_id,
-        name="Karthik Manickam",
+        # Same override the seeded demo uses, for the same reason: whoever runs
+        # this is the person it should name. Falls back to the synthetic family.
+        name=os.getenv("ANBU_DEMO_FAMILY_NAME", "Karthik Manickam"),
         relationship="son",
-        whatsapp_e164="+14155550142",
+        whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164", "+14155550142"),
         timezone_name="America/Los_Angeles",
         is_primary=True,
         consent_purposes=["admission_alerts", "status_updates", "billing_updates", "claim_updates"],

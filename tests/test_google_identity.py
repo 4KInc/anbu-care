@@ -354,3 +354,23 @@ def test_the_default_stays_synthetic(monkeypatch, client):
     profile = client.get(f"/api/parents/{parent_id}",
                          headers=_auth("anbu-demo-family-token")).json()["profile"]
     assert profile["family_contacts"][0]["name"] == "Karthik Manickam"
+
+
+def test_the_scripts_take_the_same_name_override(monkeypatch):
+    """Three places seed a family contact and they must agree. Two of them were
+    left on the placeholder, and one of those prints onto a document that goes
+    on camera."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+    for script in ("demo_spine.py", "make_documents.py"):
+        source = (root / script).read_text()
+        assert 'os.getenv("ANBU_DEMO_FAMILY_NAME"' in source, script
+        assert '"Karthik Manickam")' in source, f"{script} lost its synthetic default"
+
+    # And no script hardcodes the name any more.
+    for script in root.glob("*.py"):
+        source = script.read_text()
+        hardcoded = [ln for ln in source.splitlines()
+                     if "Karthik Manickam" in ln and "getenv" not in ln]
+        assert not hardcoded, f"{script.name}: {hardcoded}"

@@ -28,6 +28,7 @@ Sources for the formats are recorded in docs/CITATIONS.md.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -37,6 +38,12 @@ INK = (17, 24, 39)
 MUTED = (90, 105, 120)
 RULE = (200, 210, 220)
 FLAG = (176, 42, 34)
+
+
+# The person who holds the policy on her behalf. Overridable so a recorded demo
+# shows whoever is presenting rather than a placeholder; unset, the synthetic
+# family stays synthetic for anyone else running this.
+PROPOSER = os.getenv("ANBU_DEMO_FAMILY_NAME", "Karthik Manickam")
 
 
 def _font(size: int, bold: bool = False):
@@ -271,7 +278,7 @@ def policy_schedule(out: Path) -> Path:
            "IRDAI Reg. No. 129   ·   UIN: SHAHLIP26001V012526")
     p.title("POLICY SCHEDULE", "SH-NRI-4471902")
     p.pairs(
-        [("Insured", "Rajeswari Manickam"), ("Age", "71"), ("Proposer", "Karthik Manickam")],
+        [("Insured", "Rajeswari Manickam"), ("Age", "71"), ("Proposer", PROPOSER)],
         [("Policy period", "01 Apr 2026 to 31 Mar 2027"), ("Sum insured", "INR 5,00,000"),
          ("Cashless", "Yes, at network hospitals")],
     )
