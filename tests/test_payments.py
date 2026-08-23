@@ -909,7 +909,7 @@ def test_one_photograph_produces_one_message():
     # And the helper returns copy rather than sending its own message.
     helper = inspect.getsource(server._consider_payment)
     assert "tell(" not in helper, "_consider_payment still sends its own message"
-    assert "insurer settles" in helper
+    assert "normally adjusted when the insurer" in helper
 
 
 def test_the_message_explains_what_a_paid_interim_amount_means():
@@ -921,8 +921,12 @@ def test_the_message_explains_what_a_paid_interim_amount_means():
     from anbu_care import server
 
     helper = inspect.getsource(server._consider_payment)
-    assert "normally adjusted when the insurer settles" in helper
-    assert "what the hospital wanted now" in helper
+    assert "normally adjusted when the insurer" in helper
+
+    # And the immediate demand is named separately from the eventual estimate,
+    # with the advance accounting for the gap between them.
+    owed = inspect.getsource(server._owed_now)
+    assert "wants INR" in owed and "already paid against it" in owed
 
 
 # =========================================================================
@@ -976,3 +980,42 @@ def test_an_approval_says_what_happened():
 
     view = page[page.index("function vPayments()"):page.index("function refusalCard")]
     assert "S.payNote" in view, "the note is never rendered"
+
+
+def test_the_two_money_figures_are_not_confusable(case, monkeypatch):
+    """Reported as confusing: "about INR 2,28,690 to pay" and then "INR
+    2,70,720 of that is outstanding now" — a larger number described as part of
+    a smaller one.
+
+    They are different quantities pointing in different directions of time. One
+    is what the hospital wants before the insurer has settled; the other is
+    what the family is left with after. Neither is part of the other, and the
+    gap between the bill and the immediate demand is the advance.
+    """
+    from anbu_care.server import _owed_now
+
+    class _Bill:
+        payable_total_inr = 370_720
+
+    line = _owed_now(_Bill(), 270_720)
+    assert "wants INR 2,70,720 of it now" in line
+    assert "less the INR 1,00,000 already paid" in line
+
+    # "of that" is gone: nothing describes one of these as part of the other.
+    from anbu_care.comms.policy import TEMPLATES
+
+    body = str(TEMPLATES["bill_recorded"]["body"])
+    assert "of that is outstanding" not in body
+    # The immediate demand leads; the estimate reads as the eventual outcome.
+    assert body.index("{payment_line}") < body.index("Once the insurer settles")
+
+
+def test_a_bill_with_no_advance_does_not_invent_one(case):
+    from anbu_care.server import _owed_now
+
+    class _Bill:
+        payable_total_inr = 8_890
+
+    line = _owed_now(_Bill(), 8_890)
+    assert "wants INR 8,890 of it now" in line
+    assert "already paid" not in line

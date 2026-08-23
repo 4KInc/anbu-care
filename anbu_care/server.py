@@ -1456,9 +1456,9 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
         if outcome["failed_check"] == "mandate_present" and \
                 "no payment mandate" in outcome["reason"]:
             return ""
-        return (f"\nINR {outcome['amount_inr']:,} of that is outstanding now, and "
-                f"it was NOT paid automatically: {outcome['reason'][:180]}. "
-                f"Nothing has moved, and it needs you.\n")
+        return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
+                f"It was NOT paid automatically: {outcome['reason'][:180]}. "
+                f"Nothing has moved, and it needs you.\n\n")
 
     view = money_view(case_id)
     running = ""
@@ -1466,13 +1466,30 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
         running = (f"Across this stay: INR {view['paid_inr']:,} settled and INR "
                    f"{view['initiated_unconfirmed_inr']:,} initiated but not yet "
                    f"confirmed.\n")
-    return (f"\nINR {outcome['amount_inr']:,} of that was outstanding and has "
-            f"been paid automatically, inside the limits you set: checked "
-            f"against your per-bill cap, your total cap, the window, and the "
-            f"one account you authorised.\n"
+    return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
+            f"It has been paid automatically, inside the limits you set: "
+            f"checked against your per-bill cap, your total cap, the window, "
+            f"and the one account you authorised.\n"
             f"{running}"
-            f"That is what the hospital wanted now. A paid interim amount is "
-            f"normally adjusted when the insurer settles.\n")
+            f"A paid interim amount is normally adjusted when the insurer "
+            f"settles.\n\n")
+
+
+def _owed_now(bill, amount_inr: int) -> str:
+    """What the hospital wants today, and why it is not the bill total.
+
+    Reported as confusing: the message said what the family would end up paying
+    after the insurer settles, and then a LARGER figure "of that" outstanding
+    now. They are different quantities in different directions of time, and one
+    is not part of the other. This names the immediate one and accounts for the
+    gap, which is the advance already paid.
+    """
+    total = bill.payable_total_inr
+    advance = total - amount_inr if total and total > amount_inr else 0
+    if advance > 0:
+        return (f"The hospital wants INR {amount_inr:,} of it now, which is the "
+                f"total less the INR {advance:,} already paid against it.\n")
+    return f"The hospital wants INR {amount_inr:,} of it now.\n"
 
 
 def _payee_label(case_id: str) -> str:

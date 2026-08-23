@@ -85,15 +85,20 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # named an estimate in the copy, because a figure in a WhatsApp message
         # is the version people remember.
         "message_class": MessageClass.BILLING,
+        # Order matters more than wording here. Two figures were arriving in
+        # the wrong order and reading as contradictory: what the family will
+        # END UP paying once the insurer settles, and what the hospital wants
+        # TODAY before it has. The second is larger, comes first in time, and
+        # is the only one anybody can act on, so it leads.
         "body": "Anbu Care: that bill is on {parent_name}'s record. "
                 "{line_count} line items, INR {this_bill} on this bill.\n"
                 "{adjustment_line}"
-                "{running_total_line}"
-                "Estimated split so far: about INR {estimated_covered} covered, "
-                "about INR {estimated_you_pay} to pay.\n\n"
-                "That is an estimate from the policy terms, not the insurer's "
-                "decision.\n"
                 "{payment_line}"
+                "{running_total_line}"
+                "Once the insurer settles, about INR {estimated_covered} of it "
+                "is estimated to be covered, leaving your share at about "
+                "INR {estimated_you_pay}. That is an estimate from the policy "
+                "terms, not the insurer's decision.\n\n"
                 "The itemised breakdown, and the photo it was read from, are "
                 "here: {dashboard_url}",
         # Opens on the bill rather than the front page: a message about money
