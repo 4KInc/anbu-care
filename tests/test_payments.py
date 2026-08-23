@@ -998,8 +998,8 @@ def test_the_two_money_figures_are_not_confusable(case, monkeypatch):
         payable_total_inr = 370_720
 
     line = _owed_now(_Bill(), 270_720)
-    assert "wants INR 2,70,720 of it now" in line
-    assert "less the INR 1,00,000 already paid" in line
+    assert "wants INR 270,720 of it now" in line
+    assert "less the INR 100,000 already paid" in line
 
     # "of that" is gone: nothing describes one of these as part of the other.
     from anbu_care.comms.policy import TEMPLATES
