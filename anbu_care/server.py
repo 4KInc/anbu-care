@@ -1454,7 +1454,7 @@ def _handle_bill_photo(sender: Any, media: Any, background: BackgroundTasks) -> 
     background.add_task(_read_bill_and_report, case_id, sender.parent_id,
                         media.data, media.mime_type)
     return _twiml(
-        "Got that. Reading it now — what it turned out to be, and anything it "
+        "Got that. Reading it now. What it turned out to be, and anything it "
         "changes, will follow in a moment. Nothing is recorded until it has "
         "been read."
     )

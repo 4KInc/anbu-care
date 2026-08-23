@@ -641,3 +641,25 @@ def test_the_prompt_receipt_carries_no_message_text(discharged):
     assert "How are you feeling" not in str(receipt.payload)
     assert receipt.payload["day"] == 1
     assert receipt.payload["window_id"]
+
+
+def test_a_read_document_gets_a_label_on_the_trace_like_everything_else():
+    """It was rendering as the raw receipt kind.
+
+    Found while live-verifying the recovery trace: every other beat reads as a
+    sentence and this one read as `document.ingested`. One step per receipt was
+    never in doubt; what was missing was the label.
+    """
+    from anbu_care.provenance.chain import Receipt
+    from anbu_care.trace.compose import _WHAT, _detail
+
+    assert _WHAT["document.ingested"] == "A document was photographed and read"
+    receipt = Receipt(
+        receipt_id="r-1", case_id="case-x", seq=0, kind="document.ingested",
+        actor="document_capture", payload={
+            "document_kind": "discharge_summary", "observation_count": 0,
+            "applied": "Filled in the admission dates",
+        },
+        prev_hash="0" * 64, hash="a" * 64, signature="sig", public_key="pk",
+    )
+    assert _detail(receipt) == "discharge summary — Filled in the admission dates"

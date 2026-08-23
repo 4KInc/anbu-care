@@ -48,6 +48,7 @@ _WHAT = {
     "claim.adjudicated": "The counterparty answered",
     "claim.query_answered": "The agent gathered what was asked for",
     "claim.stage_changed": "The claim moved stage",
+    "document.ingested": "A document was photographed and read",
     "wellbeing.recorded": "A check-in was recorded",
     "recovery.window_opened": "Recovery check-ins began",
     "recovery.prompt_sent": "A recovery check-in was sent",
@@ -185,6 +186,14 @@ def _detail(receipt: Receipt) -> str:
             if p.get("phase") == "recovery":
                 return "recovery check-in — self-reported, not a clinical assessment"
             return "self-reported, not a clinical assessment"
+
+        case "document.ingested":
+            kind = str(p.get("document_kind") or "document").replace("_", " ")
+            observations = p.get("observation_count")
+            tail = (f", {observations} observation(s)"
+                    if isinstance(observations, int) and observations else "")
+            applied = str(p.get("applied") or "")
+            return f"{kind}{tail}" + (f" — {applied}" if applied else "")
 
         case "recovery.window_opened":
             source = ("the discharge date on the document"
