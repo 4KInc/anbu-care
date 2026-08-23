@@ -689,8 +689,13 @@ function copyHandoff(){
 }
 
 function vRecord(){
+  // The credential check comes FIRST. The parent id is read from the brief,
+  // which itself needs a credential, so ordering these the other way meant an
+  // uncredentialed visitor fell through to "open a case" and was never shown
+  // the sign-in at all — the gate was unreachable from the one view that
+  // exists behind it.
+  if(!S.token && !S.linkToken) return S.caseId ? gate() : vOpen();
   if(!S.parentId) return vOpen();
-  if(!S.token && !S.linkToken) return gate();
   if(S.record?.__denied) return denied(S.record.detail,"The health record");
   if(!S.record) return `<div class="card"><p class="mute">Reading the record…</p></div>`;
   const docs=S.record.documents||[], pr=S.record.profile||{};

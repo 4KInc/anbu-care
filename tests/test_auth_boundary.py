@@ -430,7 +430,7 @@ def test_the_browser_is_not_stricter_than_the_server():
     page = (pathlib.Path(__file__).resolve().parents[1]
             / "anbu_care" / "webui" / "index.html").read_text()
 
-    assert "if(!S.token && !S.linkToken) return gate();" in page
+    assert "if(!S.token && !S.linkToken) return S.caseId ? gate() : vOpen();" in page
     assert "if(S.parentId && (S.token || S.linkToken)){" in page
     assert "if(!S.token) return gate();" not in page
 
@@ -443,3 +443,17 @@ def test_the_dashboard_is_never_served_stale(client):
     response = client.get("/app")
     assert response.status_code == 200
     assert "no-cache" in response.headers.get("cache-control", "")
+
+
+def test_the_sign_in_is_reachable_from_the_view_it_gates():
+    """The parent id is read from the brief, which itself needs a credential.
+    Checking for it first meant an uncredentialed visitor fell through to
+    "open a case" and was never offered a sign-in — the gate was unreachable
+    from the one view that exists behind it."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+    record = page[page.index("function vRecord()"):page.index("function docDetails")]
+
+    credential_check = record.index("if(!S.token && !S.linkToken)")
+    parent_check = record.index("if(!S.parentId) return vOpen();")
+    assert credential_check < parent_check, "the gate is behind the parent id again"
