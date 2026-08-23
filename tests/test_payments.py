@@ -911,3 +911,56 @@ def test_the_payment_message_explains_the_two_figures():
     assert "was outstanding on that" in body
     # And what a paid interim amount means against the policy estimate.
     assert "adjusted" in body and "insurer settles" in body
+
+
+# =========================================================================
+# WHAT HAPPENS WHEN THE PERSON IS NOT SIGNED IN
+# =========================================================================
+
+
+def test_approving_without_a_session_does_not_navigate_away():
+    """Reported live: tapping Approve from a signed link silently moved the
+    reader to the Record tab. The thing they were doing vanished and nothing
+    said why, which reads as a broken button rather than as a boundary."""
+    page = _client()
+    approve = page[page.index("async function approvePayment("):]
+    approve = approve[:approve.index("\n}")]
+
+    assert 'S.view="record"' not in approve, "approving still teleports"
+    assert "askSignIn(" in approve, "it no longer asks in place"
+
+
+def test_every_sign_in_entry_point_offers_google():
+    """Reported live: "Sign in to share" ran signIn() directly, so it used the
+    demo credential even on a deployment with Google configured. A button that
+    quietly picks the weaker of two credentials is worse than one that asks."""
+    page = _client()
+
+    # The one shared panel, and it carries the Google slot.
+    panel = page[page.index("function signInPanel("):page.index("function askSignIn(")]
+    assert 'id="gbtn"' in panel
+    assert "Use the demo credential" in panel
+
+    # The real invariant: the demo credential is never offered ALONE. Every
+    # place it appears, a Google button sits next to it, so nobody is quietly
+    # given the weaker of the two.
+    import re
+
+    for match in re.finditer(r'onclick="signIn\(\)"', page):
+        window = page[max(0, match.start() - 400):match.start()]
+        assert 'id="gbtn"' in window, (
+            "a demo sign-in button is offered without a Google one beside it: "
+            + page[max(0, match.start() - 120):match.start() + 60])
+
+
+def test_an_approval_says_what_happened():
+    """The refusal card disappears once resolved. A card vanishing with nothing
+    in its place is indistinguishable from a card that failed to do anything."""
+    page = _client()
+    approve = page[page.index("async function approvePayment("):]
+    approve = approve[:approve.index("\n}")]
+    assert "S.payNote" in approve
+    assert "not settled yet" in approve
+
+    view = page[page.index("function vPayments()"):page.index("function refusalCard")]
+    assert "S.payNote" in view, "the note is never rendered"

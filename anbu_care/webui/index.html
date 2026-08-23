@@ -375,6 +375,7 @@ const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
             record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null, bills:null,
             who:null, authConfig:null, authError:null, pay:null, payBusy:null,
+            signInFor:null, payNote:null, payNoteOk:false,
             hospitals:null,
             notified:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -690,8 +691,9 @@ function vHandoff(){
     <p class="mute" style="margin-top:10px">Sharing with a clinician creates a new link for someone
       else to hold, so it needs a signed-in family session rather than the link that opened this
       page.</p>
-    <div class="btns" style="margin-top:12px">
-      <button class="btn" onclick="signIn()">Sign in to share</button></div>
+    ${S.signInFor?signInPanel(S.signInFor):`<div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="askSignIn('Sharing with a clinician creates a link for someone else to hold.')">
+        Sign in to share</button></div>`}
   </div>`;
 
   return `<div class="card">
@@ -1087,6 +1089,11 @@ function vPayments(){
   const done = (p.escalations || []).filter(e => !e.open);
 
   return `<div class="sec">Interim bills</div>
+  ${S.payNote?`<div class="strip ${S.payNoteOk?"note":""}"
+     style="${S.payNoteOk?"background:var(--teal-bg);color:var(--teal-ink)"
+                        :"background:var(--red-bg);color:var(--red-ink)"}">
+     ${esc(S.payNote)}</div>`:""}
+  ${S.signInFor?signInPanel(S.signInFor):""}
   <div class="strip note">Settlement is simulated — production integrates a licensed
     payment provider, and no money moves in this build. Autonomy is bounded: the agent
     pays only inside the limits you set, and anything else comes to you.</div>
@@ -1235,6 +1242,28 @@ function mandateForm(){
 
 function showMandateForm(){ S.mandateForm = true; S.mandateError = null; render(); }
 
+// Signing in has to happen WHERE the person is. Sending them to another tab to
+// do it — which is what approving used to do — loses the thing they were in the
+// middle of and looks like the button did nothing.
+//
+// It also has to offer the same choice the gate offers. "Sign in to share" ran
+// signIn() directly, which silently used the demo credential even on a
+// deployment with Google configured.
+function signInPanel(reason){
+  return `<div class="card edge-teal" style="margin-top:12px">
+    <h2 class="mini">Sign in to continue</h2>
+    <p>${esc(reason)}</p>
+    <p class="mute" style="margin-top:6px">The link that opened this page can read
+      the record. Authorising money or sharing with a clinician needs a session.</p>
+    <div class="btns" style="align-items:center">
+      <div id="gbtn"></div>
+      <button class="btn ghost" onclick="signIn()">Use the demo credential</button>
+    </div>
+  </div>`;
+}
+
+function askSignIn(reason){ S.signInFor = reason; render(); }
+
 async function confirmMandate(){
   const vpa = document.getElementById("mvpa")?.value?.trim() || "";
   const label = document.getElementById("mlabel")?.value?.trim() || "";
@@ -1267,16 +1296,26 @@ async function revokeMandate(){
 }
 
 async function approvePayment(billId, amount){
-  if(!S.token){ S.authError = "Approving a payment needs a signed-in family session.";
-                S.view="record"; render(); return; }
+  if(!S.token){
+    askSignIn(`Approving ${inr(amount)} for bill ${billId} needs a signed-in family session.`);
+    return;
+  }
   if(!confirm(`Approve ${inr(amount)} for bill ${billId}?`)) return;
   S.payBusy = billId; render();
   try{
-    await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}/payments/approve`,
+    const r = await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}/payments/approve`,
       {method:"POST", headers:{Authorization:`Bearer ${S.token}`,
        "content-type":"application/json"},
        body: JSON.stringify({bill_id: billId, amount_inr: amount,
                              approved_by: S.who?.name || "family"})});
+    const out = await r.json();
+    // Say what happened. The refusal card disappears on reload, and a card
+    // vanishing with nothing in its place reads as a failure.
+    S.payNote = r.ok
+      ? `Approved. ${inr(out.amount_inr ?? amount)} initiated to ${out.payee_label || "the hospital"} — not settled yet.`
+      : `Not approved: ${out.detail || `HTTP ${r.status}`}`;
+    S.payNoteOk = r.ok;
+  } catch(e){ S.payNote = `Not approved: ${String(e)}`; S.payNoteOk = false;
   } finally { S.payBusy = null; }
   await load();
 }
@@ -1560,7 +1599,8 @@ document.addEventListener("keydown", e => {
   if(e.key === "Escape" && ACCOUNT_OPEN) closeAccount();
 });
 
-async function signIn(){ S.token="anbu-demo-family-token"; S.who=null; await load(); }
+async function signIn(){ S.token="anbu-demo-family-token"; S.who=null;
+  S.signInFor=null; await load(); }
 
 // Sign in with Google.
 //
@@ -1591,7 +1631,7 @@ async function drawGoogleButton(){
       client_id: clientId,
       callback: async (response) => {
         S.token = response.credential;
-        S.authError = null;
+        S.authError = null; S.signInFor = null;
         S.who = await api("/api/whoami", {auth:true});
         await load();
       },
