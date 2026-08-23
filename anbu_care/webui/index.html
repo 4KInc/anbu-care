@@ -1091,6 +1091,7 @@ function vPayments(){
     payment provider, and no money moves in this build. Autonomy is bounded: the agent
     pays only inside the limits you set, and anything else comes to you.</div>
   ${open.map(refusalCard).join("")}
+  ${vUnconsidered()}
   ${vMandate(m, p)}
   ${vMoney(p)}
   ${(p.payments || []).map(paymentCard).join("")}
@@ -1158,6 +1159,34 @@ function vMoney(p){
       <div class="v">${inr(p.initiated_unconfirmed_inr)}</div>
       <p class="mute" style="margin-top:4px">sent, and not yet acknowledged — not counted as paid</p></div>
   </div>`;
+}
+
+// A bill that is payable and has never been put to the enforcer — the
+// mandate-granted-after-the-bill case. Asking is a trigger, not an override:
+// the amount comes from the stored bill and the destination from the mandate.
+function vUnconsidered(){
+  const p = S.pay, b = S.bills;
+  if(!p || !b || !b.bills || !S.token) return "";
+  const decided = new Set([
+    ...(p.payments || []).map(x => x.bill_id),
+    ...(p.escalations || []).map(x => x.bill_id),
+  ]);
+  const waiting = b.bills.filter(x => (x.balance_due_inr || 0) > 0
+                                      && !decided.has(x.bill_id));
+  if(!waiting.length) return "";
+
+  return waiting.map(x => `<div class="card">
+    <h2 class="mini">Bill ${esc(x.bill_id)} has ${inr(x.balance_due_inr)} outstanding</h2>
+    <p class="mute">It has not been put to the payment checks yet.</p>
+    <div class="btns"><button class="btn ghost"
+      onclick="considerBill('${esc(x.bill_id)}')">Check it against my limits</button></div>
+  </div>`).join("");
+}
+
+async function considerBill(billId){
+  await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}/bills/${encodeURIComponent(billId)}/consider`,
+    {method:"POST", headers:{Authorization:`Bearer ${S.token}`}});
+  await load();
 }
 
 function paymentCard(x){

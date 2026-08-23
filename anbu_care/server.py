@@ -700,6 +700,38 @@ def confirm_payment(case_id: str, payment_id: str,
         raise HTTPException(status_code=400, detail=str(refused)) from None
 
 
+@app.post("/api/cases/{case_id}/bills/{bill_id}/consider")
+def consider_bill_for_payment(case_id: str, bill_id: str,
+                              _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Put a bill already on file in front of the enforcer.
+
+    The enforcer normally runs the moment a bill arrives. That leaves a hole:
+    a mandate granted AFTER a bill was photographed never reconsiders it, and
+    the bill sits there while cashless lapses. This is the same decision, asked
+    for again.
+
+    It triggers the enforcer; it does not make the decision, and it cannot
+    influence it — no amount, no payee and no override crosses this boundary.
+    The amount comes from the stored bill's balance due and the destination
+    from the mandate, exactly as on the automatic path.
+    """
+    from anbu_care.bills import list_bills
+    from anbu_care.payments import consider_bill
+
+    bill = next((b for b in list_bills(case_id) if b.bill_id == bill_id), None)
+    if bill is None:
+        raise HTTPException(status_code=404, detail=f"no bill {bill_id} on case {case_id}")
+    if not bill.balance_due_inr or bill.balance_due_inr <= 0:
+        return {"outcome": "nothing_due",
+                "detail": "this bill has no balance outstanding, so there is "
+                          "nothing to pay"}
+
+    case = service.load_case(case_id)
+    return consider_bill(case_id=case_id, parent_id=case.parent_id,
+                         bill_id=bill_id, amount_inr=bill.balance_due_inr,
+                         extracted_payee=bill.vendor)
+
+
 @app.post("/api/cases/{case_id}/payments/approve")
 def approve_payment(case_id: str, body: dict[str, Any],
                     _session: str = Depends(require_family_session)) -> dict[str, Any]:

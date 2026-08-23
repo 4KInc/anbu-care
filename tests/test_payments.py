@@ -686,6 +686,38 @@ def test_the_client_computes_no_cap_and_no_pay_decision():
         assert token not in page, f"the client appears to decide: {token!r}"
 
 
+def test_no_destination_VALUE_can_appear_in_the_page():
+    """Checked live against the deployed DOM, and pinned here.
+
+    The KEY `payee_vpa` does appear in the client source, because the grant
+    form has to POST one — the son types it. What must never appear is a
+    destination VALUE: the API returns a label and a hash, so there is nothing
+    for the page to render even if someone tried.
+
+    So the precise claim is narrower than "the string never appears", and
+    stating it precisely is the point: a write-only field in a form is not the
+    same risk as a destination rendered back into the document.
+    """
+    page = _client()
+    # Read-back paths, which would put a real address on screen.
+    assert "m.payee_vpa" not in page
+    assert "x.payee_vpa" not in page
+    # The address IS shown back once, in the confirmation dialog, because the
+    # son must see what he is about to pin. That is a native confirm() and not
+    # a render path: it never enters the document.
+    confirm_fn = page[page.index("async function confirmMandate()"):
+                      page.index("async function revokeMandate()")]
+    assert "${vpa}" in confirm_fn, "the son is no longer shown what he is pinning"
+    assert page.count("${vpa}") == 1, "the address appears outside the dialog"
+
+    # And no render path interpolates it into HTML.
+    for renderer in ("vMandate", "paymentCard", "refusalCard", "mandateForm"):
+        body = page[page.index(f"function {renderer}("):]
+        body = body[:body.index("\n}")]
+        assert "vpa" not in body.replace('id="mvpa"', "").replace("mvpa", ""), \
+            f"{renderer} touches an address"
+
+
 def test_no_payment_response_carries_a_destination(case):
     """The strongest form of "no raw VPA in the DOM": the API never sends one,
     so it cannot reach the page even by mistake."""
@@ -738,3 +770,60 @@ def test_the_settlement_label_is_on_the_payment_view():
     view = page[page.index("function vPayments()"):page.index("function refusalCard")]
     assert "Settlement is simulated" in view
     assert "Autonomy is bounded" in view
+
+
+def test_a_bill_already_on_file_can_be_put_to_the_enforcer(case, monkeypatch):
+    """The ordering hole: a mandate granted AFTER a bill arrived would never
+    reconsider it, and the bill would sit unpaid while cashless lapsed."""
+    from fastapi.testclient import TestClient
+
+    from anbu_care.bills import ingest_bill_image
+    from anbu_care.server import app
+
+    parent_id, case_id = case
+    _bill_reads(monkeypatch, balance_due=30_000)
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert service.list_payments(case_id) == []      # nothing considered it yet
+
+    _mandate(case_id, parent_id)                     # granted afterwards
+
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer anbu-demo-family-token"}
+    result = client.post(f"/api/cases/{case_id}/bills/{bill.bill_id}/consider",
+                         headers=headers).json()
+
+    assert result["outcome"] == "initiated"
+    assert len(service.list_payments(case_id)) == 1
+
+
+def test_considering_a_bill_carries_no_amount_or_payee(case):
+    """The trigger cannot influence the decision. The amount comes from the
+    stored bill and the destination from the mandate; nothing crosses the
+    boundary that could change either."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.consider_bill_for_payment)
+    assert "body" not in inspect.signature(server.consider_bill_for_payment).parameters
+    assert "bill.balance_due_inr" in source
+    assert "payee" not in source.split("def consider_bill_for_payment")[1].split("return")[0] \
+        or "extracted_payee=bill.vendor" in source
+
+
+def test_a_bill_with_no_balance_is_not_put_to_the_enforcer(case, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from anbu_care.bills import ingest_bill_image
+    from anbu_care.server import app
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    _bill_reads(monkeypatch, balance_due=0)
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    result = TestClient(app).post(
+        f"/api/cases/{case_id}/bills/{bill.bill_id}/consider",
+        headers={"Authorization": "Bearer anbu-demo-family-token"}).json()
+    assert result["outcome"] == "nothing_due"
+    assert service.list_payments(case_id) == []
