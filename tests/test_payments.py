@@ -1178,3 +1178,39 @@ def test_two_automatic_payments_in_a_row_still_escalate(case):
     assert result["outcome"] == "escalated"
     assert "burst" in result["reason"]
     assert "automatic payment" in result["reason"]
+
+
+def test_nothing_is_called_paid_until_it_is_confirmed():
+    """The card said "paid automatically" and "not counted as paid" in the same
+    breath, and then "Paid to Sacred Heart Hospital" underneath.
+
+    "Paid" is reserved for money the rail has confirmed. Until then it was
+    SENT, which is a different fact and the one the money view already counts
+    separately.
+    """
+    page = _client()
+    card = page[page.index("function paymentCard("):page.index("function mandateForm(")]
+
+    # The state word follows the confirmation, not the mechanism.
+    assert 'x.confirmed ? `paid ${how}` : `sent ${how}`' in card
+    assert '`Sent to ${esc(x.payee_label)}.' in card
+    assert "Paid to ${esc(x.payee_label)}" not in card
+
+    # And no rendered line claims both at once. Comments are excluded: the one
+    # above this function quotes the old wording on purpose.
+    rendered = [ln for ln in card.splitlines() if not ln.strip().startswith("//")]
+    for line in rendered:
+        assert not ("paid ${how}" in line and "sent" not in line), line.strip()
+
+
+def test_the_message_does_not_claim_settlement_either():
+    """Same overclaim, other surface. The message said it had been paid while
+    nothing had confirmed anything."""
+    import inspect
+
+    from anbu_care import server
+
+    helper = inspect.getsource(server._consider_payment)
+    assert "has been sent automatically" in helper
+    assert "not confirmed as" in helper and "settled yet" in helper
+    assert "has been paid automatically" not in helper

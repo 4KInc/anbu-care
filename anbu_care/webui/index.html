@@ -1197,15 +1197,21 @@ async function considerBill(billId){
 }
 
 function paymentCard(x){
+  // "paid" is reserved for money the rail has confirmed. Until then it was
+  // SENT, which is a different fact — the card used to say "paid automatically"
+  // and "not counted as paid" in the same breath.
+  const how = x.autonomous ? "automatically" : "after you approved it";
+  const state = x.confirmed ? `paid ${how}` : `sent ${how}`;
+  const detail = x.confirmed
+    ? `Settled with ${esc(x.payee_label)} (simulated).`
+    : `Sent to ${esc(x.payee_label)}. Not confirmed yet, so it is not counted as paid.`;
+
   return `<div class="cleared">
     <div class="head" style="display:flex;justify-content:space-between;gap:12px">
-      <div><strong>Bill ${esc(x.bill_id)}</strong>
-        ${x.autonomous?" · paid automatically":" · you approved this"}</div>
+      <div><strong>Bill ${esc(x.bill_id)}</strong> · ${state}</div>
       <div class="num" style="font-weight:800">${inr(x.amount_inr)}</div>
     </div>
-    <p class="mute" style="margin-top:4px">
-      ${x.confirmed?"Settled (simulated).":"Initiated. Not settled, so it is not counted as paid."}
-      Paid to ${esc(x.payee_label)}.</p>
+    <p class="mute" style="margin-top:4px">${detail}</p>
     ${(x.guards_passed||[]).length?`<div class="guards">${
       x.guards_passed.map(g=>`<span class="guard">${esc(String(g).replace(/_/g," "))}</span>`).join("")
     }</div>`:""}

@@ -1466,9 +1466,10 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
                    f"{group(view['initiated_unconfirmed_inr'])} initiated but not yet "
                    f"confirmed.\n")
     return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
-            f"It has been paid automatically, inside the limits you set: "
+            f"It has been sent automatically, inside the limits you set: "
             f"checked against your per-bill cap, your total cap, the window, "
-            f"and the one account you authorised.\n"
+            f"and the one account you authorised. It is not confirmed as "
+            f"settled yet.\n"
             f"{running}\n")
 
 
