@@ -4,8 +4,18 @@
 
   razorpay   a real API call to Razorpay in TEST MODE. Real order, real
              identifier, real webhook. Test-mode money, which does not exist.
+  payout     the PAYOUT shape rather than the collection shape: money pushed
+             to a beneficiary, so there is no page for anyone to open and no
+             human in the loop. Simulated until RazorpayX credentials exist,
+             and it says so on every surface.
   simulated  no call at all. The fallback when no keys are configured.
   off        refuse to do anything.
+
+A Payment Link is a COLLECTION instrument. Its whole purpose is to ask a
+person to pay, so a lane that ends in one ends with a human clicking, no
+matter how autonomous the deciding was. Paying a hospital is a payout, which
+is the opposite direction, and the link was only ever there because test keys
+hand you collections.
 
 The distinction matters and the label follows it, because "we integrate a
 payment provider" and "we move money" are different claims and only the first
@@ -32,6 +42,9 @@ from dataclasses import dataclass
 
 SIMULATED_LABEL = ("Settlement simulated. Production integrates a licensed "
                    "payment provider; no money moved.")
+PAYOUT_LABEL = ("Simulated payout. The instruction, the checks and the receipts "
+                "are real; no money moved. A live payout needs RazorpayX "
+                "credentials and a funded account.")
 TEST_MODE_LABEL = ("Razorpay in test mode. The order is real; the money is not. "
                    "Going live needs a registered merchant account.")
 
@@ -40,6 +53,8 @@ TEST_MODE_LABEL = ("Razorpay in test mode. The order is real; the money is not. 
 def label() -> str:
     from anbu_care.payments import providers
 
+    if _mode() == "payout":
+        return PAYOUT_LABEL
     return TEST_MODE_LABEL if _mode() == "razorpay" and providers.configured() \
         else SIMULATED_LABEL
 
@@ -53,6 +68,10 @@ def rail() -> str:
     """
     from anbu_care.payments import providers
 
+    if _mode() == "payout":
+        # Named for what it is. When RazorpayX credentials exist this becomes
+        # "razorpayx" and nothing else about the lane changes.
+        return "payout-simulated"
     return "razorpay-test" if _mode() == "razorpay" and providers.configured() \
         else "simulated"
 
@@ -107,6 +126,17 @@ def initiate(*, payment_id: str, amount_inr: int, payee_ref: str,
                           detail=f"{result.detail}. {TEST_MODE_LABEL}",
                           simulated=False, checkout_url=result.checkout_url)
 
+    if mode == "payout":
+        # No checkout_url, deliberately. There is nobody to hand a page to:
+        # a payout is pushed, and the absence of a link is the difference
+        # between this rail and the collection one, not an omission.
+        return Settlement(
+            initiated=True,
+            reference=f"payout-{payment_id}",
+            confirmed=False,
+            detail=PAYOUT_LABEL,
+        )
+
     return Settlement(
         initiated=True,
         reference=f"sim-{payment_id}",
@@ -127,6 +157,10 @@ def confirmation_for(reference: str) -> Settlement:
     if not reference:
         return Settlement(initiated=False, reference="", confirmed=False,
                           detail="no settlement reference to confirm")
+    if reference.startswith("payout-"):
+        return Settlement(initiated=True, reference=reference, confirmed=True,
+                          simulated=True,
+                          detail="the payout was reported complete. " + PAYOUT_LABEL)
     simulated = reference.startswith("sim-")
     return Settlement(initiated=True, reference=reference, confirmed=True,
                       simulated=simulated,

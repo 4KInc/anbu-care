@@ -1207,17 +1207,52 @@ def test_nothing_is_called_paid_until_it_is_confirmed():
         assert not ("paid ${how}" in line and "sent" not in line), line.strip()
 
 
-def test_the_message_does_not_claim_settlement_either():
+def test_the_message_does_not_claim_settlement_either(case, monkeypatch):
     """Same overclaim, other surface. The message said it had been paid while
-    nothing had confirmed anything."""
-    import inspect
+    nothing had confirmed anything.
 
-    from anbu_care import server
+    The invariant is not that "paid" is an unsayable word — a payout really
+    does settle — it is that the word tracks whether something confirmed it.
+    On a rail that ends in a link somebody has to open, nothing has.
+    """
+    from anbu_care.bills import ingest_bill_image
+    from anbu_care.server import _consider_payment
 
-    helper = inspect.getsource(server._consider_payment)
-    assert "has been sent automatically" in helper
-    assert "not confirmed as" in helper and "settled yet" in helper
-    assert "has been paid automatically" not in helper
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    _bill_reads(monkeypatch, balance_due=31_650, total=31_650)
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    line = _consider_payment(case_id, parent_id, bill)
+    assert "has been sent automatically" in line
+    assert "not confirmed as settled yet" in line
+    assert "has been paid automatically" not in line
+
+
+def test_a_payout_that_settled_says_so_and_names_the_rail(case, monkeypatch):
+    """The other half of the same invariant.
+
+    A payout completes with nobody opening anything, so there is no page to
+    point at and no "not yet" to report. What must survive is which rail
+    carried it: "settled" on a simulated payout and "settled" on a live one are
+    different claims, and the family is entitled to know which they just read.
+    """
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "payout")
+
+    from anbu_care.bills import ingest_bill_image
+    from anbu_care.server import _consider_payment
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    _bill_reads(monkeypatch, balance_due=31_650, total=31_650)
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    line = _consider_payment(case_id, parent_id, bill)
+    assert "has been paid automatically" in line
+    assert "It is settled." in line
+    assert "no money moved" in line, "a simulated payout read as a real one"
+    assert "not confirmed as settled yet" not in line
+    assert "http" not in line, "a payout offered a page to open"
 
 
 # =========================================================================
@@ -1457,3 +1492,87 @@ def test_the_link_is_a_page_a_person_can_open(monkeypatch):
     assert '_post("/payment_links"' in source
     assert 'body.get("short_url", "")' in source
     assert "checkout.js" not in source.split('"""')[2]   # not in the code, only the note
+
+
+# =========================================================================
+# THE PAYOUT RAIL
+# =========================================================================
+
+
+def _payout_case(monkeypatch, case, amount=31_650, per_bill=50_000):
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "payout")
+    from anbu_care.payments import consider_bill
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=per_bill)
+    return consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-p1",
+                         amount_inr=amount, extracted_payee="Sacred Heart Hospital",
+                         extracted_vendor="Sacred Heart Hospital"), case_id
+
+
+def test_a_payout_settles_with_nobody_opening_anything(case, monkeypatch):
+    """The whole point. A Payment Link is a collection instrument: its purpose
+    is to ask a person to pay, so a lane ending in one ends with a human
+    clicking however autonomous the deciding was."""
+    out, _case_id = _payout_case(monkeypatch, case)
+
+    assert out["outcome"] == "settled"
+    assert out["paid"] is True
+    assert out["checkout_url"] == "", "a payout handed somebody a page to open"
+
+
+def test_the_rail_that_carried_it_is_on_every_receipt(case, monkeypatch):
+    """"Settled" on a simulated payout and on a live one are different claims."""
+    _out, case_id = _payout_case(monkeypatch, case)
+
+    kinds = {r.kind: r.payload.get("settlement")
+             for r in service.get_chain(case_id).receipts}
+    assert kinds["payment.auto_initiated"] == "payout-simulated"
+    assert kinds["payment.confirmed"] == "payout-simulated"
+
+
+def test_initiating_still_never_writes_its_own_confirmation(case, monkeypatch):
+    """The one rule this lane has.
+
+    Auto-settling must not collapse the two receipts into one, or make the
+    initiating code the author of the confirmation. Both exist, in order, via
+    the same `confirm` the Razorpay webhook calls.
+    """
+    _out, case_id = _payout_case(monkeypatch, case)
+
+    order = [r.kind for r in service.get_chain(case_id).receipts]
+    assert order.index("payment.auto_initiated") < order.index("payment.confirmed")
+
+    confirmed = next(r for r in service.get_chain(case_id).receipts
+                     if r.kind == "payment.confirmed")
+    assert confirmed.actor == "payment_rail", "the enforcer confirmed its own payment"
+
+
+def test_a_settled_payout_counts_as_paid_not_as_initiated(case, monkeypatch):
+    from anbu_care.payments import money_view
+
+    _out, case_id = _payout_case(monkeypatch, case)
+    view = money_view(case_id)
+
+    assert view["paid_inr"] == 31_650
+    assert view["initiated_unconfirmed_inr"] == 0
+    assert view["confirmed_count"] == 1
+    assert view["settlement"] == "payout-simulated"
+
+
+def test_the_payout_rail_is_still_subject_to_every_guard(case, monkeypatch):
+    """Automating settlement must not automate away the checks in front of it."""
+    out, case_id = _payout_case(monkeypatch, case, amount=62_000, per_bill=50_000)
+
+    assert out["outcome"] == "escalated"
+    assert out["failed_check"] == "per_bill_cap"
+    assert service.list_payments(case_id) == []
+
+
+def test_a_payout_never_claims_money_moved(monkeypatch):
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "payout")
+    from anbu_care.payments import settlement
+
+    assert settlement.rail() == "payout-simulated"
+    assert "no money moved" in settlement.label()
+    assert "RazorpayX" in settlement.label(), "no route to a real payout is named"

@@ -131,13 +131,30 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
             "confirmed": False,
             "note": ("Initiated, NOT settled. Every guard on the mandate "
                      "passed and the destination came from the mandate rather "
-                     "than from the bill. Settlement is simulated in this "
-                     "build; no banking credential is held or recorded."),
+                     "than from the bill. " + settlement.label() +
+                     " No banking credential is held or recorded."),
         })
 
+    # A payout completes without anybody opening anything, so the report it
+    # would send back arrives immediately. It goes through `confirm` — the same
+    # door the Razorpay webhook uses — rather than being written here, because
+    # the one rule this lane has is that the code initiating a payment never
+    # writes its confirmation. Two receipts, in order, exactly as a slower rail
+    # would produce them.
+    settled = False
+    if settlement.rail().startswith("payout"):
+        try:
+            settled = confirm(case_id=case_id,
+                              payment_id=payment_id)["outcome"] == "confirmed"
+        except PaymentRefused:
+            # Initiated but unconfirmed is a real state and shows as such.
+            # Nothing here promotes it to paid.
+            settled = False
+
     return {
-        "outcome": "initiated",
-        "paid": False,          # initiated is not paid, and never says it is
+        "outcome": "settled" if settled else "initiated",
+        "paid": settled,        # initiated is not paid, and never says it is
+        "rail": settlement.rail(),
         "payment_id": payment_id,
         "bill_id": bill_id,
         "amount_inr": verdict.amount_inr,

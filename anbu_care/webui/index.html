@@ -1245,8 +1245,11 @@ function paymentCard(x){
   // and "not counted as paid" in the same breath.
   const how = x.autonomous ? "automatically" : "after you approved it";
   const state = x.confirmed ? `paid ${how}` : `sent ${how}`;
+  // The rail, not a blanket "(simulated)". A test-mode Razorpay capture and a
+  // simulated payout are both short of real money, but they are short of it in
+  // different ways, and the card claimed the same thing about each.
   const detail = x.confirmed
-    ? `Settled with ${esc(x.payee_label)} (simulated).`
+    ? `Settled with ${esc(x.payee_label)}. ${esc(x.settlement_note || "")}`
     : `Sent to ${esc(x.payee_label)}. Not confirmed yet, so it is not counted as paid.`;
 
   return `<div class="cleared">

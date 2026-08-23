@@ -1834,10 +1834,22 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
     if outcome.get("checkout_url"):
         where = f"The payment page for it: {outcome['checkout_url']}\n"
 
+    bounded = ("inside the limits you set: checked against your per-bill cap, "
+               "your total cap, the window, and the one account you authorised")
+
+    # A payout completes without anybody opening anything, so there is no "not
+    # yet confirmed" to report and no page to point at. What there IS to say is
+    # which rail carried it, because "settled" on a simulated payout and
+    # "settled" on a live one are different claims and the family is entitled
+    # to know which one they just read.
+    if outcome.get("outcome") == "settled":
+        return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
+                f"It has been paid automatically, {bounded}. It is settled.\n"
+                f"{outcome.get('settlement_note', '')}\n"
+                f"{running}\n")
+
     return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
-            f"It has been sent automatically, inside the limits you set: "
-            f"checked against your per-bill cap, your total cap, the window, "
-            f"and the one account you authorised. It is not confirmed as "
+            f"It has been sent automatically, {bounded}. It is not confirmed as "
             f"settled yet.\n"
             f"{where}"
             f"{running}\n")
