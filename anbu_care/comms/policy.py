@@ -116,6 +116,35 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # A document that could not be read. Distinct from the bill wording,
     # because calling a lab report a bill and asking for "the amounts by hand"
     # is advice that cannot be followed.
+    # Money moved without a tap. The consequential facts first — how much,
+    # where, and that it is not settled — then what stopped it being a
+    # surprise: the caps he set himself.
+    "payment_auto_initiated": {
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: interim bill of INR {amount} at {payee_label} was "
+                "paid automatically, inside the limits you set.\n"
+                "{running_line}"
+                "It was checked against your per-bill cap, your total cap, the "
+                "window, and the one account you authorised. Nothing else can "
+                "receive it.\n"
+                "Stop this at any time here: {dashboard_url}",
+        "view": "claim",
+        "params": ["amount", "payee_label", "running_line"],
+    },
+
+    # Refused. The reason is the message: a family who is told only that it
+    # did not pay cannot act, and this one usually has to act fast because
+    # cashless stops when an interim bill goes unpaid.
+    "payment_escalated": {
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: an interim bill of INR {amount} at {payee_label} "
+                "was NOT paid automatically and needs you.\n"
+                "Why: {reason}\n"
+                "Nothing has moved. Review and approve it here: {dashboard_url}",
+        "view": "claim",
+        "params": ["amount", "payee_label", "reason"],
+    },
+
     "document_unreadable": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: that {subject} could not be read. {reason}\n"

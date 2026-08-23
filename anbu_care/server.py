@@ -602,6 +602,121 @@ def parent_document_image(parent_id: str, document_id: str,
             "note": "short-lived signed URL; the bucket itself is not public"}
 
 
+# ---- interim bill payment -------------------------------------------------
+#
+# Granting and revoking are family acts and need a family session. Reading the
+# money view needs case access like every other content route. Nothing here can
+# choose a destination: that is fixed at grant time by a human and read from
+# the mandate by the enforcer.
+
+
+@app.post("/api/cases/{case_id}/payment-mandate")
+def grant_mandate(case_id: str, body: dict[str, Any],
+                  _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Authorise automatic payment of interim bills, within bounds."""
+    from anbu_care.payments import MandateRejected, grant
+
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    try:
+        mandate = grant(
+            parent_id=case.parent_id, case_id=case_id,
+            payee_vpa=str(body.get("payee_vpa", "")),
+            payee_label=str(body.get("payee_label", "")),
+            per_bill_cap_inr=int(body.get("per_bill_cap_inr", 0)),
+            total_cap_inr=int(body.get("total_cap_inr", 0)),
+            hours=int(body.get("hours", 48)),
+            granted_by=str(body.get("granted_by", "")),
+        )
+    except MandateRejected as rejected:
+        raise HTTPException(status_code=400, detail=str(rejected)) from None
+    except (TypeError, ValueError) as bad:
+        raise HTTPException(status_code=400, detail=str(bad)) from None
+
+    from anbu_care.payments import payee_ref
+
+    return {
+        "status": "granted",
+        "mandate_id": mandate.mandate_id,
+        # The destination never leaves the store, not even to the family who
+        # typed it. A reference proves which one it is; it cannot be paid to.
+        "payee_ref": payee_ref(mandate.payee_vpa),
+        "payee_label": mandate.payee_label,
+        "per_bill_cap_inr": mandate.per_bill_cap_inr,
+        "total_cap_inr": mandate.total_cap_inr,
+        "window_closes_at": mandate.window_closes_at.isoformat(),
+    }
+
+
+@app.delete("/api/cases/{case_id}/payment-mandate")
+def revoke_mandate(case_id: str,
+                   _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Stop automatic payment now. Everything after this escalates."""
+    from anbu_care.payments import revoke
+
+    mandate = revoke(case_id, revoked_by="family")
+    if mandate is None:
+        return {"status": "no_live_mandate"}
+    return {"status": "revoked", "mandate_id": mandate.mandate_id}
+
+
+@app.get("/api/cases/{case_id}/payments")
+def case_payments(case_id: str,
+                  _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """What has been paid, what is merely initiated, and what authority remains."""
+    from anbu_care.payments import money_view
+
+    payments = service.list_payments(case_id)
+    return {
+        "case_id": case_id,
+        "payments": [
+            {"payment_id": p.payment_id, "bill_id": p.bill_id,
+             "amount_inr": p.amount_inr, "payee_label": p.payee_label,
+             "payee_ref": p.payee_ref, "autonomous": p.autonomous,
+             "guards_passed": p.guards_passed,
+             "initiated_at": p.initiated_at.isoformat(),
+             "confirmed": p.confirmed_at is not None,
+             "settlement_note": p.settlement_note}
+            for p in payments
+        ],
+        **money_view(case_id),
+    }
+
+
+@app.post("/api/cases/{case_id}/payments/{payment_id}/confirm")
+def confirm_payment(case_id: str, payment_id: str,
+                    _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Record a settlement confirmation. Never called by the initiating path."""
+    from anbu_care.payments import PaymentRefused, confirm
+
+    try:
+        return confirm(case_id=case_id, payment_id=payment_id)
+    except PaymentRefused as refused:
+        raise HTTPException(status_code=400, detail=str(refused)) from None
+
+
+@app.post("/api/cases/{case_id}/payments/approve")
+def approve_payment(case_id: str, body: dict[str, Any],
+                    _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """A human approving a bill the enforcer refused to pay automatically."""
+    from anbu_care.payments import PaymentRefused, approve_escalated
+
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    try:
+        return approve_escalated(
+            case_id=case_id, parent_id=case.parent_id,
+            bill_id=str(body.get("bill_id", "")),
+            amount_inr=int(body.get("amount_inr", 0)),
+            approved_by=str(body.get("approved_by", "family")))
+    except PaymentRefused as refused:
+        raise HTTPException(status_code=400, detail=str(refused)) from None
+    except (TypeError, ValueError) as bad:
+        raise HTTPException(status_code=400, detail=str(bad)) from None
+
+
 @app.get("/api/cases/{case_id}/verify")
 def case_verify(case_id: str) -> dict[str, Any]:
     """Independently verify a case's chain.
@@ -1245,6 +1360,64 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         "estimated_covered": f"{estimate.estimated_covered_inr:,}",
         "estimated_you_pay": f"{estimate.estimated_you_pay_inr:,}",
     }, "billing", consent.BILLING_UPDATES)
+
+    _consider_payment(case_id, parent_id, bill, tell)
+
+
+def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
+    """Hand a payable interim bill to the enforcer, and say what it decided.
+
+    The enforcer decides. This function only reports. It passes the extracted
+    vendor along as `extracted_payee` NOT so it can be paid to — nothing here
+    can choose a destination — but so the enforcer can treat a bill naming a
+    different payee as evidence the bill is wrong.
+    """
+    from anbu_care.payments import consider_bill, money_view
+
+    payable = bill.balance_due_inr
+    if not payable or payable <= 0:
+        return  # nothing outstanding on this bill; nothing to pay
+
+    try:
+        outcome = consider_bill(
+            case_id=case_id, parent_id=parent_id, bill_id=bill.bill_id,
+            amount_inr=payable, extracted_payee=bill.vendor)
+    except Exception:  # noqa: BLE001 - a payment decision must not kill the lane
+        logger.exception("payment decision failed")
+        return
+
+    if outcome["outcome"] == "escalated":
+        # No mandate at all is the ordinary state, not an incident. Telling a
+        # family "we did not automatically pay" when they never asked us to
+        # would be noise on top of an already frightening day.
+        if outcome["failed_check"] == "mandate_present" and \
+                "no payment mandate" in outcome["reason"]:
+            return
+        tell("payment_escalated", {
+            "amount": f"{outcome['amount_inr']:,}",
+            "payee_label": _payee_label(case_id),
+            "reason": outcome["reason"][:220],
+        }, "billing", consent.BILLING_UPDATES)
+        return
+
+    view = money_view(case_id)
+    running = ""
+    if view["payment_count"] > 1:
+        running = (f"Across this stay: INR {view['paid_inr']:,} settled, "
+                   f"INR {view['initiated_unconfirmed_inr']:,} initiated and "
+                   f"not yet confirmed.\n")
+    tell("payment_auto_initiated", {
+        "amount": f"{outcome['amount_inr']:,}",
+        "payee_label": outcome["payee_label"],
+        "running_line": running,
+    }, "billing", consent.BILLING_UPDATES)
+
+
+def _payee_label(case_id: str) -> str:
+    from anbu_care.payments import live_for_case
+
+    mandate = live_for_case(case_id)
+    return mandate.payee_label if mandate else "the hospital"
 
 
 def _latest_open_case_for(parent_id: str) -> str | None:

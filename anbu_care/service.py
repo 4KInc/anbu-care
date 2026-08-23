@@ -28,6 +28,8 @@ from anbu_care.schemas import (
     ClaimSubmission,
     ParentProfile,
     ParsedDocument,
+    PaymentMandate,
+    PaymentRecord,
 )
 
 # IRDAI 2024 Master Circular: cashless pre-auth decision within 1 hour;
@@ -70,6 +72,40 @@ def list_documents(parent_id: str, store: Store | None = None) -> list[ParsedDoc
     store = store or get_store()
     rows = store.query_prefix(f"PARENT#{parent_id}", "DOC#")
     return [ParsedDocument.model_validate(_clean(r)) for r in rows]
+
+
+# --------------------------------------------------------------------------
+# Payments
+#
+# Mandates and payments live under the CASE partition, because both are scoped
+# to one admission. A mandate that outlived its case would be a standing
+# authority nobody remembered granting.
+# --------------------------------------------------------------------------
+
+
+def save_mandate(mandate: PaymentMandate, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{mandate.case_id}", f"MANDATE#{mandate.mandate_id}",
+              mandate.model_dump(mode="json"))
+
+
+def list_mandates(case_id: str, store: Store | None = None) -> list[PaymentMandate]:
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "MANDATE#")
+    return [PaymentMandate.model_validate(_clean(r)) for r in rows]
+
+
+def save_payment(payment: PaymentRecord, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{payment.case_id}", f"PAYMENT#{payment.payment_id}",
+              payment.model_dump(mode="json"))
+
+
+def list_payments(case_id: str, store: Store | None = None) -> list[PaymentRecord]:
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "PAYMENT#")
+    return sorted((PaymentRecord.model_validate(_clean(r)) for r in rows),
+                  key=lambda p: p.initiated_at)
 
 
 # --------------------------------------------------------------------------

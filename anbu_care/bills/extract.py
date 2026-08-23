@@ -61,6 +61,12 @@ Return ONLY a JSON object, no prose and no code fence:
   "discount_inr": <integer rupees deducted as a discount, or null>,
   "tax_inr": <integer rupees of GST or tax added, or null>,
   "stated_total_inr": <integer rupees, the final TOTAL printed, or null>,
+  "balance_due_inr": <integer rupees printed as BALANCE DUE / AMOUNT PAYABLE /
+                      NET PAYABLE, or null. This is what is still owed after
+                      any advance, and it is the only figure a payment would
+                      ever be for>,
+  "is_interim": <true if the bill says INTERIM / PROVISIONAL / PART BILL, false
+                 if it says FINAL, null if it does not say>,
   "vendor": "<hospital or clinic name, or null>",
   "bill_date": "<YYYY-MM-DD, or null>",
   "admitted_on": "<YYYY-MM-DD admission date printed on the bill, or null>",
@@ -105,6 +111,8 @@ class Extraction:
     detail: str
     line_items: list[dict] = field(default_factory=list)
     stated_total_inr: int | None = None
+    balance_due_inr: int | None = None
+    is_interim: bool | None = None
     subtotal_inr: int | None = None
     discount_inr: int | None = None
     tax_inr: int | None = None
@@ -236,6 +244,8 @@ def extract(image: bytes, mime_type: str = "image/jpeg") -> Extraction:
                           detail="no line item on that bill could be read")
 
     stated = _coerce_amount(parsed.get("stated_total_inr"))
+    balance_due = _coerce_amount(parsed.get("balance_due_inr"))
+    is_interim = parsed.get("is_interim")
     subtotal = _coerce_amount(parsed.get("subtotal_inr"))
     discount = _coerce_amount(parsed.get("discount_inr"))
     tax = _coerce_amount(parsed.get("tax_inr"))
@@ -272,6 +282,8 @@ def extract(image: bytes, mime_type: str = "image/jpeg") -> Extraction:
         ok=True, engine="gemini",
         detail=f"read {len(lines)} line(s) from {len(image)} bytes of {mime_type}",
         line_items=lines, stated_total_inr=stated, subtotal_inr=subtotal,
+        balance_due_inr=balance_due,
+        is_interim=(bool(is_interim) if is_interim is not None else None),
         discount_inr=discount, tax_inr=tax,
         vendor=(str(parsed["vendor"]).strip() if parsed.get("vendor") else None),
         bill_date=(str(parsed["bill_date"]).strip() if parsed.get("bill_date") else None),

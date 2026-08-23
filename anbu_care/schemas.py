@@ -507,6 +507,11 @@ class ExtractedBill(BaseModel):
     parent_id: str
     line_items: list[BillLineItem] = Field(default_factory=list)
     stated_total_inr: int | None = None
+    # What is still owed after any advance. A payment is only ever for this,
+    # never for the total: an interim bill with 1,00,000 already paid against
+    # it is a 1,00,000 mistake waiting to happen.
+    balance_due_inr: int | None = None
+    is_interim: bool | None = None
     currency: str = "INR"
     vendor: str | None = None
     bill_date: str | None = None
@@ -689,6 +694,73 @@ class ArrivalBrief(BaseModel):
     @property
     def unknown_count(self) -> int:
         return sum(1 for f in self.facts if not f.known)
+
+
+class PaymentMandate(BaseModel):
+    """What a family member authorised, once, in a credentialed session.
+
+    Scoped to ONE admission, not a standing arrangement. Everything the
+    enforcer needs to decide is here, and nothing here is a credential:
+    `method_ref` is an opaque reference to a payment method held by a licensed
+    provider, which this system never resolves and never sees behind.
+
+    `payee_vpa` is the whole point. It is typed once by a human, out of band,
+    read off the hospital's own billing desk — never off a photograph, never
+    from an extraction. From that moment nothing can change it. Granting a new
+    destination means revoking this mandate and granting another, which is a
+    fresh human act.
+    """
+
+    mandate_id: str
+    parent_id: str
+    case_id: str
+    payee_vpa: str
+    payee_label: str
+    per_bill_cap_inr: int
+    total_cap_inr: int
+    window_opens_at: datetime
+    window_closes_at: datetime
+    granted_by: str = ""
+    granted_at: datetime = Field(default_factory=utcnow)
+    revoked_at: datetime | None = None
+    # An opaque handle to a method held elsewhere. NOT a credential, and the
+    # schema has nowhere a credential could live even by accident.
+    method_ref: str = ""
+
+    @property
+    def is_live(self) -> bool:
+        return self.revoked_at is None
+
+
+class PaymentRecord(BaseModel):
+    """A payment this system prepared. Never proof that money moved.
+
+    `confirmed_at` is set only when a settlement confirmation actually arrives,
+    for the same reason `comms.sent` is a different receipt from
+    `comms.not_delivered`: a system that assumes its own success will report
+    money as paid that is not.
+    """
+
+    payment_id: str
+    case_id: str
+    parent_id: str
+    bill_id: str
+    amount_inr: int
+    # A stable prefix of the destination's hash. Enough to prove two payments
+    # went to the same place; not enough to be a destination.
+    payee_ref: str
+    payee_label: str
+    mandate_id: str
+    autonomous: bool
+    guards_passed: list[str] = Field(default_factory=list)
+    initiated_at: datetime = Field(default_factory=utcnow)
+    confirmed_at: datetime | None = None
+    failed_at: datetime | None = None
+    settlement_note: str = ""
+
+    @property
+    def is_settled(self) -> bool:
+        return self.confirmed_at is not None
 
 
 class Case(BaseModel):

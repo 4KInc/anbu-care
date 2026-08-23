@@ -140,6 +140,9 @@ def test_every_template_renders_and_passes_its_own_gate():
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
         "subject": "lab report",
+        "payee_label": "Sacred Heart Hospital",
+        "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
+        "reason": "the amount is above the per-bill cap you set.",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -261,6 +264,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
         "subject": "lab report",
+        "payee_label": "Sacred Heart Hospital",
+        "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
+        "reason": "the amount is above the per-bill cap you set.",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -378,7 +384,8 @@ def test_a_message_opens_on_the_tab_it_is_about():
     timeline. The same fault applies to documents, which live on the record
     tab. Anything without a subject of its own still opens the front page.
     """
-    ON_CLAIM = {"bill_recorded", "bill_unreadable", "bill_already_recorded"}
+    ON_CLAIM = {"bill_recorded", "bill_unreadable", "bill_already_recorded",
+                "payment_auto_initiated", "payment_escalated"}
     ON_RECORD = {"document_recorded", "document_recorded_withheld",
                  "document_unreadable", "document_already_recorded"}
     for name, spec in TEMPLATES.items():

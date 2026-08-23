@@ -1,0 +1,583 @@
+"""Interim bill payment: the envelope, the payee lock, and the refusals.
+
+This is the highest-consequence code in the project. Everywhere else the worst
+case is a wrong sentence; here it is money arriving somewhere it should not.
+
+So almost every test below is about a REFUSAL. The happy path is one test. The
+rest are the ways an autonomous payer must decline, because a system that pays
+when it should not is worse than one that never pays at all.
+
+The single most important test is `test_a_bill_can_never_set_the_destination`.
+`ExtractedBill.vendor` is a string a model read off a photograph, and it is the
+only payee-shaped field in the repo. The design exists mostly to make it
+structurally impossible for that string to become a destination.
+"""
+
+from __future__ import annotations
+
+import pathlib
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from anbu_care import service
+from anbu_care.payments import (
+    MandateRejected,
+    PaymentRefused,
+    approve_escalated,
+    confirm,
+    consider_bill,
+    grant,
+    live_for_case,
+    money_view,
+    revoke,
+    upi_intent,
+)
+from anbu_care.tools import onboarding_tools, triage_tools
+
+HOSPITAL_VPA = "sacredheart@hdfcbank"
+ATTACKER_VPA = "definitely.not.the.hospital@okaxis"
+
+
+@pytest.fixture
+def case():
+    pid = onboarding_tools.create_parent_profile(
+        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=["Hypertension"], allergies=["Penicillin"],
+    )["profile"]["parent_id"]
+    cid = triage_tools.run_triage(
+        parent_id=pid, symptoms=["chest pain"], free_text="",
+        reported_by="caregiver", lat=0.0, lon=0.0, case_id="")["case_id"]
+    return pid, cid
+
+
+def _mandate(case_id, parent_id, *, per_bill=100_000, total=400_000, hours=48):
+    return grant(parent_id=parent_id, case_id=case_id, payee_vpa=HOSPITAL_VPA,
+                 payee_label="Sacred Heart Hospital", per_bill_cap_inr=per_bill,
+                 total_cap_inr=total, hours=hours, granted_by="Karthik")
+
+
+# =========================================================================
+# THE DESTINATION NEVER COMES FROM THE BILL
+# =========================================================================
+
+
+def test_a_bill_can_never_set_the_destination(case):
+    """The one that matters most.
+
+    A bill may propose an AMOUNT. It can never propose a DESTINATION. The
+    enforcer assigns the payee from the mandate rather than comparing the
+    bill's to it, so even a bill that names an attacker's address cannot
+    redirect money — and naming one at all is treated as evidence the bill is
+    wrong, which stops the payment entirely.
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=40_000,
+                           extracted_payee=ATTACKER_VPA)
+
+    assert result["outcome"] == "escalated"
+    assert result["paid"] is False
+    assert "payee_mismatch" in result["reason"]
+    assert service.list_payments(case_id) == []
+
+
+def test_the_enforcer_assigns_the_payee_rather_than_comparing_it():
+    """Read the code, not the behaviour. A comparison that is later loosened
+    to a fuzzy match would still pass a behavioural test; an assignment cannot
+    be loosened into taking the bill's value."""
+    source = (pathlib.Path(__file__).resolve().parents[1]
+              / "anbu_care" / "payments" / "enforcer.py").read_text()
+    assert "payee = mandate.payee_vpa" in source
+    body = source[source.index("def decide("):]
+    assert "extracted_payee ==" not in body, "the destination is being compared"
+
+
+def test_a_payment_only_ever_targets_the_mandate_payee(case):
+    """Even on the happy path, and even when the bill named someone else, the
+    UPI intent that comes out is addressed to the mandate."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=40_000)
+
+    assert "sacredheart%40hdfcbank" in result["upi_intent"]
+    assert "okaxis" not in result["upi_intent"]
+
+
+# =========================================================================
+# THE LLM CANNOT MOVE MONEY
+# =========================================================================
+
+
+def test_settlement_is_unreachable_from_the_agent_and_tool_layers():
+    """By import graph, not by convention. A convention is not a guarantee."""
+    root = pathlib.Path(__file__).resolve().parents[1] / "anbu_care"
+    offenders = []
+    for path in list((root / "agents").rglob("*.py")) + list((root / "tools").rglob("*.py")):
+        text = path.read_text()
+        if "payments.settlement" in text or "from anbu_care.payments import settlement" in text:
+            offenders.append(path.name)
+    assert not offenders, f"settlement is importable from: {offenders}"
+
+
+def test_settlement_is_not_exported_from_the_package():
+    """`from anbu_care.payments import settlement` must not be the easy path."""
+    import anbu_care.payments as payments
+
+    assert "settlement" not in payments.__all__
+    assert not hasattr(payments, "initiate")
+
+
+def test_only_the_enforcer_path_calls_settlement():
+    """Exactly one call site, and it sits after every check has passed."""
+    root = pathlib.Path(__file__).resolve().parents[1] / "anbu_care"
+    callers = [p.name for p in root.rglob("*.py")
+               if "settlement.initiate(" in p.read_text()]
+    assert callers == ["run.py"], f"settlement.initiate called from {callers}"
+
+
+# =========================================================================
+# THE ENVELOPE
+# =========================================================================
+
+
+def test_an_in_envelope_bill_initiates_with_no_human_tap(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=40_000)
+
+    assert result["outcome"] == "initiated"
+    assert result["autonomous"] is True
+    assert "payee_from_mandate" in result["guards_passed"]
+    assert len(service.list_payments(case_id)) == 1
+
+
+def test_an_over_cap_bill_refuses_and_escalates(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=60_000)
+
+    assert result["failed_check"] == "per_bill_cap"
+    assert service.list_payments(case_id) == []
+
+
+def test_the_total_cap_stops_the_bill_that_would_cross_it(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=100_000, total=100_000)
+    base = datetime.now(UTC)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A",
+                  amount_inr=60_000, now=base)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="B",
+                           amount_inr=60_000, now=base + timedelta(hours=12))
+    assert result["failed_check"] == "total_cap"
+    assert sum(p.amount_inr for p in service.list_payments(case_id)) == 60_000
+
+
+def test_a_bill_outside_the_window_refuses(case):
+    parent_id, case_id = case
+    mandate = _mandate(case_id, parent_id, hours=1)
+
+    later = mandate.window_closes_at + timedelta(hours=1)
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                           amount_inr=10_000, now=later)
+    assert result["failed_check"] == "within_window"
+
+
+def test_a_mandate_for_another_admission_does_not_pay_this_one(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    other = triage_tools.run_triage(
+        parent_id=parent_id, symptoms=["fall"], free_text="",
+        reported_by="caregiver", lat=0.0, lon=0.0, case_id="")["case_id"]
+
+    result = consider_bill(case_id=other, parent_id=parent_id,
+                           bill_id="IP/9", amount_inr=10_000)
+    assert result["failed_check"] == "mandate_present"
+
+
+def test_with_no_mandate_every_bill_escalates(case):
+    """The no-mandate mode. This is the whole of the never-autonomous design:
+    the same enforcer, with nothing granted, refuses everything."""
+    parent_id, case_id = case
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=1_000)
+    assert result["failed_check"] == "mandate_present"
+    assert result["needs_human"] is True
+    assert service.list_payments(case_id) == []
+
+
+# =========================================================================
+# IDEMPOTENCY, REVOCATION, ANOMALY
+# =========================================================================
+
+
+def test_the_same_bill_twice_pays_once(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    first = consider_bill(case_id=case_id, parent_id=parent_id,
+                          bill_id="IP/1", amount_inr=40_000)
+    second = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=40_000)
+
+    assert first["outcome"] == "initiated"
+    assert second["failed_check"] == "not_duplicate"
+    assert len(service.list_payments(case_id)) == 1
+
+    kinds = [r.kind for r in service.get_chain(case_id).receipts]
+    assert kinds.count("payment.auto_initiated") == 1
+
+
+def test_revocation_hard_stops_autonomy(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A", amount_inr=20_000)
+
+    revoke(case_id, revoked_by="Karthik")
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="B", amount_inr=20_000)
+    assert result["failed_check"] == "mandate_present"
+    assert live_for_case(case_id) is None
+    assert len(service.list_payments(case_id)) == 1
+
+
+def test_an_anomalous_but_in_cap_bill_still_escalates(case):
+    """Routine bills flow without waking him. Unusual ones stop, even when
+    every cap allows them."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=100_000, total=400_000)
+
+    base = datetime.now(UTC)
+    for i, amount in enumerate((8_000, 9_000)):
+        consider_bill(case_id=case_id, parent_id=parent_id, bill_id=f"B{i}",
+                      amount_inr=amount, now=base + timedelta(hours=12 * i))
+
+    # In cap, but more than 3x the running mean of the earlier bills.
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="B9",
+                           amount_inr=80_000, now=base + timedelta(hours=30))
+
+    assert result["outcome"] == "escalated"
+    assert result["failed_check"] == "no_anomaly"
+    assert "amount_spike" in result["reason"]
+
+
+def test_a_second_bill_within_hours_escalates(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    base = datetime.now(UTC)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A",
+                  amount_inr=20_000, now=base)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="B",
+                           amount_inr=21_000, now=base + timedelta(hours=1))
+    assert "burst" in result["reason"]
+
+
+# =========================================================================
+# CONFIRMED IS NEVER ASSUMED
+# =========================================================================
+
+
+def test_an_initiated_payment_is_not_a_paid_one(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=40_000)
+
+    assert result["paid"] is False
+    view = money_view(case_id)
+    assert view["paid_inr"] == 0
+    assert view["initiated_unconfirmed_inr"] == 40_000
+
+    kinds = [r.kind for r in service.get_chain(case_id).receipts]
+    assert "payment.auto_initiated" in kinds
+    assert "payment.confirmed" not in kinds
+
+
+def test_confirmation_is_a_separate_act(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=40_000)
+
+    confirm(case_id=case_id, payment_id=result["payment_id"])
+
+    view = money_view(case_id)
+    assert view["paid_inr"] == 40_000
+    assert view["initiated_unconfirmed_inr"] == 0
+
+
+# =========================================================================
+# NO BANKING CREDENTIALS, ANYWHERE
+# =========================================================================
+
+
+CREDENTIAL_WORDS = ("pin", "cvv", "card_number", "cardnumber", "password",
+                    "bank_login", "account_number", "upi_pin", "otp", "secret")
+
+
+def test_no_payment_schema_has_a_field_a_credential_could_live_in():
+    from anbu_care.schemas import PaymentMandate, PaymentRecord
+
+    for model in (PaymentMandate, PaymentRecord):
+        for name in model.model_fields:
+            lowered = name.lower()
+            assert not any(word in lowered for word in CREDENTIAL_WORDS), \
+                f"{model.__name__}.{name} looks like a credential field"
+
+
+def test_no_credential_word_appears_in_the_payment_package():
+    """grep, as the brief asked. Comments explaining that we hold none are
+    fine; a field, parameter or key is not."""
+    root = pathlib.Path(__file__).resolve().parents[1] / "anbu_care" / "payments"
+    for path in root.rglob("*.py"):
+        text = path.read_text()
+        for word in ("cvv", "card_number", "upi_pin", "bank_login"):
+            for line in text.splitlines():
+                stripped = line.strip()
+                if word in line.lower() and not stripped.startswith(("#", '"', "'")):
+                    raise AssertionError(f"{path.name}: {line.strip()[:70]}")
+
+
+def test_no_receipt_carries_a_destination(case):
+    """The chain gets a reference, never an address. A receipt that carried the
+    VPA would put a payable destination into a record designed to be shared."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=40_000)
+
+    for receipt in service.get_chain(case_id).receipts:
+        blob = str(receipt.payload).lower()
+        assert HOSPITAL_VPA not in blob, f"{receipt.kind} carries the raw VPA"
+        for word in CREDENTIAL_WORDS:
+            assert f'"{word}"' not in blob
+
+
+def test_verify_leaks_nothing_about_the_money(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=40_000)
+
+    from anbu_care.tools import provenance_tools
+
+    blob = str(provenance_tools.verify_case_chain(case_id)).lower()
+    assert "40000" not in blob and "40,000" not in blob
+    assert HOSPITAL_VPA not in blob
+    assert "hdfcbank" not in blob
+
+
+# =========================================================================
+# THE MANDATE ITSELF
+# =========================================================================
+
+
+def test_a_mandate_needs_a_plausible_upi_address(case):
+    parent_id, case_id = case
+    with pytest.raises(MandateRejected) as rejected:
+        grant(parent_id=parent_id, case_id=case_id, payee_vpa="Sacred Heart",
+              payee_label="Sacred Heart", per_bill_cap_inr=1000,
+              total_cap_inr=2000, hours=24)
+    assert "billing desk" in str(rejected.value)
+
+
+def test_a_per_bill_cap_cannot_exceed_the_total(case):
+    parent_id, case_id = case
+    with pytest.raises(MandateRejected) as rejected:
+        grant(parent_id=parent_id, case_id=case_id, payee_vpa=HOSPITAL_VPA,
+              payee_label="X", per_bill_cap_inr=500_000, total_cap_inr=100_000,
+              hours=24)
+    assert "exhaust" in str(rejected.value)
+
+
+def test_only_one_live_mandate_per_case(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    with pytest.raises(MandateRejected) as rejected:
+        _mandate(case_id, parent_id)
+    assert "Revoke it" in str(rejected.value)
+
+
+def test_approving_an_amount_does_not_create_a_destination(case):
+    """The human gate authorises money, never a place to send it."""
+    parent_id, case_id = case
+
+    with pytest.raises(PaymentRefused) as refused:
+        approve_escalated(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                          amount_inr=10_000, approved_by="Karthik")
+    assert "does not create one" in str(refused.value)
+
+
+def test_a_human_can_approve_what_the_enforcer_refused(case):
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=10_000)
+
+    refused = consider_bill(case_id=case_id, parent_id=parent_id,
+                            bill_id="IP/1", amount_inr=50_000)
+    assert refused["outcome"] == "escalated"
+
+    approved = approve_escalated(case_id=case_id, parent_id=parent_id,
+                                 bill_id="IP/1", amount_inr=50_000,
+                                 approved_by="Karthik")
+    assert approved["outcome"] == "initiated"
+    assert approved["autonomous"] is False
+    assert "sacredheart%40hdfcbank" in approved["upi_intent"]
+
+
+def test_the_upi_intent_is_a_real_one():
+    intent = upi_intent(payee_vpa=HOSPITAL_VPA, payee_label="Sacred Heart",
+                        amount_inr=48_200, note="IP/2026/04471")
+    assert intent.startswith("upi://pay?")
+    assert "pa=sacredheart%40hdfcbank" in intent
+    assert "am=48200" in intent and "cu=INR" in intent
+
+
+# =========================================================================
+# END TO END, THROUGH THE REAL BILL LANE
+# =========================================================================
+
+
+IMAGE = b"\xff\xd8\xff" + b"x" * 8000
+
+
+def _bill_reads(monkeypatch, *, balance_due, vendor="Sacred Heart Hospital",
+                total=90_000):
+    """Pin what the model returns at the one seam, so the guards under test are
+    the real enforcer rather than a mock of it."""
+    import json
+
+    from anbu_care.bills import extract as bill_vision
+    from anbu_care.comms import storage as gcs
+    from anbu_care.comms.storage import StoredArtifact
+    from anbu_care.docvision import read as docvision_read
+
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(bill_vision, "_call_model", lambda image, mime_type: json.dumps({
+        "vendor": vendor, "bill_date": "2026-08-20",
+        "stated_total_inr": total, "balance_due_inr": balance_due,
+        "is_interim": True, "unreadable": False, "unreadable_reason": None,
+        "line_items": [{"label": "ICU bed charges", "item": "icu",
+                        "amount_inr": total, "source_hint": "2 days"}]}))
+    monkeypatch.setattr(docvision_read, "read",
+                        lambda image, mime_type="image/jpeg": docvision_read.Reading(
+                            ok=True, kind="bill", engine="stub", detail="stubbed"))
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="":
+                        StoredArtifact(stored=True, url="https://signed/x",
+                                       object_name=f"a/{filename}", detail="",
+                                       expires_in_seconds=900))
+
+
+def test_a_photographed_interim_bill_auto_clears(case, monkeypatch):
+    """The whole feature, from a photograph. No human tap anywhere."""
+    from anbu_care.bills import ingest_bill_image
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    _bill_reads(monkeypatch, balance_due=45_000)
+
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert bill.balance_due_inr == 45_000
+    assert bill.is_interim is True
+
+    from anbu_care.payments import consider_bill
+
+    outcome = consider_bill(case_id=case_id, parent_id=parent_id,
+                            bill_id=bill.bill_id, amount_inr=bill.balance_due_inr,
+                            extracted_payee=bill.vendor)
+    assert outcome["outcome"] == "initiated"
+    # The vendor string off the photograph named a hospital, not a VPA, and it
+    # still did not become a destination.
+    assert "sacredheart%40hdfcbank" in outcome["upi_intent"]
+
+
+def test_a_bill_with_nothing_outstanding_is_not_paid(case, monkeypatch):
+    """A payment is for the balance due, never the total. A bill with an
+    advance already against it would otherwise be paid twice over."""
+    from anbu_care.bills import ingest_bill_image
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    _bill_reads(monkeypatch, balance_due=0, total=90_000)
+
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert bill.balance_due_inr == 0
+
+    from anbu_care.server import _consider_payment
+
+    sent = []
+    _consider_payment(case_id, parent_id, bill,
+                      lambda *a, **k: sent.append(a) or {"allowed": True})
+    assert sent == [], "a bill with no balance due should not reach the enforcer"
+    assert service.list_payments(case_id) == []
+
+
+def test_the_trace_shows_what_the_enforcer_checked(case):
+    from anbu_care.trace import compose_trace
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=40_000)
+
+    steps = compose_trace(case_id).steps
+    granted = next(s for s in steps if s.kind == "mandate.granted")
+    paid = next(s for s in steps if s.kind == "payment.auto_initiated")
+
+    assert "authorised automatic payment" in granted.what
+    assert "checks passed" in paid.detail
+    assert "not yet settled" in paid.detail
+
+
+def test_the_trace_says_which_check_refused_a_payment(case):
+    from anbu_care.trace import compose_trace
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=10_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=99_000)
+
+    step = next(s for s in compose_trace(case_id).steps
+                if s.kind == "payment.escalated")
+    assert "per bill cap failed" in step.detail
+
+
+def test_a_hospital_name_on_a_bill_is_not_a_destination_claim(case):
+    """Found by the end-to-end test, and it would have made the feature dead.
+
+    Every real bill prints a hospital NAME in the vendor field. Comparing a
+    name to a VPA never matches, so treating any mismatch as an anomaly
+    escalated every legitimate bill. Only a string shaped like a payment
+    address counts as a bill claiming a destination.
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    ordinary = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A",
+                             amount_inr=30_000,
+                             extracted_payee="Sacred Heart Hospital")
+    assert ordinary["outcome"] == "initiated"
+
+
+def test_a_bill_naming_a_payable_address_still_stops_everything(case):
+    """The other half. A name is noise; an address is an attack."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    for claimed in (ATTACKER_VPA, "upi://pay?pa=attacker@okaxis"):
+        result = consider_bill(case_id=case_id, parent_id=parent_id,
+                               bill_id=f"B-{claimed[:6]}", amount_inr=30_000,
+                               extracted_payee=claimed)
+        assert result["outcome"] == "escalated", claimed
+        assert "payee_mismatch" in result["reason"]
+    assert service.list_payments(case_id) == []

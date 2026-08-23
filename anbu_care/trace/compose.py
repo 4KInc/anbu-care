@@ -57,6 +57,13 @@ _WHAT = {
     "voice.not_placed": "A call was not placed",
     "clinician.note": "A clinician left a note",
     "emergency.access": "The emergency summary was opened",
+    "mandate.granted": "A family member authorised automatic payment",
+    "mandate.revoked": "Automatic payment was stopped",
+    "payment.auto_initiated": "An interim bill was paid without waking anyone",
+    "payment.approved": "A person approved a payment the enforcer refused",
+    "payment.escalated": "A payment was refused and handed to a person",
+    "payment.confirmed": "A settlement confirmation arrived",
+    "payment.failed": "A settlement reported failure",
 }
 
 
@@ -78,6 +85,38 @@ def _detail(receipt: Receipt) -> str:
                  if h.get("hospital_id") == p.get("recommended_hospital_id")), None)
             tail = f", routed to {chosen}" if chosen else ""
             return f"severity {severity}{tail}"
+
+        case "payment.auto_initiated" | "payment.approved":
+            amount = p.get("amount_inr")
+            guards = p.get("guards_passed") or []
+            # The guards ARE the reasoning. A payment that says only "paid" is
+            # asking to be trusted; one that lists what it checked can be
+            # argued with by someone who was asleep when it happened.
+            checked = f", {len(guards)} checks passed" if guards else ""
+            return (f"INR {amount:,}{checked} — initiated, not yet settled"
+                    if isinstance(amount, int) else "initiated, not yet settled")
+
+        case "payment.escalated":
+            amount = p.get("amount_inr")
+            failed = str(p.get("failed_check") or "a check")
+            head = f"INR {amount:,}" if isinstance(amount, int) else "a bill"
+            return f"{head} not paid — {failed.replace('_', ' ')} failed"
+
+        case "payment.confirmed":
+            amount = p.get("amount_inr")
+            return (f"INR {amount:,} settled (simulated)"
+                    if isinstance(amount, int) else "settled (simulated)")
+
+        case "mandate.granted":
+            per_bill = p.get("per_bill_cap_inr")
+            total = p.get("total_cap_inr")
+            if isinstance(per_bill, int) and isinstance(total, int):
+                return (f"up to INR {per_bill:,} a bill, INR {total:,} in total, "
+                        f"to one authorised account")
+            return "bounded authority to pay"
+
+        case "mandate.revoked":
+            return "every further bill now needs a person"
 
         case "claim.adjudicated":
             outcome = p.get("outcome", "unknown")
