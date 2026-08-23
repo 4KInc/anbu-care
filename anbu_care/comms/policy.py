@@ -271,6 +271,79 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "and no medical details are shared here.",
         "params": ["parent_name", "hospital_name", "timestamp", "cashless_status"],
     },
+    # ---- recovery check-ins --------------------------------------------
+    #
+    # The first template in this file addressed to the PARENT rather than to a
+    # family member, and the wording carries three deliberate refusals.
+    #
+    # It names no medicine. "Telmisartan 40 mg" is prescription specifics; the
+    # gate would block this message and be right to. "Today's medicines" asks
+    # the same question and carries none of it.
+    #
+    # It asks and does not tell. There is no "you should", no "make sure you",
+    # no "if X then Y". A son asks how his mother is; he does not issue her
+    # instructions, and a system standing in for one must not either.
+    #
+    # It says what it is. The last line exists so that nothing about a daily
+    # message from something that knows her medical history can be mistaken for
+    # a clinician checking on her.
+    "recovery_check_in": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: good morning {parent_name}. "
+                "It is day {day} since you came home.\n\n"
+                "How are you feeling today?\n"
+                "Did you take today's medicines?\n"
+                "Is there any new discomfort?\n\n"
+                "Reply here in your own words, or send a voice note. "
+                "This is a check-in, not medical advice. Nobody has assessed you. "
+                "If something is wrong now, call 108.\n"
+                "Reply STOP at any time and these messages end.",
+        "params": ["parent_name", "day"],
+    },
+
+    # What the family is told when a recovery answer trips the deterministic
+    # table. It reports WHAT WAS HEARD and never what it might mean.
+    #
+    # No hospital line, no routing sentence, no "this could be". The acute
+    # alert names a hospital because triage ranked one; this one says the words
+    # she used and asks a human to call her, which is the entire honest content
+    # of "your mother said something concerning".
+    "recovery_escalation_family": {
+        "message_class": MessageClass.STATUS,
+        "body": "Anbu Care: {parent_name} answered today's recovery check-in at "
+                "{timestamp}, day {day} since she came home.\n\n"
+                "We heard: \"{said}\"\n"
+                "{words_note}"
+                "{understood_as}"
+                "\nThat is what she said. Nobody has assessed it and Anbu Care "
+                "has not.\n\n"
+                "Please call her now. If you cannot reach her, call 108, the "
+                "ambulance line in India. Anbu Care has not called an ambulance "
+                "and cannot.\n"
+                "Everything recorded: {dashboard_url}",
+        "params": ["parent_name", "timestamp", "day", "said", "words_note",
+                   "understood_as"],
+    },
+
+    # The same alert with her words removed, for when what she said carries
+    # medical detail the gate will not carry. Being more clinically precise
+    # must not make a mother harder to help — the same reasoning, and the same
+    # fallback, as the acute lane's withheld variant.
+    "recovery_escalation_family_withheld": {
+        "message_class": MessageClass.STATUS,
+        "body": "Anbu Care: {parent_name} answered today's recovery check-in at "
+                "{timestamp}, day {day} since she came home.\n\n"
+                "What she said contains medical detail, so it is not repeated "
+                "here. You can read it in the dashboard.\n"
+                "{understood_as}"
+                "\nNobody has assessed it and Anbu Care has not.\n\n"
+                "Please call her now. If you cannot reach her, call 108, the "
+                "ambulance line in India. Anbu Care has not called an ambulance "
+                "and cannot.\n"
+                "Her exact words and everything else: {dashboard_url}",
+        "params": ["parent_name", "timestamp", "day", "understood_as"],
+    },
+
     "doctor_assigned": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: Dr. {doctor_name} from {department} is now looking after {parent_name} "

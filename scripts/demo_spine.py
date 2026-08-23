@@ -18,6 +18,19 @@ import sys
 # pointing at a real project cannot turn this into a live run.
 os.environ["ANBU_STORE_BACKEND"] = "memory"
 os.environ["ANBU_PUBSUB_ENABLED"] = "false"
+# And no transport. This was missed until the recovery step was added and the
+# script cheerfully posted a WhatsApp message to a made-up Indian number off a
+# developer's populated .env — the same class of bug the test suite already
+# guards against with `no_ambient_transport`, in a script that had no such
+# guard. The spine demonstrates that the GATE decides correctly; whether a
+# message then leaves the platform is not what it is showing, and it must not
+# depend on whose laptop it runs on.
+os.environ["ANBU_WHATSAPP_MODE"] = "off"
+# No model, so no translation either. The recovery step below therefore shows
+# the honest fallback rather than Tamil: the recorded English, plus a line
+# saying plainly that it could not be rendered. That is the branch that has to
+# hold when Vertex is slow, and it is the one worth proving deterministically.
+os.environ["ANBU_TRANSLATE_MODE"] = "off"
 
 from anbu_care import service
 from anbu_care.tools import (
@@ -206,7 +219,54 @@ def main() -> int:
     insurer_tools.advance_claim_stage(case.case_id, submitted["submission"]["submission_id"], "approved")
     print("   stages:    submitted → under_review → approved  (all simulated responses)")
 
-    step(7, "Provenance — reconstruct the trail, then prove tampering breaks it")
+    step(7, "Recovery — the fortnight after discharge, and every way it stops")
+    from datetime import UTC, datetime
+
+    from anbu_care.comms import consent as consent_purposes
+    from anbu_care.recovery import checkin, window
+    from anbu_care.wellbeing import store as wellbeing_store
+
+    # Her own handset and her own agreement. Neither is implied by anything the
+    # son consented to: those are his agreements about his own traffic.
+    onboarding_tools.record_parent_channel(parent_id, "+919000000001", language="ta")
+    onboarding_tools.record_recovery_checkin_consent(parent_id)
+
+    day1 = datetime(2026, 8, 20, 4, 0, tzinfo=UTC)     # 09:30 in Thoothukudi
+    opened = window.open_window(parent_id, case.case_id,
+                                discharged_on="2026-08-20", now=day1)
+    print(f"   window:    {opened.days} days from {opened.starts_on}, "
+          f"counted from {opened.starts_on_source}")
+    print(f"   cadence:   one message at {opened.hour:02d}:00 {opened.timezone}")
+
+    sent = checkin.send_due(parent_id, now=day1)
+    print(f"   day {sent['day']}:     check-in sent, delivered={sent['delivered']}")
+    print("   twice?     ", "nothing" if checkin.send_due(parent_id, now=day1) is None
+          else "SENT AGAIN — the due slot failed")
+
+    # She answers. Same inbound store, same table, one extra label.
+    phase, prompt_id = checkin.phase_for(parent_id)
+    entry = wellbeing_store.record(parent_id, "self-reported",
+                                   "chest is tight and I cannot catch my breath",
+                                   phase=phase, prompt_id=prompt_id)
+    print(f"   reply:     phase={entry.phase}, answers prompt {entry.prompt_id}")
+    print(f"   entry has: {', '.join(sorted(entry.model_dump().keys()))}")
+    print("              no severity, no diagnosis, no score. Words only.")
+
+    from anbu_care.wellbeing import handler as wellbeing_handler
+
+    handled = wellbeing_handler.handle(entry, parent_id)
+    print(f"   escalated: {handled.escalated} — the SAME deterministic table, "
+          "not a recovery verdict")
+
+    # And it stops the moment she says so.
+    stopped = checkin.handle_stop(parent_id, "STOP")
+    print(f"   STOP:      {stopped}")
+    print(f"   next tick: {checkin.send_due(parent_id, now=day1)}")
+    print(f"   consent:   still held = "
+          f"{consent_purposes.RECOVERY_CHECKINS in service.load_profile(parent_id).contact_consents}"
+          " (STOP ends the window; the agreement is hers to keep or withdraw)")
+
+    step(8, "Provenance — reconstruct the trail, then prove tampering breaks it")
     trail = provenance_tools.get_case_trail(case.case_id)
     for r in trail["receipts"]:
         print(f"   [{r['seq']:>2}] {r['kind']:<26} by {r['actor']:<22} {r['prev_hash']} → {r['hash']}")

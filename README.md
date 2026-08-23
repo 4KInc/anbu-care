@@ -84,9 +84,34 @@ This matters more than any feature list, so it comes first.
   handset in Tamil script, transliterated Tamil, Hindi and code-mixed English.
 - **Escalation and care-circle notification.** A recognised red flag opens a
   case, runs triage, alerts the family, and can ring a care-circle contact.
-- **Per-purpose consent, read live.** Six purposes, with the inbound and
-  outbound sets deliberately disjoint. Conflating them was a real shipped
-  defect, since fixed and regression-tested.
+- **Per-purpose consent, read live.** Seven purposes across four directions —
+  what a family member may be SENT, what they may SEND IN, what may be SHOWN to
+  a third party, and what may be sent TO THE PARENT herself — deliberately
+  disjoint. Conflating two of them was a real shipped defect, since fixed and
+  regression-tested; the fourth direction exists so recovery check-ins could
+  not repeat it by borrowing an agreement somebody else made.
+- **Outbound Tamil, as translation and never as authorship.** Messages to a
+  recipient whose language preference is Tamil are rendered from the recorded
+  English by Gemini, which stays the source of truth, and carry the line
+  "translated from the recorded <bill / check-in question / status update>".
+  Per-recipient, so the mother reads Tamil while her son keeps English. A
+  translation with no source record is **refused** — there is no code path that
+  produces Tamil for text nobody wrote down first. The gate rules on the
+  English *before* anything is rendered, because `CLINICAL_PATTERNS` cannot read
+  Tamil script, and any failure falls back to the recorded English with a note
+  saying plainly that it could not be rendered. It never guesses.
+- **Recovery check-ins — the son who keeps caring after the emergency.** A
+  recorded discharge summary opens a fourteen-day window, and one question a
+  day goes to her at 09:00 her time: how are you feeling, did you take today's
+  medicines, any new discomfort. In Tamil, through the same gated path as every
+  other message. Her reply comes back through the **unmodified** W1 inbound
+  path — same signature check, same transcription, same store — labelled
+  `phase=recovery` from stored state alone, never from reading her words. The
+  window ends by the calendar, not because anything decided she was better, and
+  consent is read live at every tick so a withdrawal or a STOP stops it on the
+  next message. It asks and records; it never advises. A concerning reply gets
+  the **full existing escalation** — case opened, the same deterministic table,
+  the family told — with an alert that says "we heard X" and names no cause.
 - **Google Places verification of the hospital knowledge base**, and a real map
   of the routing decision. Verification caught a genuine bug: the previously
   seeded coordinates were out by 1.4 to 5.0 km, which changed which hospital was
@@ -231,7 +256,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 617 tests, no GCP or model access needed
+make test             # 761 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -377,7 +402,8 @@ anbu_care/
   agents/               five sub-agents, one file each
   tools/                one tool module per agent — isolated scopes
   triage/               severity rules + hospital ranking (deterministic)
-  comms/                WhatsApp message policy (deterministic)
+  comms/                WhatsApp message policy (deterministic) + outbound translation
+  recovery/             the fortnight after discharge: window, cadence, stop conditions
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
   docvision/            the other four document kinds: classify, extract, apply
   brief/                the arrival brief, composed from receipts and the record
@@ -387,13 +413,13 @@ anbu_care/
   service.py            case state transitions, SLA clocks, Pub/Sub
   server.py             Cloud Run entrypoint (ADK API + dashboard routes)
 scripts/
-  demo_spine.py         end-to-end run, no model in the loop
+  demo_spine.py         end-to-end run, no model, no transport, no GCP
   verify_stack.py       confirms Vertex / Firestore / Pub/Sub are reachable
   make_bill_images.py   synthetic Indian hospital bills, for the vision lane
   make_documents.py     synthetic discharge summary, lab report, prescription, policy
   link_google_account.py  link a Google address to a family contact
   backfill_document_details.py  re-read stored photographs into `details`
-tests/                  617 tests, no GCP or model access needed
+tests/                  761 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -417,6 +443,8 @@ Beyond ADK's own agent API:
 | `POST /api/wellbeing/inbound` | Twilio webhook — inbound check-ins, text and voice notes |
 | `GET /api/parents/{id}/wellbeing` | Check-in history for a parent |
 | `GET /api/parents/{id}/care-circle` | Care-circle contacts and their consent purposes |
+| `POST /api/recovery/tick` | Send any recovery check-in that is due. **Credentialed** — it is the trigger for the only outbound channel pointed at the parent herself |
+| `GET /api/parents/{id}/recovery` | The recovery window, whether consent is held, and the answers recorded |
 | `POST /api/cases/{id}/notify-claim` | Claim-status message to the family, through the comms gate |
 | `POST /api/cases/{id}/notify-care-circle` | Care-circle notice, through the comms gate |
 | `POST /api/intake-signal` | Structured intake event |

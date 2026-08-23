@@ -373,7 +373,8 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 <script>
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
-            record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null, bills:null,
+            record:null, verify:null, wellbeing:null, careCircle:null, recovery:null,
+            linkToken:null, bills:null,
             who:null, authConfig:null, authError:null, pay:null, payBusy:null,
             signInFor:null, payNote:null, payNoteOk:false,
             hospitals:null,
@@ -436,7 +437,20 @@ function describe(r){
     case "case.opened": return "Case opened.";
     case "intake.signal_received": return "Intake signal received from an external channel.";
     case "triage.decision": return `Triage assessed severity ${p.severity}.`;
-    case "comms.sent": return "Family message accepted by WhatsApp for delivery (sandbox, real delivery to opted-in test numbers; acceptance, not handset receipt).";
+    case "comms.sent": return "Family message accepted by WhatsApp for delivery (sandbox, real delivery to opted-in test numbers; acceptance, not handset receipt)."
+      + (p.translated ? ` Sent in ${p.rendered_language==="ta"?"Tamil":p.rendered_language}, translated from the recorded ${p.translated_from}.` : "");
+    case "recovery.window_opened": return `Recovery check-ins began. ${p.days} days from ${p.starts_on}, counted from `
+      + (p.starts_on_source==="document" ? "the discharge date on the document." : "when the document was recorded. No discharge date could be read, and none was inferred.");
+    case "recovery.prompt_sent": return `Recovery check-in sent, day ${p.day} of ${p.of_days}. It asks how she is; it gives no advice and names no medicine.`;
+    case "recovery.prompt_not_delivered": return `Recovery check-in for day ${p.day} was permitted but no transport accepted it, so nothing reached her.`;
+    case "recovery.stopped": return `Recovery check-ins stopped: ${p.reason}. ${p.detail||""}`;
+    case "wellbeing.recorded": return p.phase==="recovery"
+      ? "Recovery check-in recorded. Self-reported, not a clinical assessment."
+      : "Check-in recorded. Self-reported, not a clinical assessment.";
+    case "wellbeing.escalated": return (p.phase==="recovery"
+      ? "A recovery check-in answer matched the deterministic severity table"
+      : "A check-in matched the deterministic severity table")
+      + ` at ${p.severity}. That is a routing decision, not a clinical assessment.`;
     case "comms.not_delivered": return "Message permitted by the gate, but no transport was configured, so nothing was sent.";
     case "comms.blocked": return "Message blocked before sending. Clinical detail may not go over WhatsApp.";
     case "claim.packet_assembled": return "Claim packet assembled.";
@@ -566,10 +580,34 @@ function vBrief(){
         <span class="pill p-amber">SELF-REPORTED, NOT A MEASURED VITAL</span></div>
       ${e.entries.slice(0,8).map(x=>`
         <div class="row stack">
-          <div class="k">${esc(new Date(x.received_at).toLocaleString())} · ${esc(x.source)}</div>
+          <div class="k">${esc(new Date(x.received_at).toLocaleString())} · ${esc(x.source)}${
+            x.phase==="recovery" ? ' · <span class="pill p-slate">RECOVERY</span>' : ""}</div>
           <div class="v">&ldquo;${esc(x.text)}&rdquo;</div>
         </div>`).join("")}
       <p class="mute" style="margin-top:12px">${esc(e.label)}</p></div>`;
+  }
+
+  // The fortnight after discharge, shown as a window with an end date rather
+  // than as an open-ended "monitoring" claim. Anbu Care does not monitor.
+  function recovery(){
+    const r = S.recovery;
+    if(!r || !(r.windows||[]).length) return "";
+    const w = r.windows.slice().sort((a,b)=>(a.starts_on<b.starts_on?1:-1))[0];
+    const openNow = w.status === "open";
+    return `<div class="card"><h2>Recovery check-ins</h2>
+      <div class="pills" style="margin-bottom:12px">
+        <span class="pill ${openNow?"p-slate":"p-amber"}">${openNow?"RUNNING":"ENDED"}</span>
+        <span class="pill p-amber">ASKS AND RECORDS &middot; NEVER ADVISES</span></div>
+      ${row("Started", esc(w.starts_on) + (w.starts_on_source==="document"
+          ? " (the discharge date on the document)"
+          : " (recorded then; no discharge date could be read)"))}
+      ${row("Runs for", `${w.days} days, one message at ${String(w.hour).padStart(2,"0")}:00 ${esc(w.timezone)}`)}
+      ${row("Consent", r.consent_held ? "Held by her, on her own profile" : unknown("not held, so nothing is being sent"))}
+      ${openNow ? "" : row("Stopped", esc(w.stopped_reason||"ended"))}
+      ${row("Answers recorded", String((r.check_ins||[]).length))}
+      <p class="mute" style="margin-top:12px">
+        The window ends by the calendar, not because anything decided she was better.
+        She can reply STOP at any time and it ends on that message. ${esc(r.label)}</p></div>`;
   }
 
   const f=x=>row(x.label, x.known?esc(human(x.value)):unknown(x.source?.note),
@@ -580,6 +618,7 @@ function vBrief(){
     A snapshot of what has been recorded, not a live view. Anbu Care does not monitor continuously.</div>
   <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
   ${checkIns()}
+  ${recovery()}
   ${careCircle()}
   <div class="card"><h2>What has been done</h2>
     ${(b.actions_taken||[]).length ? `<div class="tl">
@@ -1488,6 +1527,7 @@ const CONSENT_LABEL = {
   admission_alerts: "Admission alerts", status_updates: "Status updates",
   billing_updates: "Billing updates", claim_updates: "Claim updates",
   wellbeing_updates: "Wellbeing updates", outbound_notify: "Care circle messages",
+  recovery_checkins: "Recovery check-ins (hers)",
 };
 
 function renderAccount(){
@@ -1812,6 +1852,7 @@ async function load(){
     S.record=await api(`/api/parents/${S.parentId}`,{auth:true});
     S.wellbeing=await api(`/api/parents/${S.parentId}/wellbeing`,{auth:true});
     S.careCircle=await api(`/api/parents/${S.parentId}/care-circle`,{auth:true});
+    S.recovery=await api(`/api/parents/${S.parentId}/recovery`,{auth:true});
   }
   render();
 }

@@ -166,6 +166,104 @@ def record_family_contact(
     return {"status": "recorded", "contact": contact.model_dump(mode="json")}
 
 
+def record_parent_channel(parent_id: str, whatsapp_e164: str,
+                          language: str = "ta") -> dict[str, Any]:
+    """Register the PARENT's own WhatsApp number and the language she reads in.
+
+    Her number was already stored for one purpose: labelling an inbound
+    check-in as having come from her. This is the other half — where a message
+    TO her goes — and the two are recorded together because they are the same
+    fact about the same handset.
+
+    Registering a number is not consent to message it. That is a separate call
+    to `record_recovery_checkin_consent`, and nothing is sent until it is made.
+
+    Args:
+        parent_id: Whose profile.
+        whatsapp_e164: Her WhatsApp number in E.164 form.
+        language: What she reads. "ta" for Tamil, "en" for English. Messages
+            to her are rendered into it from the recorded English; her son's
+            messages are unaffected, because this is per-person.
+
+    Returns:
+        What was stored.
+    """
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return {"status": "error", "error": f"no profile for parent_id {parent_id}"}
+
+    profile.whatsapp_e164 = whatsapp_e164
+    profile.language = (language or "en").strip().lower()
+    service.save_profile(profile)
+    # contact_name=None marks this as the parent's own handset, which is what
+    # makes an inbound message from it "self-reported" rather than a caregiver
+    # report. Unchanged behaviour; recorded here so both directions agree.
+    service.register_whatsapp_number(whatsapp_e164, parent_id, None)
+
+    return {
+        "status": "recorded",
+        "whatsapp_e164": whatsapp_e164,
+        "language": profile.language,
+        "note": ("A number on file is not permission to message it. Recovery "
+                 "check-ins require her own consent, recorded separately."),
+    }
+
+
+def record_recovery_checkin_consent(parent_id: str, granted: bool = True) -> dict[str, Any]:
+    """Record whether the PARENT agrees to be sent recovery check-ins.
+
+    Hers, on her profile, in `contact_consents` — a fourth consent direction,
+    kept apart from the three that already exist. The five outbound purposes
+    belong to family members and cover their own traffic; `inbound_wellbeing`
+    points the other way; `emergency_clinical_share` is about showing her
+    record to somebody else. None of them is an agreement to put a message on
+    her phone every morning, and reusing one would be the exact collapse the
+    consent module was written to prevent.
+
+    Withdrawal is immediate in the only sense that matters: the consent is read
+    live at every tick, so the next check-in that would have gone out does not.
+
+    Args:
+        parent_id: Whose profile.
+        granted: True to grant, False to withdraw.
+
+    Returns:
+        The purpose and whether it is now held.
+    """
+    from anbu_care.comms import consent as consent_purposes
+
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return {"status": "unknown_parent", "parent_id": parent_id}
+
+    purpose = consent_purposes.RECOVERY_CHECKINS
+    if granted:
+        profile.contact_consents[purpose] = service._now()
+    else:
+        profile.contact_consents.pop(purpose, None)
+    service.save_profile(profile)
+
+    stopped = []
+    if not granted:
+        # Withdrawal ends the window there and then rather than waiting for a
+        # tick to notice. The tick would notice — it reads consent live — but a
+        # window left open until something happens to run is a record that says
+        # check-ins are continuing when they are not.
+        from anbu_care.recovery import window as recovery
+
+        stopped = [w.window_id for w in recovery.stop(
+            parent_id, "consent withdrawn",
+            detail="She withdrew consent for recovery check-ins.")]
+
+    return {
+        "status": "recorded",
+        "purpose": purpose,
+        "granted": granted,
+        "means": consent_purposes.describe(purpose),
+        "windows_stopped": stopped,
+    }
+
+
 def record_emergency_disclosure_consent(parent_id: str, granted: bool = True) -> dict[str, Any]:
     """Record whether the PARENT agrees her record may be shown to a treating team.
 

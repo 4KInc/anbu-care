@@ -35,6 +35,29 @@ OUTBOUND_NOTIFY = "outbound_notify"
 # with what they may receive.
 INBOUND_WELLBEING = "inbound_wellbeing"
 
+# ---- outbound TO THE PARENT herself --------------------------------------
+# A fourth direction, and it has to be one for the same reason the first three
+# do. Every purpose above is held by a FAMILY MEMBER about their own traffic:
+# what the son may be sent, what the son may file. This one is held by the
+# PARENT, about messages sent to HER.
+#
+# Recovery check-ins are the first thing this system has ever sent her. Until
+# now the only text that reached her was a reply to something she sent, so
+# there was no outbound-to-parent agreement to hold, and nothing existing comes
+# close enough to borrow:
+#
+#   status_updates etc.  belong to a family contact, about their own feed. She
+#                        is not a family contact and holds none of them.
+#   inbound_wellbeing    points the other way. Reusing it would repeat exactly
+#                        the collapse this module was written to undo.
+#   emergency_clinical_share  is disclosure of her record to a third party.
+#                        Messaging her is not that.
+#
+# So it lives here, on her profile, in `contact_consents` — deliberately NOT in
+# `disclosure_consents`, which is the disclosure direction. Two directions
+# sharing one dict is how the distinction gets lost.
+RECOVERY_CHECKINS = "recovery_checkins"
+
 # ---- disclosure: showing the parent's OWN RECORD to a third party --------
 # A third direction, and it needs to be one. The two above are both about
 # messages to or from a person. This is about handing someone the record
@@ -53,7 +76,13 @@ OUTBOUND_PURPOSES = frozenset({
 })
 INBOUND_PURPOSES = frozenset({INBOUND_WELLBEING})
 DISCLOSURE_PURPOSES = frozenset({EMERGENCY_CLINICAL_SHARE})
-ALL_PURPOSES = OUTBOUND_PURPOSES | INBOUND_PURPOSES | DISCLOSURE_PURPOSES
+# Held by the parent, about what may be sent to her. Kept as its own set so a
+# loop over "the outbound purposes" cannot silently start treating a family
+# member's agreement as hers.
+PARENT_OUTBOUND_PURPOSES = frozenset({RECOVERY_CHECKINS})
+ALL_PURPOSES = (
+    OUTBOUND_PURPOSES | INBOUND_PURPOSES | DISCLOSURE_PURPOSES | PARENT_OUTBOUND_PURPOSES
+)
 
 
 def describe(purpose: str) -> str:
@@ -65,6 +94,10 @@ def describe(purpose: str) -> str:
         CLAIM_UPDATES: "receive insurance claim updates",
         OUTBOUND_NOTIFY: "be notified, as a care-circle contact, where your parent was taken",
         INBOUND_WELLBEING: "send wellbeing check-ins about your parent",
+        RECOVERY_CHECKINS: (
+            "be sent recovery check-in messages after you come home, asking how "
+            "you are and whether you took your medicines"
+        ),
         EMERGENCY_CLINICAL_SHARE: (
             "allow your allergies, conditions, medication and recent results to "
             "be shown to a treating clinician in an emergency"

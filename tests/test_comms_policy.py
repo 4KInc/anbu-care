@@ -157,6 +157,7 @@ def test_every_template_renders_and_passes_its_own_gate():
         "document_kind": "discharge summary",
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
+        "day": "3",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -199,7 +200,15 @@ def test_templates_read_like_a_person_wrote_them():
 # The dashboard link goes to the parent's credentialed record. Family get it.
 # A care-circle contact is a notified party, not someone entitled to read the
 # record, so their notice carries no link at all.
-LINKLESS = {"care_circle_notice", "care_circle_unclear"}
+LINKLESS = {"care_circle_notice", "care_circle_unclear",
+            # The recovery check-in goes to the PARENT, in Tamil, on a phone
+            # she uses for WhatsApp and nothing else. The dashboard is an
+            # English, credentialed app built for the son who is reading it
+            # from another country. Sending her a link she cannot use — and
+            # that would answer her with a sign-in screen — is not a courtesy,
+            # and the message it sits in is a question, not a report she needs
+            # to go and check the detail behind.
+            "recovery_check_in"}
 
 # The handoff message carries exactly ONE link, and it is not the dashboard.
 # Two links in one message read by a frightened person at 2am is how the wrong
@@ -280,6 +289,7 @@ def test_a_rendered_template_still_passes_the_gate():
         "document_kind": "discharge summary",
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
+        "day": "3",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]

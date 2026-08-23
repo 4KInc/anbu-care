@@ -183,6 +183,12 @@ def _open_and_triage(entry: WellbeingEntry, parent_id: str, verdict: esc.Escalat
         payload={
             "entry_id": entry.entry_id,
             "case_id": case.case_id,
+            # WHICH check-in this was, carried so the trace can say a recovery
+            # answer triggered this. It changes nothing about the decision
+            # below — the same table saw the same words — and it is a label on
+            # the check-in, never a finding about her.
+            "phase": getattr(entry, "phase", "acute"),
+            "prompt_id": getattr(entry, "prompt_id", None),
             "severity": verdict.severity.value,
             "matched_rules": verdict.matched,
             "model_terms": verdict.model_terms,
@@ -201,6 +207,11 @@ def _open_and_triage(entry: WellbeingEntry, parent_id: str, verdict: esc.Escalat
                  "presentation should become a rule.")
                 + " This is a routing decision, not a clinical assessment, and no "
                   "diagnosis has been made."
+                + (" It came from an answer to a recovery check-in. The check-in "
+                   "asked a question and recorded the answer; the severity above "
+                   "is the same deterministic table every intake goes through, "
+                   "not anything the recovery feature decided."
+                   if getattr(entry, "phase", "acute") == "recovery" else "")
             ),
         },
         subject=PARENT_SUBJECT,
@@ -374,6 +385,23 @@ def _tell_the_family(
     cashless = ("Cashless should apply at this hospital" if policy and policy.cashless_eligible
                 else "Cashless is not confirmed for this admission")
 
+    # A recovery answer gets a different message, not a smaller response.
+    #
+    # Everything before this line already ran: the case was opened, the same
+    # deterministic table saw the same words, triage ranked hospitals, and the
+    # calls are about to go out. What changes is only what the family is TOLD.
+    # The acute alert leads with a hospital because she is on her way to one;
+    # a woman at home on day three is not, and an alert that says "she is being
+    # directed to Sacred Heart" when nobody has taken her anywhere would be
+    # describing a journey that is not happening.
+    #
+    # So the recovery wording reports what was heard and asks a human to call.
+    # It names no hospital, offers no interpretation, and gives no instruction
+    # beyond the one instruction this system is ever allowed to give: call her,
+    # and if you cannot, call 108.
+    recovery = getattr(entry, "phase", "acute") == "recovery"
+    day = _recovery_day(parent_id) if recovery else None
+
     alerted: list[str] = []
     failed: list[str] = []
     reached: set[str] = set()
@@ -406,9 +434,19 @@ def _tell_the_family(
                     "Those are her own words, not a medical assessment.\n"
                 ),
         }
+        if recovery:
+            params = {
+                "parent_name": params["parent_name"],
+                "timestamp": params["timestamp"],
+                "day": str(day) if day else "unknown",
+                "words_note": params["words_note"],
+                "understood_as": params["understood_as"],
+            }
+
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
-            template_name="urgent_family_alert",
+            template_name=("recovery_escalation_family" if recovery
+                           else "urgent_family_alert"),
             template_params={**params, "said": entry.text},
             message_class="status",
             # Selection and gate must demand the SAME purpose. Without this the
@@ -427,7 +465,8 @@ def _tell_the_family(
                         contact.name)
             sent = whatsapp_tools.send_family_update(
                 case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
-                template_name="urgent_family_alert_withheld",
+                template_name=("recovery_escalation_family_withheld" if recovery
+                               else "urgent_family_alert_withheld"),
                 template_params=params,
                 message_class="status",
                 purpose_override=consent.ADMISSION_ALERTS,
@@ -435,6 +474,17 @@ def _tell_the_family(
 
         (alerted if sent.get("delivered") else failed).append(contact.name)
     return alerted, failed, reached
+
+
+def _recovery_day(parent_id: str) -> int | None:
+    """Which day of the window this answer arrived on. None rather than a guess."""
+    try:
+        from anbu_care.recovery import checkin
+
+        return checkin.day_of(parent_id)
+    except Exception:
+        logger.exception("could not read the recovery day; the alert goes without it")
+        return None
 
 
 def _tell_the_care_circle(

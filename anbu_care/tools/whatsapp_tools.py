@@ -93,46 +93,217 @@ def send_family_update(
     if profile is None:
         return {"status": "error", "error": f"no profile for parent_id {parent_id}"}
 
+    contact = next((c for c in profile.family_contacts if c.whatsapp_e164 == to_e164), None)
+    if contact is None:
+        return {"status": "error", "error": f"{to_e164} is not a registered family contact"}
+
     try:
         declared = MessageClass(message_class)
     except ValueError:
         return {"status": "error", "error": f"unknown message_class '{message_class}'"}
 
+    return _send(
+        case_id=case_id, parent_id=parent_id, to_e164=to_e164,
+        recipient_name=contact.name,
+        consents=contact.consents,
+        purpose=purpose_override or PURPOSE_BY_CLASS.get(declared),
+        language=getattr(contact, "language", "en"),
+        template_name=template_name, template_params=template_params,
+        declared=declared, attach_claim_summary=attach_claim_summary,
+    )
+
+
+def send_parent_message(
+    parent_id: str,
+    template_name: str,
+    template_params: dict[str, Any],
+    message_class: str,
+    purpose: str,
+    case_id: str = "",
+) -> dict[str, Any]:
+    """Send a templated message to the PARENT herself.
+
+    The first outbound direction in this system that points at her. Everything
+    else addresses a family member; she was only ever answered, never
+    contacted.
+
+    It is not a second route, and that distinction is the whole reason this
+    function is four lines long. The content gate, the template set, the
+    transport and the receipt are the ones every other message uses — a
+    parallel send path "because it's only a check-in" is exactly how a
+    diagnosis eventually escapes. What differs is one thing: WHOSE agreement is
+    read. A family contact's consents live on their contact record and cover
+    their own traffic. Hers live on her profile, in `contact_consents`, because
+    she is the data principal and nobody else can agree on her behalf.
+
+    Args:
+        parent_id: Whose record, and who is being written to.
+        template_name: One of the pre-approved templates.
+        template_params: Values for that template's parameters.
+        message_class: logistics, status, or billing. Never clinical.
+        purpose: The parent-held consent purpose required. Named explicitly
+            rather than derived from the class, because the class-to-purpose
+            map is a table of FAMILY purposes and reaching into it here would
+            let a family member's agreement authorise a message to her.
+        case_id: The case this belongs to, so it lands on that chain and
+            renders on the trace.
+
+    Returns:
+        Whether it was sent, and if not, exactly why not.
+    """
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return {"status": "error", "error": f"no profile for parent_id {parent_id}"}
+
+    to_e164 = (profile.whatsapp_e164 or "").strip()
+    if not to_e164:
+        # No number, no message, and no pretending. A recovery check-in that
+        # silently goes nowhere reads on the trace as care that happened.
+        return {"status": "error",
+                "error": f"{profile.name or parent_id} has no WhatsApp number on file, "
+                         "so nothing can be sent to her."}
+
+    try:
+        declared = MessageClass(message_class)
+    except ValueError:
+        return {"status": "error", "error": f"unknown message_class '{message_class}'"}
+
+    first = profile.name.split()[0] if profile.name else "your parent"
+    return _send(
+        case_id=case_id, parent_id=parent_id, to_e164=to_e164,
+        recipient_name=first,
+        # Read live off the profile, every send. A withdrawal takes effect on
+        # the very next message rather than whenever something was last cached.
+        consents=profile.contact_consents,
+        purpose=purpose,
+        language=getattr(profile, "language", "en"),
+        template_name=template_name, template_params=template_params,
+        declared=declared, attach_claim_summary=False,
+    )
+
+
+def _send(
+    *,
+    case_id: str,
+    parent_id: str,
+    to_e164: str,
+    recipient_name: str,
+    consents: dict,
+    purpose: str | None,
+    language: str,
+    template_name: str,
+    template_params: dict[str, Any],
+    declared: MessageClass,
+    attach_claim_summary: bool,
+) -> dict[str, Any]:
+    """Consent, gate, render, deliver, record. The only way content leaves.
+
+    The ordering is load-bearing and is the reason translation lives HERE
+    rather than inside a template or a transport:
+
+        consent -> GATE (on the English record) -> render -> deliver
+
+    `CLINICAL_PATTERNS` is a list of English regexes. It would not recognise a
+    lab value written in Tamil script, so a design that translated first and
+    gated second would have a hole in it the width of the alphabet. Gating the
+    source and rendering afterwards means the gate has already ruled on the
+    exact words being rendered, and the rendering is constrained to say the
+    same thing.
+    """
     try:
         body = render_template(template_name, template_params,
                                case_id=case_id, parent_id=parent_id)
     except (KeyError, ValueError) as exc:
         return {"status": "error", "error": str(exc)}
 
-    contact = next((c for c in profile.family_contacts if c.whatsapp_e164 == to_e164), None)
-    if contact is None:
-        return {"status": "error", "error": f"{to_e164} is not a registered family contact"}
-
-    purpose = purpose_override or PURPOSE_BY_CLASS.get(declared)
-    if purpose and not consent_ok(contact.consents, purpose):
-        blocked = _record(
+    if purpose and not consent_ok(consents, purpose):
+        return _record(
             case_id, to_e164, declared, template_name, body,
             allowed=False,
             reason=(
-                f"Blocked: {contact.name} has not given purpose-specific consent for "
+                f"Blocked: {recipient_name} has not given purpose-specific consent for "
                 f"'{purpose}'. DPDP requires per-purpose, timestamped opt-in; a blanket "
                 "checkbox is not sufficient."
             ),
         )
-        return blocked
 
     gate = gate_message(body, declared, template_name=template_name)
     if not gate.allowed:
         return _record(case_id, to_e164, gate.message_class, template_name, body,
                        allowed=False, reason=gate.reason)
 
+    rendering = _render_for_reader(body, language, template_name)
+
     attachment = _attach(case_id) if attach_claim_summary else None
     media_url = attachment.pop("url", None) if attachment else None
 
-    delivery = _deliver(to_e164, body, template_name, media_url=media_url)
-    return _record(case_id, to_e164, gate.message_class, template_name, body,
+    delivery = _deliver(to_e164, rendering.text, template_name, media_url=media_url)
+    return _record(case_id, to_e164, gate.message_class, template_name, rendering.text,
                    allowed=True, reason=gate.reason, delivery=delivery,
-                   attachment=attachment)
+                   attachment=attachment, rendering=rendering)
+
+
+# What each template is a rendering OF, named the way it should appear in the
+# provenance note. A template with no entry names its own kind rather than
+# guessing — every one of these points at something that was actually recorded.
+SOURCE_REF = {
+    "bill_recorded": "bill",
+    "bill_already_recorded": "bill",
+    "bill_unreadable": "bill",
+    "billing_summary": "bill",
+    "document_recorded": "document",
+    "document_recorded_withheld": "document",
+    "document_already_recorded": "document",
+    "document_unreadable": "document",
+    "admission_alert": "admission record",
+    "status_update": "status update",
+    "claim_stage": "claim record",
+    "doctor_assigned": "case record",
+    "urgent_family_alert": "check-in",
+    "urgent_family_alert_withheld": "check-in",
+    "voice_note_unclear": "voice note",
+    "care_circle_unclear": "voice note",
+    "care_circle_notice": "admission record",
+    "clinician_handoff_link": "case record",
+    "recovery_check_in": "check-in question",
+    "recovery_escalation_family": "recovery check-in",
+    "recovery_escalation_family_withheld": "recovery check-in",
+}
+
+
+# Templates that render INSIDE the Twilio webhook, where the line is held open
+# and Twilio hangs up at roughly fifteen seconds. Every one of them is an alert
+# telling somebody to call now, so they get the short translation ceiling: a
+# late alert is worse than an English one, and a webhook that times out makes
+# Twilio retry and send the whole thing twice.
+#
+# Everything not on this list runs after a response or from a tick, with nobody
+# waiting, and can afford to wait for the Tamil.
+URGENT_TEMPLATES = {
+    "urgent_family_alert", "urgent_family_alert_withheld",
+    "recovery_escalation_family", "recovery_escalation_family_withheld",
+    "voice_note_unclear", "care_circle_unclear", "care_circle_notice",
+}
+
+
+def _render_for_reader(body: str, language: str, template_name: str):
+    """Put the gated message into the reader's language, or leave it alone.
+
+    Never raises into a send. `NoSourceRecord` cannot fire here — the body came
+    out of a pre-approved template, which is itself the record — but if it ever
+    did, the English record is what goes out.
+    """
+    from anbu_care.comms import translate
+
+    source_ref = SOURCE_REF.get(template_name, "record")
+    timeout = (translate.URGENT_TIMEOUT_SECONDS if template_name in URGENT_TEMPLATES
+               else translate.UNHURRIED_TIMEOUT_SECONDS)
+    try:
+        return translate.render(body, language=language, source_ref=source_ref,
+                                timeout_seconds=timeout)
+    except translate.NoSourceRecord:
+        return translate._passthrough(body, source_ref,
+                                      detail="no recorded source named; English was sent")
 
 
 def check_message_allowed(body: str, message_class: str) -> dict[str, Any]:
@@ -223,6 +394,7 @@ def _record(
     reason: str,
     delivery: dict[str, Any] | None = None,
     attachment: dict[str, Any] | None = None,
+    rendering: Any = None,
 ) -> dict[str, Any]:
     """Write every send attempt to the chain, including the blocked ones.
 
@@ -260,9 +432,15 @@ def _record(
         # URL is deliberately absent — it expires, and a receipt that records a
         # dead link reads as proof of something it cannot support. The sha256
         # is what proves which bytes were sent.
+        # The rendering goes on too. `source_sha256` is the hash of the English
+        # the gate actually ruled on, so the chain can prove the Tamil was
+        # derived from a recorded message rather than composed — the same
+        # move the wellbeing receipt makes, where the hash proves the words
+        # without carrying them.
         payload={**message.model_dump(mode="json"), "gate_reason": reason,
                  "delivery": delivery, "delivered": was_delivered,
-                 "attachment": attachment},
+                 "attachment": attachment,
+                 **(rendering.as_receipt_payload() if rendering is not None else {})},
     )
     return {
         "status": ("blocked" if not allowed else "ok" if was_delivered else "not_delivered"),
@@ -273,4 +451,5 @@ def _record(
         "delivery": delivery,
         "attachment": attachment,
         "receipt_id": receipt.receipt_id,
+        **({"rendering": rendering.as_receipt_payload()} if rendering is not None else {}),
     }

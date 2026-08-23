@@ -87,6 +87,16 @@ class ParentProfile(BaseModel):
     # and storing them in the same place is how that distinction gets lost.
     # Purpose -> when it was granted, same shape as FamilyContact.consents.
     disclosure_consents: dict[str, datetime] = Field(default_factory=dict)
+    # Consent to SEND HER things — recovery check-ins, today. A fourth
+    # direction, kept out of `disclosure_consents` above on purpose: that dict
+    # is about showing her record to somebody else, and this one is about
+    # putting a message on her phone. Same shape, different agreement.
+    contact_consents: dict[str, datetime] = Field(default_factory=dict)
+    # What language to render messages TO HER in. Per-person, never global: her
+    # son reads English and she reads Tamil, and one setting cannot serve both.
+    # Defaults to English so nothing starts translating without somebody
+    # deciding it should.
+    language: str = "en"
     # Her local time, so an alert can say whether a message arrived at 2am or
     # at lunchtime. Set at onboarding rather than guessed from coordinates.
     timezone: str = "Asia/Kolkata"
@@ -104,6 +114,9 @@ class FamilyContact(BaseModel):
     # they still receive messages, they just have no dashboard identity.
     email: str = ""
     timezone: str = "UTC"
+    # Same per-recipient preference the parent carries. A son who would rather
+    # read Tamil sets it here; nobody else's messages change.
+    language: str = "en"
     is_primary: bool = False
     # Display only: "family" or "care_circle". Nothing reads this to decide
     # whether a message may be sent. Membership of the care circle is the set
@@ -473,6 +486,21 @@ class WellbeingEntry(BaseModel):
     # is derived from it. Credentialed, and served through a short-lived
     # signed URL so her son can hear her voice rather than read a paraphrase.
     audio_object: str | None = None
+    # "acute" | "recovery". A LABEL on the record, not a judgement about it.
+    #
+    # It says which part of the story this check-in belongs to — the emergency,
+    # or the fortnight afterwards — and it is derived from stored state alone:
+    # an open recovery window plus a prompt sent inside the reply window. Never
+    # from reading her words.
+    #
+    # What it deliberately does NOT do is change how the check-in is treated.
+    # The same deterministic table sees the same text either way, and a
+    # recovery reply that trips a red flag gets the identical escalation an
+    # acute one would. The label adds context; it never softens the response.
+    phase: str = "acute"
+    # Which check-in prompt this answers, when it answers one. None for a
+    # message she sent unprompted, which is most of them.
+    prompt_id: str | None = None
 
 
 class BillLineItem(BaseModel):

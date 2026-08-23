@@ -28,7 +28,8 @@ def entry_sk(received_at_iso: str, entry_id: str) -> str:
 
 
 def record(parent_id: str, source: str, text: str, channel: str = "whatsapp",
-           source_kind: str = "text", audio_object: str | None = None) -> WellbeingEntry:
+           source_kind: str = "text", audio_object: str | None = None,
+           phase: str = "acute", prompt_id: str | None = None) -> WellbeingEntry:
     """Store a check-in and receipt it.
 
     The receipt carries a hash of the text, never the text. Chain verification
@@ -45,6 +46,8 @@ def record(parent_id: str, source: str, text: str, channel: str = "whatsapp",
         channel=channel,
         source_kind=source_kind,
         audio_object=audio_object,
+        phase=phase,
+        prompt_id=prompt_id,
     )
     get_store().put(
         f"PARENT#{parent_id}",
@@ -66,8 +69,17 @@ def record(parent_id: str, source: str, text: str, channel: str = "whatsapp",
             # Named, never the URL: a signed link expires and a receipt holding
             # a dead link reads as proof of something it cannot support.
             "audio_object": audio_object,
+            # Which part of the story, and which question it answers. Both come
+            # from stored state — an open window, a prompt receipt — never from
+            # reading the words that were just hashed above.
+            "phase": phase,
+            "prompt_id": prompt_id,
             # Said explicitly so nothing downstream mistakes this for a finding.
-            "note": "self-reported words, not a clinical assessment",
+            # The recovery wording is the same promise in the same shape: a
+            # recovery check-in is still her words and still not an assessment.
+            "note": ("recovery check-in — self-reported, not a clinical assessment"
+                     if phase == "recovery" else
+                     "self-reported words, not a clinical assessment"),
         },
         subject=PARENT_SUBJECT,
     )

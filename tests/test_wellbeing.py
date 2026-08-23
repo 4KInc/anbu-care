@@ -153,8 +153,14 @@ def test_the_entry_type_has_nowhere_to_put_a_finding():
     # The exact set, so adding anything is a deliberate act that lands here
     # first. source_kind and audio_object are provenance — how the words got
     # here and where the recording is — not findings about her.
+    #
+    # phase and prompt_id joined them when recovery check-ins were added, and
+    # they are the same kind of thing: WHICH part of the story this check-in
+    # belongs to and WHICH prompt it answers. Both are derived from stored
+    # state — an open recovery window, a prompt receipt — and never from
+    # reading her words. Neither says anything about how she is.
     assert fields == {"entry_id", "parent_id", "source", "text", "received_at",
-                      "channel", "source_kind", "audio_object"}
+                      "channel", "source_kind", "audio_object", "phase", "prompt_id"}
     for forbidden in ("severity", "diagnosis", "mood", "score", "sentiment", "risk", "state"):
         assert forbidden not in fields
 

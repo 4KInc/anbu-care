@@ -49,6 +49,10 @@ _WHAT = {
     "claim.query_answered": "The agent gathered what was asked for",
     "claim.stage_changed": "The claim moved stage",
     "wellbeing.recorded": "A check-in was recorded",
+    "recovery.window_opened": "Recovery check-ins began",
+    "recovery.prompt_sent": "A recovery check-in was sent",
+    "recovery.prompt_not_delivered": "A recovery check-in was not delivered",
+    "recovery.stopped": "Recovery check-ins stopped",
     "wellbeing.escalated": "The check-in was escalated",
     "wellbeing.unclear": "A voice note could not be made out",
     "comms.sent": "A message was delivered",
@@ -161,14 +165,58 @@ def _detail(receipt: Receipt) -> str:
         case "claim.submitted":
             return f"{p.get('sla_kind', 'claim')}, SLA to {p.get('sla_deadline') or 'unset'}"
 
+        case "wellbeing.escalated":
+            severity = p.get("severity", "unknown")
+            lead = ("a recovery check-in answer" if p.get("phase") == "recovery"
+                    else "a check-in")
+            return (f"{lead} matched the severity table at {severity} — a routing "
+                    "decision, not a clinical assessment")
+
         case "clinician.note":
             return str(p.get("captured") or "note recorded")
 
         case "emergency.access":
             return str(p.get("scope") or "summary read")
 
+        case "wellbeing.recorded":
+            # The phase is a label on the check-in, so the trace can show the
+            # fortnight of care after the emergency as the distinct thing it
+            # is. It says nothing about how she was.
+            if p.get("phase") == "recovery":
+                return "recovery check-in — self-reported, not a clinical assessment"
+            return "self-reported, not a clinical assessment"
+
+        case "recovery.window_opened":
+            source = ("the discharge date on the document"
+                      if p.get("starts_on_source") == "document"
+                      else "when the document was recorded, no discharge date was read")
+            return (f"{p.get('days')} days from {p.get('starts_on')}, counted from "
+                    f"{source}")
+
+        case "recovery.prompt_sent" | "recovery.prompt_not_delivered":
+            day = p.get("day")
+            of = p.get("of_days")
+            where = f"day {day} of {of}" if day and of else "a check-in"
+            rendering = p.get("rendering") or {}
+            tongue = (", in Tamil, translated from the recorded check-in question"
+                      if rendering.get("translated") else "")
+            tail = ("" if receipt.kind == "recovery.prompt_sent"
+                    else " — no transport accepted it, so nothing reached her")
+            return f"{where}{tongue}{tail}"
+
+        case "recovery.stopped":
+            return str(p.get("reason") or "stopped")
+
         case "comms.sent" | "comms.blocked" | "comms.not_delivered":
-            return str(p.get("reason") or p.get("template_name") or p.get("message_class") or "")
+            head = str(p.get("reason") or p.get("template_name")
+                       or p.get("message_class") or "")
+            # Say when what went out was not the English on the record. A
+            # reader checking the chain should be able to see that a message
+            # was rendered, and what it was rendered FROM.
+            if p.get("translated"):
+                head += (f" — sent in {p.get('rendered_language')}, translated from "
+                         f"the recorded {p.get('translated_from')}")
+            return head
 
         case _:
             return str(p.get("note") or p.get("summary") or "")

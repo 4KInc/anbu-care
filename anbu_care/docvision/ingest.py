@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 from anbu_care import service
 from anbu_care.docvision import read as vision
@@ -35,6 +36,8 @@ from anbu_care.schemas import (
     Observation,
     ParsedDocument,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentRejected(Exception):
@@ -400,6 +403,16 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
             },
         )
 
+    # A discharge summary is the one document that says the emergency is over
+    # and she has gone home. That is the fact recovery check-ins start from —
+    # not a decision anybody here made about her, just a piece of paper she was
+    # handed. The date comes off the paper if the reader could read one; if not
+    # the window counts from now and the receipt says which.
+    recovery_window = None
+    if reading.kind == "discharge_summary":
+        recovery_window = _open_recovery_window(
+            parent_id, case_id, reading.payload, doc_id)
+
     return {
         "document_id": doc_id, "kind": reading.kind, "summary": doc.summary,
         # Two summaries on purpose: one for the record, one that can survive the
@@ -407,4 +420,27 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         "message_summary": message_summary_for(reading.kind, reading.payload),
         "observations": len(doc.observations), "applied": applied,
         "payload": reading.payload, "image_object": stored.object_name,
+        "recovery_window": recovery_window,
     }
+
+
+def _open_recovery_window(parent_id: str, case_id: str, payload: dict,
+                          doc_id: str) -> str | None:
+    """Start the fortnight of check-ins. Never raises into an ingest.
+
+    A failure here must not lose the document. The discharge summary is on the
+    record either way; what is at stake is whether anybody asks her how she is
+    afterwards, and that is worth a log line rather than a lost ingest.
+    """
+    from anbu_care.recovery import window as recovery
+
+    try:
+        opened = recovery.open_window(
+            parent_id, case_id,
+            discharged_on=payload.get("discharged_on"),
+            document_id=doc_id,
+        )
+    except Exception:
+        logger.exception("could not open a recovery window for %s", parent_id)
+        return None
+    return opened.window_id if opened else None

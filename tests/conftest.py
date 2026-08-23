@@ -89,3 +89,21 @@ def no_model_calls(monkeypatch, request):
         escalation, "extract_symptoms",
         lambda text: ([], False, "model disabled in tests"),
     )
+
+
+@pytest.fixture(autouse=True)
+def no_translation_calls(monkeypatch, request):
+    """No test reaches Gemini for a translation unless it asks to.
+
+    Same rule, same reason, and the same mistake already made twice in this
+    file: patch the thing the code path actually reaches. Translation falls
+    back to the recorded English on every failure, and "switched off" is one of
+    those failures, so the default here exercises the fallback — which is the
+    branch that has to hold when Vertex is slow or down.
+
+    A test that wants a rendering marks itself `real_translation` and stubs the
+    client. It still must not touch the network.
+    """
+    if request.node.get_closest_marker("real_translation"):
+        return
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "off")

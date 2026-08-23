@@ -37,6 +37,8 @@ from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.money import group, inr
 from anbu_care.provenance.signing import load_signer
+from anbu_care.recovery import checkin as recovery_checkin
+from anbu_care.recovery import window as recovery_window
 from anbu_care.tools import (
     brief_tools,
     intake_tools,
@@ -303,6 +305,18 @@ def demo_seed() -> dict[str, Any]:
             consent.INBOUND_WELLBEING, consent.OUTBOUND_NOTIFY,
         ],
     )
+    # Her own handset, and the language she actually reads. Until recovery
+    # check-ins existed nothing was ever sent TO her, so her number was on file
+    # for one direction only and the demo never needed to set it.
+    onboarding_tools.record_parent_channel(
+        parent_id,
+        whatsapp_e164=os.getenv("ANBU_DEMO_PARENT_E164") or "+14155550143",
+        language=os.getenv("ANBU_DEMO_PARENT_LANGUAGE") or "ta",
+    )
+    # And her agreement to be sent them. Separate from the number, and separate
+    # from every consent the son holds: none of his agreements can authorise a
+    # message to her.
+    onboarding_tools.record_recovery_checkin_consent(parent_id)
     # The parent's own agreement that her record may be shown to a treating
     # clinician. Recorded on HER profile, separately from the six purposes
     # above, because those are the son's agreements about his own traffic and
@@ -402,8 +416,21 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
         logger.info("wellbeing inbound not stored: unregistered sender or empty body")
         return Response(status_code=204)
 
-    entry = wellbeing_store.record(sender.parent_id, sender.source, body)
-    logger.info("wellbeing recorded %s for %s", entry.entry_id, sender.parent_id)
+    # STOP is an instruction about the service, not a report about how she is.
+    # Handled before anything is stored, because filing the word she used to
+    # leave as a wellbeing check-in would put it in a record of how she was
+    # feeling. Only an exact whole-message match counts — "stop the pain" is a
+    # symptom and goes down the ordinary path below.
+    stopped = recovery_checkin.handle_stop(sender.parent_id, body)
+    if stopped is not None:
+        logger.info("recovery check-ins stopped by request for %s", sender.parent_id)
+        return _twiml(stopped)
+
+    phase, prompt_id = recovery_checkin.phase_for(sender.parent_id)
+    entry = wellbeing_store.record(sender.parent_id, sender.source, body,
+                                   phase=phase, prompt_id=prompt_id)
+    logger.info("wellbeing recorded %s for %s (phase=%s)",
+                entry.entry_id, sender.parent_id, phase)
 
     # Stored either way. What follows decides whether a person is told, never
     # what is wrong with anyone: Gemini restates the wording, the deterministic
@@ -435,11 +462,16 @@ def _handle_voice_note(sender: Any, media: Any) -> Response:
     heard = transcribe.transcribe(media.audio, media.mime_type)
     logger.info("voice note from %s: %s", sender.parent_id, heard.detail)
 
+    # A voice note answering the morning check-in is a recovery check-in, and
+    # the label comes from the same two stored facts it does for a typed reply.
+    # Nothing about the audio or the transcript is consulted.
+    phase, prompt_id = recovery_checkin.phase_for(sender.parent_id)
     entry = wellbeing_store.record(
         sender.parent_id, sender.source,
         heard.text if heard.ok else "(voice note, not transcribed)",
         source_kind="voice",
         audio_object=stored.object_name,
+        phase=phase, prompt_id=prompt_id,
     )
 
     handled = (
@@ -468,6 +500,76 @@ def parent_wellbeing(
         "count": len(entries),
         "label": "Self-reported. Not a clinical assessment and not a measured vital.",
         "entries": [e.model_dump(mode="json") for e in entries],
+    }
+
+
+@app.post("/api/recovery/tick")
+def recovery_tick(
+    parent_id: str = "", _session: str = Depends(require_family_session)
+) -> dict[str, Any]:
+    """Send any recovery check-in that is due right now.
+
+    CREDENTIALED, and that is not incidental. This is the trigger for the only
+    outbound channel in the system that points at the parent herself, and an
+    open version of it would be a public endpoint for putting messages on a
+    seventy-one year old's phone. The idempotent due-slot bounds the damage to
+    one message a day; the credential is what stops the attempt.
+
+    Cloud Run has no timer, so there is no in-process scheduler and no thread
+    waiting for nine o'clock. A scheduler calls this; it computes what is owed
+    from stored state and sends that. The consequence is deliberate: if nothing
+    calls it this morning, this morning has no check-in, the trace shows the
+    gap, and nothing is backfilled later at an hour nobody chose.
+
+    Every stop condition is evaluated here against live state — consent read
+    off the profile, the window's own end date — so a withdrawal takes effect
+    on this tick, not on some later one.
+
+    Args:
+        parent_id: Tick one parent. Empty ticks every parent with an open
+            window, which is what a scheduler calls.
+    """
+    parents = ([parent_id] if parent_id
+               else recovery_window.parents_with_open_windows())
+
+    sent, skipped = [], []
+    for pid in parents:
+        try:
+            result = recovery_checkin.send_due(pid)
+        except Exception:
+            logger.exception("recovery tick failed for %s", pid)
+            skipped.append({"parent_id": pid, "reason": "the tick failed for this parent"})
+            continue
+        if result is None:
+            skipped.append({"parent_id": pid, "reason": "nothing due"})
+        else:
+            sent.append(result)
+
+    return {
+        "status": "ok",
+        "checked": len(parents),
+        "sent": sent,
+        "skipped": skipped,
+        "note": ("Only what was due right now. A day with no tick has no check-in, "
+                 "and none is sent later to make up for it."),
+    }
+
+
+@app.get("/api/parents/{parent_id}/recovery")
+def parent_recovery(
+    parent_id: str, _session: str = Depends(require_case_access)
+) -> dict[str, Any]:
+    """The recovery window and its check-ins. Credentialed, like the record."""
+    windows = recovery_window.list_windows(parent_id)
+    entries = [e for e in wellbeing_store.list_entries(parent_id, limit=60)
+               if e.phase == "recovery"]
+    return {
+        "parent_id": parent_id,
+        "consent_held": recovery_window.consent_held(parent_id),
+        "windows": [w.as_row() for w in windows],
+        "check_ins": [e.model_dump(mode="json") for e in entries],
+        "label": ("Recovery check-ins are self-reported and are not a clinical "
+                  "assessment. Anbu Care asks and records; it does not advise."),
     }
 
 

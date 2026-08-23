@@ -30,6 +30,7 @@ packages = ["anbu_care"]
 testpaths = ["tests"]
 markers = [
     "real_extraction: exercise the real extract_symptoms, with the client stubbed",
+    "real_translation: exercise the real translate.render, with the client stubbed",
 ]
 
 [tool.ruff]
