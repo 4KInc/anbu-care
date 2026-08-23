@@ -58,6 +58,10 @@ SUPPORTED = {"en", "ta"}
 
 LANGUAGE_NAMES = {"en": "English", "ta": "Tamil"}
 
+# Labels the second block so a Tamil reader can find it without reading the
+# English above it first.
+BILINGUAL_HEADING = "தமிழில்:"
+
 # Two ceilings, for the same reason transcription has two, and the split is
 # not a tuning detail — it encodes which failure is worse in each lane.
 #
@@ -110,6 +114,39 @@ Message:
 
 # The provenance line. Both scripts, because the son may read over her shoulder
 # and because a note that only she can read cannot be checked by anyone else.
+def _preference(language: str) -> tuple[str, bool]:
+    """What to render into, and whether to keep the English alongside it.
+
+    A preference is one language, or two joined by a plus: "ta" is Tamil
+    instead of English, "en+ta" is Tamil as well as English. The second form
+    exists because the son abroad wanted the record he works in AND something
+    he could read to his mother without retyping it, and neither of those is
+    derivable from his relationship to her. His sister in Thoothukudi sets
+    plain "ta" and a message twice as long never reaches her.
+
+    English is only ever the source half. "ta+ml" names no source to derive
+    from, so it is read as plain Tamil rather than guessed at.
+    """
+    parts = [p for p in (language or "en").strip().lower().split("+") if p]
+    if not parts:
+        return "en", False
+    target = next((p for p in parts if p != "en"), "en")
+    return target, ("en" in parts and target != "en")
+
+
+def _bilingual(source_text: str, translated: str) -> str:
+    """The English record, then the same thing in Tamil beneath it.
+
+    For a reader who has both: the son abroad coordinating in English, holding
+    a Tamil version he can read to his mother or forward to a relative without
+    retyping it. English goes first because English is the record — putting the
+    derived text above the thing it derives from inverts what this module is
+    for, and a reader skimming the top of a message should be looking at the
+    source.
+    """
+    return f"{source_text}\n\n{BILINGUAL_HEADING}\n{translated}"
+
+
 def _provenance_note(source_ref: str) -> str:
     return (f"\n\nபதிவு செய்யப்பட்ட {source_ref} இலிருந்து மொழிபெயர்க்கப்பட்டது.\n"
             f"Translated from the recorded {source_ref}.")
@@ -216,6 +253,11 @@ def render(source_text: str, *, language: str, source_ref: str,
         source_ref: What record this came from, named the way it will appear in
             the provenance note: "bill summary", "doctor's note", "check-in
             question", "status update".
+            A preference may name two languages, "en+ta", meaning send the
+            English record with the Tamil beneath it. That belongs to the
+            reader rather than to their role: the son abroad coordinating in
+            English wants both, his sister in Thoothukudi wants Tamil alone,
+            and neither can be inferred from being a family contact.
 
     Raises:
         NoSourceRecord: if there is no recorded text, or nothing to name it by.
@@ -232,7 +274,7 @@ def render(source_text: str, *, language: str, source_ref: str,
             "say what it was derived from. Nothing was named."
         )
 
-    wanted = (language or "en").strip().lower()
+    wanted, bilingual = _preference(language)
     if wanted == "en" or wanted not in SUPPORTED:
         # Not a failure and not worth a note in the message. English is the
         # record, and an unsupported language falls back to it rather than
@@ -276,12 +318,14 @@ def render(source_text: str, *, language: str, source_ref: str,
             f"({', '.join(hits)}); the recorded English was sent instead",
         )
 
+    body = _bilingual(source_text, text) if bilingual else text
     return Rendering(
-        text=text + _provenance_note(source_ref),
-        language="ta", translated=True,
+        text=body + _provenance_note(source_ref),
+        language=("en+ta" if bilingual else "ta"), translated=True,
         source_text=source_text, source_ref=source_ref,
         source_sha256=_sha(source_text),
-        detail=f"translated {len(source_text)} characters of the recorded {source_ref}",
+        detail=(f"translated {len(source_text)} characters of the recorded "
+                f"{source_ref}" + (", sent alongside the English" if bilingual else "")),
     )
 
 

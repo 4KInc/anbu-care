@@ -316,3 +316,117 @@ def test_two_people_on_one_case_read_it_in_different_languages(monkeypatch, tami
     assert daughter["rendering"]["translated_from"] == "status update"
     # Derived from the same record, and both receipts say so with the same hash.
     assert daughter["rendering"]["source_sha256"] == son["rendering"]["source_sha256"]
+
+
+# ---- both languages, when that is what the reader asked for ---------------
+
+
+@pytest.mark.real_translation
+def test_a_reader_who_wants_both_gets_english_first_then_tamil(tamil):
+    """The son abroad coordinates in English and reads Tamil to his mother.
+
+    Sending him Tamil alone made him ask what his own bill said. Sending him
+    English alone throws away the thing he would read aloud. He asked for both,
+    English on top, so that is a preference he states rather than one inferred
+    from living abroad.
+    """
+    rendering = translate.render("The bill is on Ashanthi's record. INR 38,450.",
+                                 language="en+ta", source_ref="bill summary")
+
+    assert rendering.translated is True
+    assert rendering.language == "en+ta"
+
+    english_at = rendering.text.index("The bill is on Ashanthi's record")
+    tamil_at = rendering.text.index("அன்பு கேர்")
+    assert english_at < tamil_at, "the derived text is above the record it derives from"
+
+    assert translate.BILINGUAL_HEADING in rendering.text
+    assert "Translated from the recorded bill summary." in rendering.text
+
+
+@pytest.mark.real_translation
+def test_the_english_half_is_the_record_verbatim(tamil):
+    """Not a paraphrase of it, and not the model's idea of it."""
+    source = "The bill is on Ashanthi's record. 7 line items, INR 38,450."
+    rendering = translate.render(source, language="en+ta", source_ref="bill summary")
+
+    assert rendering.text.startswith(source)
+    assert rendering.source_text == source
+
+
+@pytest.mark.real_translation
+def test_wanting_both_does_not_change_what_the_model_is_asked(tamil):
+    """The wall this module holds: it renders a record, it never composes one."""
+    translate.render("Ashanthi is resting.", language="en+ta",
+                     source_ref="status update")
+
+    assert len(tamil) == 1, "one call, for one translation"
+    assert "Ashanthi is resting." in tamil[0]
+
+
+@pytest.mark.real_translation
+def test_tamil_alone_stays_tamil_alone(tamil):
+    """Priya lives in Thoothukudi. A message twice as long is not a kindness."""
+    rendering = translate.render("Ashanthi is resting.", language="ta",
+                                 source_ref="status update")
+
+    assert rendering.language == "ta"
+    assert "Ashanthi is resting." not in rendering.text
+    assert translate.BILINGUAL_HEADING not in rendering.text
+
+
+def test_english_alone_is_untouched_by_any_of_this(tamil):
+    rendering = translate.render("Ashanthi is resting.", language="en",
+                                 source_ref="status update")
+
+    assert rendering.translated is False
+    assert rendering.text == "Ashanthi is resting."
+    assert tamil == [], "English cost a model call"
+
+
+@pytest.mark.real_translation
+def test_a_failed_translation_still_leaves_the_english_readable(monkeypatch):
+    """Both halves come from one call, so losing it must not lose the record."""
+    monkeypatch.setattr(translate, "_call_model",
+                        lambda *a, **k: (_ for _ in ()).throw(TimeoutError()))
+
+    rendering = translate.render("Ashanthi is resting.", language="en+ta",
+                                 source_ref="status update")
+
+    assert rendering.translated is False
+    assert rendering.text.startswith("Ashanthi is resting.")
+
+
+@pytest.mark.real_translation
+def test_the_preference_is_read_off_the_contact_not_their_role(tamil, monkeypatch):
+    """Per-recipient, end to end: same case, same event, three readers."""
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id = onboarding_tools.create_parent_profile(
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    for name, number, language in (("Heartlin", "+14155550142", "en+ta"),
+                                   ("Priya", "+919000000077", "ta"),
+                                   ("Anil", "+14155550143", "en")):
+        onboarding_tools.record_family_contact(
+            parent_id=parent_id, name=name, relationship="family",
+            whatsapp_e164=number, timezone_name="Asia/Kolkata",
+            is_primary=(name == "Heartlin"), consent_purposes=["status_updates"],
+            language=language,
+        )
+    case = service.open_case(parent_id)
+
+    def send(to):
+        return whatsapp_tools.send_family_update(
+            case_id=case.case_id, parent_id=parent_id, to_e164=to,
+            template_name="status_update",
+            template_params={"parent_name": "Ashanthi", "status": "resting",
+                             "hospital_name": "Sacred Heart", "timestamp": "4:12 PM"},
+            message_class="status",
+        )
+
+    assert send("+14155550142")["rendering"]["rendered_language"] == "en+ta"
+    assert send("+919000000077")["rendering"]["rendered_language"] == "ta"
+    assert send("+14155550143")["rendering"]["rendered_language"] == "en"
