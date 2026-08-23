@@ -76,8 +76,21 @@ def _hours_between(later: datetime, earlier: datetime) -> float:
     return (later - earlier).total_seconds() / 3600.0
 
 
+# Words that carry no identity. "Sacred Heart Hospital" and "Sacred Heart
+# Hospitals Pvt Ltd" are the same place; "Sundaram Arulrhaj Hospitals" is not.
+_VENDOR_NOISE = {"hospital", "hospitals", "clinic", "centre", "center", "medical",
+                 "pvt", "private", "ltd", "limited", "the", "and", "institute",
+                 "healthcare", "health", "care", "multispeciality", "speciality"}
+
+
+def _identity_tokens(name: str) -> set[str]:
+    cleaned = "".join(c if c.isalnum() else " " for c in (name or "").lower())
+    return {t for t in cleaned.split() if len(t) > 2 and t not in _VENDOR_NOISE}
+
+
 def _anomalies(amount: int, mandate: PaymentMandate, history: list,
-               now: datetime, extracted_payee: str | None) -> list[str]:
+               now: datetime, extracted_payee: str | None,
+               extracted_vendor: str | None = None) -> list[str]:
     """Deterministic signals. Any one of these refuses an in-cap payment.
 
     The point is not to catch fraud. It is that routine bills should flow
@@ -121,6 +134,19 @@ def _anomalies(amount: int, mandate: PaymentMandate, history: list,
                 f"burst: a second bill {gap:.1f} hours after the last one, "
                 f"inside the {BURST_WINDOW_HOURS}h window")
 
+    # A bill from a DIFFERENT HOSPITAL. The destination is locked either way, so
+    # this is not a redirection risk — it is worse in a quieter way: paying the
+    # authorised hospital for another hospital's bill leaves the family still
+    # owing the one that sent it, and having spent the authority meant for this
+    # admission. Found live: a Sundaram Arulrhaj bill was paid to Sacred Heart.
+    theirs = _identity_tokens(extracted_vendor)
+    ours = _identity_tokens(mandate.payee_label)
+    if theirs and ours and not (theirs & ours):
+        found.append(
+            f"vendor_mismatch: the bill is from {extracted_vendor}, and the "
+            f"authority was granted for {mandate.payee_label}. Paying it would "
+            f"send money to the right account for the wrong hospital's bill")
+
     if amount >= NEAR_CAP_FRACTION * mandate.per_bill_cap_inr:
         found.append(
             f"near_cap: INR {amount:,} is at or above "
@@ -140,7 +166,8 @@ def _anomalies(amount: int, mandate: PaymentMandate, history: list,
 def decide(*, bill_id: str, case_id: str, amount_inr: int,
            mandate: PaymentMandate | None, history: list,
            now: datetime | None = None,
-           extracted_payee: str | None = None) -> Decision:
+           extracted_payee: str | None = None,
+           extracted_vendor: str | None = None) -> Decision:
     """Should this bill be paid autonomously, and where would it go.
 
     Every check must pass. The order is deliberate: revocation and case scope
@@ -213,7 +240,8 @@ def decide(*, bill_id: str, case_id: str, amount_inr: int,
     passed.append("payee_from_mandate")
 
     # 7 — nothing unusual about this bill
-    anomalies = _anomalies(amount_inr, mandate, history, now, extracted_payee)
+    anomalies = _anomalies(amount_inr, mandate, history, now, extracted_payee,
+                           extracted_vendor)
     if anomalies:
         return refuse("no_anomaly", "; ".join(anomalies))
     passed.append("no_anomaly")

@@ -1414,10 +1414,17 @@ def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
     if not payable or payable <= 0:
         return  # nothing outstanding on this bill; nothing to pay
 
+    # The bill says what it is. Calling a final bill "interim" was a hardcoded
+    # word in a template, and it was wrong on the first real bill that reached
+    # it. The vendor rides along so the enforcer can notice a bill from a
+    # hospital the authority was never granted for.
+    bill_kind = "interim bill" if bill.is_interim else "bill"
+
     try:
         outcome = consider_bill(
             case_id=case_id, parent_id=parent_id, bill_id=bill.bill_id,
-            amount_inr=payable, extracted_payee=bill.vendor)
+            amount_inr=payable, extracted_payee=bill.vendor,
+            extracted_vendor=bill.vendor)
     except Exception:  # noqa: BLE001 - a payment decision must not kill the lane
         logger.exception("payment decision failed")
         return
@@ -1431,6 +1438,7 @@ def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
             return
         tell("payment_escalated", {
             "amount": f"{outcome['amount_inr']:,}",
+            "bill_kind": bill_kind,
             "payee_label": _payee_label(case_id),
             "reason": outcome["reason"][:220],
         }, "billing", consent.BILLING_UPDATES)
@@ -1442,9 +1450,19 @@ def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
         running = (f"Across this stay: INR {view['paid_inr']:,} settled, "
                    f"INR {view['initiated_unconfirmed_inr']:,} initiated and "
                    f"not yet confirmed.\n")
+    # Two figures for one bill read as a contradiction unless the difference is
+    # stated. It is the advance already paid against it.
+    outstanding_line = ""
+    total = bill.computed_total_inr
+    if total and total != payable:
+        outstanding_line = (f"The bill totals INR {total:,}; INR "
+                            f"{total - payable:,} had already been paid "
+                            f"against it.\n")
+
     tell("payment_auto_initiated", {
         "amount": f"{outcome['amount_inr']:,}",
-        "payee_label": outcome["payee_label"],
+        "bill_kind": bill_kind,
+        "outstanding_line": outstanding_line,
         "running_line": running,
     }, "billing", consent.BILLING_UPDATES)
 

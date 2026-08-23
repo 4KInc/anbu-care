@@ -121,15 +121,28 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # surprise: the caps he set himself.
     "payment_auto_initiated": {
         "message_class": MessageClass.BILLING,
-        "body": "Anbu Care: interim bill of INR {amount} at {payee_label} was "
-                "paid automatically, inside the limits you set.\n"
+        # The amount is the OUTSTANDING balance, which is usually not the bill
+        # total — and the previous version stated only the balance right after
+        # another message stating only the total, which read as two different
+        # answers about one bill. It now says which is which.
+        #
+        # It also says what a paid interim amount means against the coverage
+        # estimate. "About INR 0 to pay" and "we just paid INR 3,890" are both
+        # true and look like a contradiction: one is what the insurer is
+        # expected to settle, the other is what the hospital wanted today.
+        "body": "Anbu Care: INR {amount} was outstanding on that {bill_kind} "
+                "and has been paid automatically, inside the limits you set.\n"
+                "{outstanding_line}"
                 "{running_line}"
                 "It was checked against your per-bill cap, your total cap, the "
                 "window, and the one account you authorised. Nothing else can "
                 "receive it.\n"
+                "This is what the hospital wanted now. It does not change the "
+                "policy estimate. A paid interim amount is normally adjusted "
+                "when the insurer settles.\n"
                 "Stop this at any time here: {dashboard_url}",
         "view": "claim",
-        "params": ["amount", "payee_label", "running_line"],
+        "params": ["amount", "bill_kind", "outstanding_line", "running_line"],
     },
 
     # Refused. The reason is the message: a family who is told only that it
@@ -137,12 +150,12 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # cashless stops when an interim bill goes unpaid.
     "payment_escalated": {
         "message_class": MessageClass.BILLING,
-        "body": "Anbu Care: an interim bill of INR {amount} at {payee_label} "
-                "was NOT paid automatically and needs you.\n"
+        "body": "Anbu Care: INR {amount} outstanding on a {bill_kind} at "
+                "{payee_label} was NOT paid automatically and needs you.\n"
                 "Why: {reason}\n"
                 "Nothing has moved. Review and approve it here: {dashboard_url}",
         "view": "claim",
-        "params": ["amount", "payee_label", "reason"],
+        "params": ["amount", "bill_kind", "payee_label", "reason"],
     },
 
     "document_unreadable": {

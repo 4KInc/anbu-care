@@ -32,6 +32,7 @@ class PaymentRefused(Exception):
 
 def consider_bill(*, case_id: str, parent_id: str, bill_id: str,
                   amount_inr: int, extracted_payee: str | None = None,
+                  extracted_vendor: str | None = None,
                   now: datetime | None = None) -> dict:
     """Decide what happens to one payable bill, and do it.
 
@@ -45,7 +46,7 @@ def consider_bill(*, case_id: str, parent_id: str, bill_id: str,
     verdict: Decision = decide(
         bill_id=bill_id, case_id=case_id, amount_inr=amount_inr,
         mandate=mandate, history=history, now=now,
-        extracted_payee=extracted_payee)
+        extracted_payee=extracted_payee, extracted_vendor=extracted_vendor)
 
     if not verdict.pay:
         return _escalate(case_id=case_id, parent_id=parent_id, bill_id=bill_id,

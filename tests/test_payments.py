@@ -827,3 +827,87 @@ def test_a_bill_with_no_balance_is_not_put_to_the_enforcer(case, monkeypatch):
         headers={"Authorization": "Bearer anbu-demo-family-token"}).json()
     assert result["outcome"] == "nothing_due"
     assert service.list_payments(case_id) == []
+
+
+# =========================================================================
+# WHAT THE FIRST REAL BILL TAUGHT
+# =========================================================================
+
+
+def test_a_bill_from_another_hospital_escalates(case):
+    """Found live. A Sundaram Arulrhaj bill was auto-paid to Sacred Heart.
+
+    The destination was never at risk — it is locked to the mandate either way.
+    The harm is quieter: the family still owes the hospital that sent the bill,
+    and the authority meant for this admission has been spent on it.
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                           amount_inr=3_890,
+                           extracted_vendor="Sundaram Arulrhaj Hospitals")
+
+    assert result["outcome"] == "escalated"
+    assert "vendor_mismatch" in result["reason"]
+    assert service.list_payments(case_id) == []
+
+
+def test_the_same_hospital_written_differently_still_pays(case):
+    """The check must not fire on a legal suffix. "Sacred Heart Hospital" and
+    "Sacred Heart Hospitals Pvt Ltd" are the same place, and escalating that
+    would make the feature useless in the other direction."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                           amount_inr=3_890,
+                           extracted_vendor="Sacred Heart Hospitals Pvt Ltd")
+    assert result["outcome"] == "initiated"
+
+
+def test_an_unreadable_vendor_does_not_block_payment(case):
+    """A bill whose vendor could not be read is not evidence of anything. The
+    destination is locked regardless, so a missing name must not be treated as
+    a mismatch."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+
+    for vendor in (None, "", "   "):
+        service.list_payments(case_id)
+        result = consider_bill(case_id=case_id, parent_id=parent_id,
+                               bill_id=f"IP/{vendor!r}", amount_inr=3_000,
+                               extracted_vendor=vendor,
+                               now=datetime.now(UTC) + timedelta(hours=12))
+        assert result["outcome"] == "initiated", vendor
+        break
+
+
+def test_a_final_bill_is_not_called_an_interim_one():
+    """The template hardcoded the word, and the first real bill through it said
+    INPATIENT FINAL BILL on its face."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._consider_payment)
+    assert 'bill_kind = "interim bill" if bill.is_interim else "bill"' in source
+
+    from anbu_care.comms.policy import TEMPLATES
+
+    for name in ("payment_auto_initiated", "payment_escalated"):
+        body = str(TEMPLATES[name]["body"])
+        assert "interim bill of" not in body
+        assert "{bill_kind}" in body
+
+
+def test_the_payment_message_explains_the_two_figures():
+    """A message saying INR 8,890 followed by one saying INR 3,890 reads as two
+    answers about one bill unless the difference is named."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    body = str(TEMPLATES["payment_auto_initiated"]["body"])
+    assert "{outstanding_line}" in body
+    assert "was outstanding on that" in body
+    # And what a paid interim amount means against the policy estimate.
+    assert "adjusted" in body and "insurer settles" in body

@@ -141,6 +141,9 @@ def test_every_template_renders_and_passes_its_own_gate():
         "applied_line": "",
         "subject": "lab report",
         "payee_label": "Sacred Heart Hospital",
+        "bill_kind": "interim bill",
+        "outstanding_line": "The bill totals INR 8,890; INR 5,000 had already "
+                            "been paid against it.\n",
         "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
         "reason": "the amount is above the per-bill cap you set.",
     }
@@ -265,6 +268,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "applied_line": "",
         "subject": "lab report",
         "payee_label": "Sacred Heart Hospital",
+        "bill_kind": "interim bill",
+        "outstanding_line": "The bill totals INR 8,890; INR 5,000 had already "
+                            "been paid against it.\n",
         "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
         "reason": "the amount is above the per-bill cap you set.",
     }
