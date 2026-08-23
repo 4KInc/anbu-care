@@ -1120,8 +1120,8 @@ function gate(){
     credential, and opens this view directly. The demo credential is not a secret; it is published in
     the README. Secrecy is not what is being shown here — server-side enforcement is.</p>
     ${S.authError?`<p class="mute" style="color:var(--red-ink);margin-top:10px">${esc(S.authError)}</p>`:""}
-    <div class="btns">
-      <button class="btn" onclick="signInWithGoogle()">Sign in with Google</button>
+    <div class="btns" style="align-items:center">
+      <div id="gbtn"></div>
       <button class="btn ghost" onclick="signIn()">Use the demo credential</button></div>
     <p class="mute" style="margin-top:10px">A Google account only opens this record if it is already
       one of her family contacts. Signing in proves who you are; it is not permission.</p>
@@ -1133,8 +1133,8 @@ function denied(detail,what){
     <h2 style="color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0">${esc(what)} is credentialed</h2>
     <p class="mute" style="margin-top:8px">${esc(detail||"")}</p>
     ${S.authError?`<p class="mute" style="color:var(--red-ink);margin-top:10px">${esc(S.authError)}</p>`:""}
-    <div class="btns">
-      <button class="btn" onclick="signInWithGoogle()">Sign in with Google</button>
+    <div class="btns" style="align-items:center">
+      <div id="gbtn"></div>
       <button class="btn ghost" onclick="signIn()">Use the demo credential</button></div>
     <p class="mute" style="margin-top:10px">A Google account only opens this record if it is already
       one of her family contacts. Signing in proves who you are; it is not permission.</p>
@@ -1151,12 +1151,21 @@ async function signIn(){ S.token="anbu-demo-family-token"; S.who=null; await loa
 // it against Google's published keys with our client id pinned as the
 // audience, and then separately checks that the account is a family contact on
 // this parent. A signature this page checked itself would prove nothing.
+let GOOGLE_DRAWING = false;
 async function signInWithGoogle(){
+  if(GOOGLE_DRAWING) return;
+  GOOGLE_DRAWING = true;
+  try { await drawGoogleButton(); } finally { GOOGLE_DRAWING = false; }
+}
+
+async function drawGoogleButton(){
   const cfg = S.authConfig || (S.authConfig = await api("/api/auth-config"));
   const clientId = cfg?.google_client_id;
   if(!clientId){
-    S.authError = "Google sign-in is not configured on this deployment.";
-    render(); return;
+    const slot = document.getElementById("gbtn");
+    if(slot) slot.innerHTML =
+      `<p class="mute">Google sign-in is not configured on this deployment.</p>`;
+    return;
   }
   try{
     await loadGoogleScript();
@@ -1169,10 +1178,24 @@ async function signInWithGoogle(){
         await load();
       },
     });
-    google.accounts.id.prompt();
+
+    // A RENDERED button, not one-tap. `prompt()` is suppressed by the browser
+    // for reasons that have nothing to do with this app — an exponential
+    // cooldown after a couple of dismissals, third-party cookies switched off —
+    // and a sign-in button that silently does nothing is indistinguishable
+    // from a broken one. The rendered button always opens the popup.
+    const slot = document.getElementById("gbtn");
+    if(slot){
+      slot.innerHTML = "";
+      google.accounts.id.renderButton(slot, {
+        theme: "outline", size: "large", text: "signin_with",
+        shape: "rectangular", width: 260,
+      });
+    }
   }catch(e){
-    S.authError = "Google sign-in could not start: " + String(e);
-    render();
+    const slot = document.getElementById("gbtn");
+    if(slot) slot.innerHTML =
+      `<p class="mute">Google sign-in could not start: ${esc(String(e))}</p>`;
   }
 }
 
@@ -1329,6 +1352,9 @@ function render(){
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===S.view));
   window.scrollTo(0,0);
   if(S.view === "routing") drawMap();
+  // The gate is re-rendered on every state change, which destroys the node the
+  // Google button was drawn into. Redraw it whenever the slot is back.
+  if(document.getElementById("gbtn")) signInWithGoogle();
 }
 document.querySelectorAll("nav button").forEach(b=>
   b.addEventListener("click",()=>{S.view=b.dataset.v; SYNTH_SHOWN=false; render();}));
