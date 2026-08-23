@@ -31,6 +31,13 @@ MUTED = (90, 105, 120)
 RULE = (200, 210, 220)
 
 
+def _group(amount: int) -> str:
+    """Indian digit grouping, the way the bill would actually print it."""
+    from anbu_care.money import group
+
+    return group(amount)
+
+
 def _font(size: int, bold: bool = False):
     """A real font if the system has one, else PIL's default.
 
@@ -60,7 +67,8 @@ def render(spec: dict, out: Path) -> Path:
     d.text((50, y), f"GSTIN {spec['gstin']}   ·   {spec['reg']}", font=_font(16), fill=MUTED)
     y += 40
 
-    d.text((50, y), "INPATIENT FINAL BILL", font=_font(22, bold=True), fill=INK)
+    d.text((50, y), spec.get("bill_title", "INPATIENT FINAL BILL"),
+           font=_font(22, bold=True), fill=INK)
     d.text((760, y), spec["bill_no"], font=_font(18), fill=INK); y += 36
     d.line([(50, y), (W - 50, y)], fill=INK, width=2); y += 22
 
@@ -91,8 +99,8 @@ def render(spec: dict, out: Path) -> Path:
         for label, qty, rate, amount in rows:
             d.text((66, y), label, font=_font(18), fill=INK)
             d.text((600, y), str(qty), font=_font(18), fill=MUTED)
-            d.text((700, y), f"{rate:,}" if rate else "", font=_font(18), fill=MUTED)
-            text = f"{amount:,}"
+            d.text((700, y), _group(rate) if rate else "", font=_font(18), fill=MUTED)
+            text = _group(amount)
             d.text((960 - d.textlength(text, font=_font(18, bold=True)), y),
                    text, font=_font(18, bold=True), fill=INK)
             y += 28
@@ -102,7 +110,7 @@ def render(spec: dict, out: Path) -> Path:
     for label, amount, bold in spec["totals"]:
         f = _font(21 if bold else 18, bold=bold)
         d.text((600, y), label, font=f, fill=INK)
-        text = f"{amount:,}"
+        text = _group(amount)
         d.text((960 - d.textlength(text, font=f), y), text, font=f, fill=INK)
         y += 32
 
@@ -254,6 +262,49 @@ ICU_LONG = {
 }
 
 
+# The bill the agent can clear on its own.
+#
+# Sacred Heart, so it matches the mandate's payee and passes the vendor check.
+# Day two of the same admission, INTERIM on its face, and a balance due of
+# 38,450 — comfortably under a 50,000 per-bill cap and under the 90% near-cap
+# threshold that would otherwise escalate it. No advance against it, so the
+# total and the balance agree and there is no gap to explain.
+INTERIM_DAY_TWO = {
+    "hospital": "Sacred Heart Hospital",
+    "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
+    "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "bill_title": "INTERIM BILL - DAY 2",
+    "bill_no": "IP/2026/04471-I2", "patient": "Ashanthi Machado",
+    "uhid": "SHH-0092841", "age_sex": "71 / F",
+    "consultant": "Dr A. Anand, Cardiology",
+    "ip_no": "IP-26-8841", "admitted": "19 Aug 2026, 02:40",
+    "discharged": "still admitted", "ward": "Cardiac ICU",
+    "sections": [
+        ("Room & nursing", [
+            ("Cardiac ICU bed charges", "1 day", 32000, 32000),
+            ("Nursing charges", "1 day", 1200, 1200),
+        ]),
+        ("Professional fees", [
+            ("Consultant round - Cardiology", "1", 1500, 1500),
+        ]),
+        ("Investigations", [
+            ("Troponin I", "1", 1800, 1800),
+            ("ECG", "2", 350, 700),
+        ]),
+        ("Pharmacy & consumables", [
+            ("Ward pharmacy - cardiac drugs", "-", 0, 950),
+            ("IV fluids and injections", "-", 0, 300),
+        ]),
+    ],
+    "totals": [
+        ("Sub-total", 38450, False),
+        ("TOTAL", 38450, True),
+        ("Advance paid", 0, False),
+        ("BALANCE DUE", 38450, True),
+    ],
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="/tmp/bills")
@@ -261,7 +312,8 @@ def main() -> int:
     out = Path(args.out)
 
     for name, spec in (("cardiac_icu", CARDIAC), ("general_ward", GENERAL_WARD),
-                       ("icu_long_stay", ICU_LONG)):
+                       ("icu_long_stay", ICU_LONG),
+                       ("interim_day_two", INTERIM_DAY_TWO)):
         path = render(spec, out / f"bill_{name}.png")
         total = next(a for label, a, _ in spec["totals"] if label == "TOTAL")
         print(f"  {path}   TOTAL INR {total:,}")

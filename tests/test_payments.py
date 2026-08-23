@@ -1098,3 +1098,45 @@ def test_every_rupee_a_person_reads_is_grouped_the_indian_way():
         for line in source.splitlines():
             if ":,}" in line and "INR" in line:
                 raise AssertionError(f"{name}: {line.strip()[:70]}")
+
+
+def test_the_interim_fixture_is_designed_to_clear(case):
+    """A demo bill that escalates for a reason nobody intended wastes a take.
+
+    This one exists to show the agent acting alone, so it has to pass every
+    check — including the two that are easy to trip by accident: near-cap
+    (90% of the per-bill cap) and vendor identity against the mandate.
+    """
+    from scripts.make_bill_images import INTERIM_DAY_TWO
+    from anbu_care.payments.enforcer import NEAR_CAP_FRACTION
+
+    balance = next(a for label, a, _ in INTERIM_DAY_TWO["totals"]
+                   if label == "BALANCE DUE")
+    per_bill_cap = 50_000
+
+    assert balance < per_bill_cap
+    assert balance < NEAR_CAP_FRACTION * per_bill_cap, "would trip near_cap"
+    assert INTERIM_DAY_TWO["hospital"] == "Sacred Heart Hospital"
+    assert "INTERIM" in INTERIM_DAY_TWO["bill_title"]
+
+    # No advance against it, so the total and the balance agree and the message
+    # has no gap to explain.
+    total = next(a for label, a, _ in INTERIM_DAY_TWO["totals"] if label == "TOTAL")
+    assert total == balance
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=per_bill_cap)
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id=INTERIM_DAY_TWO["bill_no"], amount_inr=balance,
+                           extracted_vendor=INTERIM_DAY_TWO["hospital"])
+    assert result["outcome"] == "initiated"
+    assert result["autonomous"] is True
+
+
+def test_a_bill_prints_rupees_the_indian_way():
+    """The bill is a photograph of an Indian document. 38,450 is right;
+    38450 or a Western-grouped lakh would not be."""
+    from scripts.make_bill_images import _group
+
+    assert _group(38_450) == "38,450"
+    assert _group(370_720) == "3,70,720"
