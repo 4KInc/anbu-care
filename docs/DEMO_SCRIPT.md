@@ -161,7 +161,42 @@ which is correct behaviour and will ruin a take if you meet it live.
 - [ ] Have the four images **already in the WhatsApp thread's gallery** on the
       handset. Hunting through Files on camera is thirty dead seconds.
 
-### 6. Sign-in, and a second parent to be refused by
+### 6. The payment beat — two cases, not one
+
+The refusal and the auto-clear cannot share a case. A payment somebody approved
+no longer makes the next one look suspicious, but two bills on one stay put
+both outcomes in one money view and the beat stops being legible.
+
+```bash
+# one case per outcome, each with the same mandate
+for i in 1 2; do
+  P=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
+  C=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
+      -d "{\"parent_id\":\"$P\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"caregiver\"}" \
+      | jq -r .case_id)
+  curl -sX POST $URL/api/cases/$C/payment-mandate -H "Authorization: Bearer $TOKEN" \
+    -H 'content-type: application/json' -d '{"payee_vpa":"sacredheart@hdfcbank",
+      "payee_label":"Sacred Heart Hospital","per_bill_cap_inr":50000,
+      "total_cap_inr":400000,"hours":48}' >/dev/null
+  echo "case $i: $C"
+done
+```
+
+- [ ] **The handset is bound to the LAST parent seeded.** Only one case receives
+      photographs. Do the refusal on that one, then re-seed and do the
+      auto-clear, or the second bill lands on the first case.
+- [ ] **`bill_cardiac_icu.png`** → 2,70,720 due, over the 50,000 cap → refuses.
+- [ ] **`bill_interim_day_two.png`** → 38,450 due, Sacred Heart, inside every
+      limit → clears with no tap. Check it is under **45,000** as well as under
+      the cap: 90% of the cap trips near-cap, which would escalate a bill you
+      meant to clear.
+- [ ] **Do not send `bill_general_ward.png` in this beat.** It is from Sundaram
+      Arulrhaj and escalates on vendor mismatch, which is a correct refusal for
+      a reason the narration is not set up for.
+- [ ] Approving needs a signed-in session, so **be ready to sign in on camera**.
+      That is the beat, not an interruption.
+
+### 7. Sign-in, and a second parent to be refused by
 
 The 403 needs a parent your account is *not* a contact on.
 
@@ -179,7 +214,7 @@ uv run python scripts/link_google_account.py --parent $OTHER_PARENT
       at all. If a judge asks to try it themselves, hand them the demo
       credential — do not promise them a Google sign-in they cannot have.
 
-### 7. The handoff and the trace (new beats, new ways to fail)
+### 8. The handoff and the trace (new beats, new ways to fail)
 
 Both of these were added after the last recording, so neither has muscle memory
 behind it. Dry-run them fully.
@@ -207,7 +242,7 @@ curl -s  -H "Authorization: Bearer $TOKEN" $URL/api/cases/$CASE/trace | jq '.que
 - [ ] If you are doing the optional voice-note-on-the-nurse's-phone moment, warm
       the transcriber first — same cold-start risk as Beat 2.
 
-### 8. Walk the dashboard by hand
+### 9. Walk the dashboard by hand
 
 Open `$URL/app` at the window size you will record.
 
@@ -219,7 +254,7 @@ Open `$URL/app` at the window size you will record.
       **SELF-REPORTED — NOT A MEASURED VITAL**.
 - [ ] `SYNTHETIC — DEMO DATA` visible on every clinical view.
 
-### 9. Recording hygiene
+### 10. Recording hygiene
 
 - [ ] Say **"synthetic"**, **"simulated"** and **"seeded snapshot"** at least
       once each. The honesty framing is the architecture case, not a disclaimer.
@@ -239,7 +274,7 @@ Open `$URL/app` at the window size you will record.
 - [ ] A voice note takes ~10s. Do not fill the silence with hedging; say what
       is happening ("it is transcribing, then matching") and let it land.
 
-### 10. Backup take
+### 11. Backup take
 
 Record a second pass immediately, before changing anything. Everything except
 the Gemini transcription and extraction is deterministic;
@@ -256,21 +291,26 @@ the Gemini transcription and extraction is deterministic;
 | 1:15–1:50 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
 | 1:50–2:25 | **The boundary, and who is allowed to look** ⭐ | Clinical detail refused, family still told. Then a real sign-in, and a 403. |
 | 2:25–3:05 | **She arrives, and you are not there** ⭐⭐ | Scan the QR. A nurse reads her allergies with no login. |
-| 3:05–4:00 | **Photograph the paperwork** ⭐⭐ | A bill becomes an itemised claim. A discharge summary fills in the unknowns. |
-| 4:00–4:45 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
-| 4:45–5:10 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
-| 5:10–5:45 | **The honest wall** | What it does not do, said out loud. |
+| 3:05–3:50 | **Photograph the paperwork** ⭐⭐ | A bill becomes an itemised claim. A discharge summary fills in the unknowns. |
+| 3:50–4:35 | **It pays one, and refuses another** ⭐⭐ | The refusal first. Then it clears a bill alone, and nobody is woken. |
+| 4:35–5:15 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
+| 5:15–5:50 | **The honest wall** | What it does not do, said out loud. |
 
 Runs ~5:45. The paperwork beat replaced the old scripted claim beat at roughly
 the same length, and the sign-in moment cost about fifteen seconds inside an
 existing beat rather than becoming one of its own — signing in is not
 interesting, being refused is.
 
-**If you must cut:** take the tamper beat (4:45–5:10). That is a change from
-the last version, and it is deliberate. Tamper is a lovely thirty seconds but
-the trace beat already ends on `/verify`, so the verifiability point survives
-without it. **Do not cut** the paperwork beat, the handoff, or the trace — those
-three are the ones no other entry will have.
+Runs ~5:50. The payment beat cost forty-five seconds and the tamper beat paid
+for it: tamper is gone from the running order, deliberately. It was a lovely
+thirty seconds, but the trace beat already ends on `/verify`, so verifiability
+survives without it — and an agent that declines to spend money is a stronger
+thirty seconds than a hash that does not match.
+
+**If you must cut further:** take the second half of the payment beat, the
+auto-clear. Keep the refusal. A system that pays is ordinary; a system that
+refuses to, and says exactly which limit stopped it, is the one nobody else
+will have. **Do not cut** the paperwork beat, the handoff, or the trace.
 
 **If you have time to spare**, the 403 in Beat 4 is worth an extra ten seconds.
 It is the only moment in the demo where the system tells *you* no.
@@ -528,7 +568,7 @@ Tap confirm. The note appears on the chain in the next beat.
 
 ---
 
-## Beat 6 (3:05–4:00) — photograph the paperwork ⭐⭐
+## Beat 6 (3:05–3:50) — photograph the paperwork ⭐⭐
 
 The most visual beat in the demo, and the one that most looks like the actual
 job. Everything before this was the night it happened. This is the week
@@ -616,7 +656,76 @@ see pre-flight §5. Say so and move on; do not re-send it.
 
 ---
 
-## Beat 7 (4:00–4:45) — watch it decide, then check that it did ⭐⭐
+## Beat 7 (3:50–4:35) — it pays one, and refuses another ⭐⭐
+
+The highest-consequence thing in the project, and the reason to lead with the
+refusal: a system that spends money is believable in proportion to what it
+declines to spend.
+
+Set the scene in one line before you send anything.
+
+> "Indian hospitals bill during the stay, not at the end. If an interim bill
+> goes unpaid, cashless stops mid-treatment. A present son would read it and
+> pay it. He is asleep in California."
+
+**Half one — it refuses, and says which limit stopped it.**
+
+Photograph `bill_cardiac_icu.png`. Balance due 2,70,720, against a per-bill cap
+of 50,000. The reply is one message, and the line that matters is:
+
+> INR 2,70,720 of it now … It was NOT paid automatically: INR 2,70,720 is above
+> the per-bill cap of INR 50,000. Nothing has moved, and it needs you.
+
+Open the **Claim** tab. The refusal is the first thing on it.
+
+> "It read the bill, checked it against the limits he set, and stopped. The
+> reason is on screen: above the per-bill cap. Nothing moved.
+>
+> This is the part I would want to see if it were my mother's money. Not that
+> it pays — that it refuses, and tells me which rule stopped it."
+
+Tap **Approve**. Point at the sign-in panel that appears in place.
+
+> "Approving money needs a signed-in session. The link that opened this page
+> can read the record; it cannot authorise a payment. Different acts, different
+> credentials."
+
+Sign in with Google, approve, and the card resolves.
+
+**Half two — it clears one on its own.**
+
+Photograph `bill_interim_day_two.png`. Same hospital, 38,450 due, inside every
+limit. No tap. The reply says it has been paid.
+
+Open the Claim tab again and point at the line items.
+
+> "The room was capped at 10,000 — two per cent of a five-lakh policy, for one
+> day. Then every associated charge came down by the same ratio, because the
+> room exceeded its limit. That is proportionate deduction, it is the rule
+> almost nobody knows about, and it is why this bill covers 12,875 rather than
+> the 16,450 the sub-limit alone would give.
+>
+> Pharmacy and IV fluids are untouched. A policy cannot proportion down
+> consumables, so it does not.
+>
+> Nobody was woken for that one. It was inside the envelope."
+
+Then the two figures side by side.
+
+> "Settled: zero. Initiated and not confirmed: 38,450. It will not call money
+> paid until a settlement confirmation actually arrives — the same distinction
+> as a message sent versus a message delivered."
+
+**Say this once, plainly, while the numbers are on screen:**
+
+> "Settlement is simulated. Real autonomous UPI debit needs a licensed payment
+> provider and NPCI mandate rails, and that is not in scope this week. The
+> mandate, the caps, the payee lock, the duplicate check and the anomaly rules
+> are real code and they are what just ran."
+
+---
+
+## Beat 8 (4:35–5:15) — watch it decide, then check that it did ⭐⭐
 
 The agentic beat. Everything so far showed the system *acting*; this shows it
 **deciding**, and then lets anyone verify the decisions were real.
@@ -677,7 +786,7 @@ curl -s $URL/api/cases/$CASE/verify | jq                                # 200
 
 ---
 
-## Beat 8 (4:45–5:10) — tamper ⭐
+## Beat 9 — tamper ⭐ (cut from the running order)
 
 ```bash
 curl -s $URL/api/cases/case-a7cf9fa613/verify
@@ -695,7 +804,7 @@ reason: payload does not hash to the recorded hash — content was altered
 
 ---
 
-## Beat 9 (5:10–5:45) — the honest wall
+## Beat 10 (5:15–5:50) — the honest wall
 
 Do not skip this. It is the strongest beat in the demo, because everyone else's
 demo skips it.
@@ -718,6 +827,16 @@ demo skips it.
 > **outbound presentation, not an EHR connection**. Nobody writes back into
 > anything, and if she leaves a note it lands on our chain, not in the
 > hospital's. The care circle are notified parties, not partners.
+>
+> It does not move real money. The mandate, the caps, the payee lock, the
+> duplicate check and the anomaly rules are real code and they are what you
+> just watched run. The settlement is simulated, exactly like the TPA: real
+> autonomous UPI debit needs a licensed payment provider and NPCI mandate
+> rails, and no US card can fund UPI at all.
+>
+> And it never chooses where money goes. The destination is typed once by a
+> human, out of band, and pinned. A bill can ask for an amount; it can never
+> ask for a destination, and a bill that names one is refused for naming one.
 >
 > It does not read a document it has not been sent. Nothing is fetched from a
 > hospital portal or an insurer's system. Somebody photographs a piece of paper,
