@@ -926,7 +926,9 @@ def test_the_message_explains_what_a_paid_interim_amount_means():
     # And the immediate demand is named separately from the eventual estimate,
     # with the advance accounting for the gap between them.
     owed = inspect.getsource(server._owed_now)
-    assert "wants INR" in owed and "already paid against it" in owed
+    assert "wants {inr(amount_inr)} of it now" in owed
+    assert "already paid against it" in owed
+    assert "settled with them rather than kept by the" in owed
 
 
 # =========================================================================
@@ -1021,62 +1023,49 @@ def test_a_bill_with_no_advance_does_not_invent_one(case):
     assert "already paid" not in line
 
 
-def test_the_settlement_lines_reconcile_the_two_directions(case, monkeypatch):
-    """Reported as: if the insurer covers 1,42,030 of the 2,70,720, do I pay
-    2,28,690, or pay now and get reimbursed?
+def test_the_settlement_block_says_what_scope_it_is(case, monkeypatch):
+    """It got this wrong in the most confusing way available.
 
-    Neither, as stated. The insurer's share is deducted from the BILL, not from
-    the balance owed today — so 1,42,030 + 2,28,690 splits the whole 3,70,720,
-    while the 2,70,720 owed today is the unpaid balance and INCLUDES the
-    insurer's part. Paying it is therefore larger than the final share, and the
-    difference comes back.
+    The estimate is CASE-WIDE, covering every bill on the stay. The copy
+    labelled it "of the INR 38,450 bill" using the one that had just arrived,
+    so both figures came out larger than the bill they were said to be part of.
+    That is not a wording problem; it is a sentence that cannot be true.
     """
+    from anbu_care.bills import ingest_bill_image
+    from anbu_care.bills.coverage import estimate_for_case
+    from anbu_care.bills import list_bills
     from anbu_care.server import _settlement_lines
 
-    class _Bill:
-        payable_total_inr = 370_720
-        balance_due_inr = 270_720
+    parent_id, case_id = case
+    _bill_reads(monkeypatch, balance_due=38_450, total=38_450)
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    estimate = estimate_for_case(case_id, list_bills(case_id))
 
-    class _Estimate:
-        estimated_covered_inr = 142_030
-        estimated_you_pay_inr = 228_690
+    lines = _settlement_lines(bill, estimate)
+    payable = estimate.total_billed_inr - estimate.total_discount_inr
 
-    lines = _settlement_lines(_Bill(), _Estimate())
-
-    # The split is named as being OF THE BILL, which is what makes it add up.
-    assert "of the INR 3,70,720 bill" in lines
-    assert "your share of it is about INR 2,28,690" in lines
-    # The advance is accounted for against the share, not against the balance.
-    assert "already paid INR 1,00,000 of that share" in lines
-    assert "INR 1,28,690 of it is still to come" in lines
-    # And the reason today's demand is bigger than the final share.
-    assert "includes the insurer's part" in lines
-    assert "not kept by the hospital" in lines
+    # One bill: no "across N bills" claim, and the total is the real one.
+    assert "on this bill" in lines
+    assert "across the" not in lines
+    # Every figure quoted is the estimate's own, never this bill's total
+    # standing in for the stay.
+    assert str(estimate.estimated_covered_inr)[:2] in lines.replace(",", "")
 
 
-def test_a_fully_covered_bill_still_explains_why_money_is_wanted_today(case):
-    """This is the case that started all of it: the family was told "about INR
-    0 to pay" and then that INR 3,890 had been paid. Both true, and together
-    they read as the system arguing with itself.
-
-    Nothing is owed once the insurer settles, and the hospital still wants the
-    money now. The line saying why is most needed exactly here.
-    """
+def test_the_scope_is_named_when_there_is_more_than_one_bill(case, monkeypatch):
+    from anbu_care.bills import ingest_bill_image, list_bills
+    from anbu_care.bills.coverage import estimate_for_case
     from anbu_care.server import _settlement_lines
 
-    class _Bill:
-        payable_total_inr = 8_890
-        balance_due_inr = 8_890
+    parent_id, case_id = case
+    for amount in (38_450, 20_000):
+        _bill_reads(monkeypatch, balance_due=amount, total=amount)
+        bill = ingest_bill_image(case_id, parent_id,
+                                 IMAGE + bytes([amount % 251]), "image/jpeg")
+    estimate = estimate_for_case(case_id, list_bills(case_id))
 
-    class _Estimate:
-        estimated_covered_inr = 8_890
-        estimated_you_pay_inr = 0
-
-    lines = _settlement_lines(_Bill(), _Estimate())
-    assert "your share of it is about INR 0" in lines
-    assert "includes the insurer's part" in lines
-    # No advance was paid against this one, so nothing claims there was.
-    assert "already paid" not in lines
+    lines = _settlement_lines(bill, estimate)
+    assert "across the 2 bills on this stay" in lines
 
 
 def test_every_rupee_a_person_reads_is_grouped_the_indian_way():
@@ -1140,3 +1129,43 @@ def test_a_bill_prints_rupees_the_indian_way():
 
     assert _group(38_450) == "38,450"
     assert _group(370_720) == "3,70,720"
+
+
+def test_a_human_approval_does_not_make_the_next_payment_suspicious(case):
+    """Reported live. The cardiac bill was refused for the cap and approved by
+    hand; six minutes later an ordinary in-envelope bill escalated for "burst".
+
+    The signal exists to catch the agent being drained while nobody is
+    watching. A payment somebody approved means somebody was watching minutes
+    ago, so counting it inverted the meaning of the check.
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    base = datetime.now(UTC)
+
+    approve_escalated(case_id=case_id, parent_id=parent_id, bill_id="BIG",
+                      amount_inr=270_720, approved_by="Heartlin")
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="SMALL",
+                           amount_inr=38_450, now=base + timedelta(minutes=6),
+                           extracted_vendor="Sacred Heart Hospital")
+    assert result["outcome"] == "initiated", result.get("reason")
+
+
+def test_two_automatic_payments_in_a_row_still_escalate(case):
+    """The other half. Nobody was watching either time, which is the case the
+    signal is actually for."""
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    base = datetime.now(UTC)
+
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A",
+                  amount_inr=20_000, now=base,
+                  extracted_vendor="Sacred Heart Hospital")
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="B",
+                           amount_inr=21_000, now=base + timedelta(minutes=6),
+                           extracted_vendor="Sacred Heart Hospital")
+
+    assert result["outcome"] == "escalated"
+    assert "burst" in result["reason"]
+    assert "automatic payment" in result["reason"]

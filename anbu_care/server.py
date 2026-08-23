@@ -30,7 +30,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
 from anbu_care import service
-from anbu_care.money import group
+from anbu_care.money import group, inr
 from anbu_care.care_circle import notify as care_notify
 from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
@@ -1419,7 +1419,6 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         "line_count": str(len(bill.line_items)),
         "this_bill": f"{group(bill.payable_total_inr)}",
         "adjustment_line": adjustment,
-        "running_total_line": running,
         "settlement_lines": _settlement_lines(bill, estimate),
         "payment_line": payment_line,
     }, "billing", consent.BILLING_UPDATES)
@@ -1476,38 +1475,49 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
 
 
 def _settlement_lines(bill, estimate) -> str:
-    """How the immediate demand and the eventual share relate to each other.
+    """The insurer's split, described at the scope it was actually computed at.
 
-    Reported as not following the numbers, and fairly: the insurer's share is
-    deducted from the BILL, not from the balance the hospital is asking for. So
-    "covered 1,42,030" and "your share 2,28,690" split the whole 3,70,720,
-    while the 2,70,720 owed today is the unpaid balance and INCLUDES the part
-    the insurer is expected to cover.
+    This got it wrong in the most confusing way available: the estimate is
+    CASE-WIDE, covering every bill on the stay, and the copy labelled it "of
+    the INR 38,450 bill" using the bill that had just arrived. Both figures
+    were larger than the bill they were said to be part of, which is not a
+    wording problem — it is a sentence that cannot be true.
 
-    Paying it is therefore larger than the final share, and the difference
-    comes back. Saying only "normally adjusted when the insurer settles" left
-    the reader to work that out, and they could not.
+    Each block now has one scope. This one is the whole stay; what the hospital
+    wants today is per bill and lives with the payment line.
     """
     covered = estimate.estimated_covered_inr
     share = estimate.estimated_you_pay_inr
-    total = bill.payable_total_inr
-    owed_now = bill.balance_due_inr or 0
-    advance = total - owed_now if total > owed_now else 0
+    payable = estimate.total_billed_inr - estimate.total_discount_inr
+    bills = estimate.bills_counted
 
-    out = (f"Once the insurer settles, about INR {group(covered)} of the "
-           f"INR {group(total)} bill is estimated to be covered, so your share "
-           f"of it is about INR {group(share)}.\n")
+    across = (f"across the {bills} bills on this stay" if bills > 1
+              else "on this bill")
+    out = (f"Once the insurer settles, about {inr(covered)} of the "
+           f"{inr(payable)} billed {across} is estimated to be covered, so "
+           f"your share is about {inr(share)}.\n")
 
+    advance = _advance_paid(estimate)
     if advance > 0 and share > advance:
-        out += (f"You have already paid INR {group(advance)} of that share, so "
-                f"about INR {group(share - advance)} of it is still to come.\n")
-
-    if owed_now > share:
-        out += (f"The INR {group(owed_now)} the hospital wants today is more "
-                f"than your share because it includes the insurer's part. That "
-                f"part is settled with the insurer, not kept by the hospital.\n")
-
+        out += (f"You have already paid {inr(advance)} of that share, so about "
+                f"{inr(share - advance)} of it is still to come.\n")
     return out + "\n"
+
+
+def _advance_paid(estimate) -> int:
+    """What has already been paid against the bills on this stay.
+
+    Read off the bills rather than inferred: a bill that prints an advance
+    knows what it was, and one that does not contributes nothing.
+    """
+    from anbu_care.bills import list_bills
+
+    total = 0
+    for bill in list_bills(estimate.case_id):
+        due = bill.balance_due_inr
+        if due is not None and bill.payable_total_inr > due:
+            total += bill.payable_total_inr - due
+    return total
 
 
 def _owed_now(bill, amount_inr: int) -> str:
@@ -1521,10 +1531,16 @@ def _owed_now(bill, amount_inr: int) -> str:
     """
     total = bill.payable_total_inr
     advance = total - amount_inr if total and total > amount_inr else 0
-    if advance > 0:
-        return (f"The hospital wants INR {group(amount_inr)} of it now, which is the "
-                f"total less the INR {group(advance)} already paid against it.\n")
-    return f"The hospital wants INR {group(amount_inr)} of it now.\n"
+    lead = (f"The hospital wants {inr(amount_inr)} of it now, which is the "
+            f"total less the {inr(advance)} already paid against it.\n"
+            if advance > 0 else
+            f"The hospital wants {inr(amount_inr)} of it now.\n")
+    # Why that is more than the family will end up out of pocket. Stated here,
+    # against this bill, rather than in the case-wide block where it would be
+    # comparing two different scopes.
+    return lead + ("That includes the part the insurer is expected to cover, "
+                   "which is settled with them rather than kept by the "
+                   "hospital.\n")
 
 
 def _payee_label(case_id: str) -> str:

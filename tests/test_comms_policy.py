@@ -380,7 +380,6 @@ def test_a_template_may_choose_a_view_but_never_an_address():
     body = render_template("bill_recorded", {
         "parent_name": "Ashanthi", "line_count": "16", "this_bill": "3,70,720",
         "adjustment_line": "", "payment_line": "", "settlement_lines": "",
-        "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
     }, case_id="case-x", parent_id="parent-x")
 
@@ -390,7 +389,6 @@ def test_a_template_may_choose_a_view_but_never_an_address():
     hijacked = render_template("bill_recorded", {
         "parent_name": "R", "line_count": "1", "this_bill": "1",
         "adjustment_line": "", "payment_line": "", "settlement_lines": "",
-        "running_total_line": "",
         "estimated_covered": "1", "estimated_you_pay": "1",
         "dashboard_url": "https://evil.example/steal",
     }, case_id="case-x", parent_id="parent-x")

@@ -94,7 +94,6 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "{line_count} line items, INR {this_bill} on this bill.\n"
                 "{adjustment_line}"
                 "{payment_line}"
-                "{running_total_line}"
                 "{settlement_lines}"
                 "That is an estimate from the policy terms, not the insurer's "
                 "decision.\n\n"
@@ -104,7 +103,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # that lands you on a triage timeline reads as a broken link.
         "view": "claim",
         "params": ["parent_name", "line_count", "this_bill", "adjustment_line",
-                   "running_total_line", "settlement_lines", "payment_line"],
+                   "settlement_lines", "payment_line"],
     },
     "document_recorded": {
         # LOGISTICS. The summary line repeats what the document states and is

@@ -684,8 +684,19 @@ def test_the_message_does_not_mix_this_bill_with_every_bill():
 
     body = str(TEMPLATES["bill_recorded"]["body"])
     assert "{this_bill}" in body and "on this bill" in body
-    assert "{running_total_line}" in body
     assert "{total_billed}" not in body, "the ambiguous total is back"
+
+    # The stay-wide figures live in their own block, which names its own scope.
+    # They used to be a bare running total sitting beside this bill's line
+    # count, and later a case-wide split labelled as being of one bill.
+    assert "{settlement_lines}" in body
+    import inspect
+
+    from anbu_care import server
+
+    block = inspect.getsource(server._settlement_lines)
+    assert "across the {bills} bills on this stay" in block
+    assert "else \"on this bill\"" in block
 
 
 def test_the_stay_is_read_off_the_bill_when_no_packet_exists(case_id, parent_id, monkeypatch):

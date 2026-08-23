@@ -125,15 +125,20 @@ def _anomalies(amount: int, mandate: PaymentMandate, history: list,
             "system will ever use, and a bill disagreeing with it is a reason "
             "to stop rather than a reason to switch")
 
-    if history:
-        last = max(p.initiated_at for p in history)
+    # Only AUTONOMOUS payments. This signal exists to catch the agent being
+    # drained while nobody is watching, and a payment a person approved means
+    # somebody was watching minutes ago. Counting those made an ordinary second
+    # bill suspicious purely because its owner had just dealt with the first.
+    unattended = [p for p in history if getattr(p, "autonomous", True)]
+    if unattended:
+        last = max(p.initiated_at for p in unattended)
         if last.tzinfo is None:
             last = last.replace(tzinfo=UTC)
         gap = _hours_between(now, last)
         if 0 <= gap < BURST_WINDOW_HOURS:
             found.append(
-                f"burst: a second bill {gap:.1f} hours after the last one, "
-                f"inside the {BURST_WINDOW_HOURS}h window")
+                f"burst: a second automatic payment {gap:.1f} hours after the "
+                f"last one, inside the {BURST_WINDOW_HOURS}h window")
 
     # A bill from a DIFFERENT HOSPITAL. The destination is locked either way, so
     # this is not a redirection risk — it is worse in a quieter way: paying the
