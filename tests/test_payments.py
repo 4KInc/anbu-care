@@ -763,10 +763,16 @@ def test_the_refusal_is_the_visual_lead():
     assert refusals < mandate < money, "the refusal is no longer the lead"
 
 
-def test_the_settlement_label_is_on_the_payment_view():
+def test_the_settlement_label_comes_from_the_backend():
+    """The strip used to hardcode "Settlement is simulated". Now that a real
+    provider can be configured, a hardcoded label would state the wrong thing
+    on a deployment that has keys — so it renders whatever the backend says it
+    is doing."""
     page = _client()
     view = page[page.index("function vPayments()"):page.index("function refusalCard")]
-    assert "Settlement is simulated" in view
+
+    assert "${esc(p.note" in view, "the label is hardcoded again"
+    assert "Settlement is simulated" not in view
     assert "Autonomy is bounded" in view
 
 
@@ -1212,3 +1218,146 @@ def test_the_message_does_not_claim_settlement_either():
     assert "has been sent automatically" in helper
     assert "not confirmed as" in helper and "settled yet" in helper
     assert "has been paid automatically" not in helper
+
+
+# =========================================================================
+# A REAL PROVIDER, IN TEST MODE
+# =========================================================================
+
+
+def test_a_live_key_is_refused(monkeypatch):
+    """The one mistake in this project that cannot be undone.
+
+    A live Razorpay key in this build would move real money on a decision no
+    licensed entity stands behind. Cheap to refuse, so it is refused rather
+    than trusted to configuration.
+    """
+    from anbu_care.payments import providers
+
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_live_realmoney")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "x")
+    assert providers.is_test_key() is False
+
+    result = providers.create_order(payment_id="p", amount_inr=100,
+                                    payee_label="H", bill_id="b")
+    assert result.ok is False
+    assert "may not move real money" in result.detail
+
+
+def test_rupees_are_converted_to_paise_exactly_once(monkeypatch):
+    """A rupee amount sent as paise is a hundredfold error, in the direction
+    that matters."""
+    import inspect
+
+    from anbu_care.payments import providers
+
+    source = inspect.getsource(providers.create_order)
+    assert '"amount": amount_inr * 100' in source
+    assert source.count("* 100") == 1
+
+
+def test_a_provider_refusal_escalates_rather_than_pretending(case, monkeypatch):
+    """The rail saying no is a refusal like any other. It must not fall back to
+    the simulated path and report a payment that no provider accepted."""
+    from anbu_care.payments import settlement
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    monkeypatch.setattr(settlement, "_mode", lambda: "razorpay")
+    monkeypatch.setattr(
+        "anbu_care.payments.providers.create_order",
+        lambda **kw: __import__("anbu_care.payments.providers", fromlist=["x"])
+        .ProviderResult(ok=False, detail="the provider refused: test"))
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/1", amount_inr=30_000)
+
+    assert result["outcome"] == "escalated"
+    assert result["failed_check"] == "provider"
+    assert service.list_payments(case_id) == []
+
+
+def test_an_unsigned_webhook_cannot_settle_anything(monkeypatch):
+    """Without verification this route is a way for anybody to mark a payment
+    as paid, which is the same mistake as trusting a token the browser decoded
+    for itself."""
+    from anbu_care.payments import providers
+
+    monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", "shh")
+    assert providers.verify_webhook(body=b'{"event":"payment.captured"}',
+                                    signature="") is False
+    assert providers.verify_webhook(body=b'{"event":"payment.captured"}',
+                                    signature="deadbeef") is False
+
+    import hashlib
+    import hmac
+
+    body = b'{"event":"payment.captured"}'
+    good = hmac.new(b"shh", body, hashlib.sha256).hexdigest()
+    assert providers.verify_webhook(body=body, signature=good) is True
+
+
+def test_no_webhook_secret_means_no_webhook_is_trusted(monkeypatch):
+    from anbu_care.payments import providers
+
+    monkeypatch.delenv("RAZORPAY_WEBHOOK_SECRET", raising=False)
+    assert providers.verify_webhook(body=b"{}", signature="anything") is False
+
+
+def test_a_reference_nobody_stored_is_ignored(case):
+    """An unmatched callback is far more likely to be somebody else's traffic
+    than ours, so it is ignored rather than guessed at."""
+    from anbu_care.payments.run import confirm_by_reference
+
+    assert confirm_by_reference(reference="order_nothing", note="captured") == {
+        "status": "ignored", "reason": "no payment carries that reference"}
+
+
+def test_a_capture_confirms_the_payment_it_names(case, monkeypatch):
+    from anbu_care.payments.run import confirm_by_reference
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=30_000)
+
+    stored = service.list_payments(case_id)[0]
+    assert stored.settlement_ref, "nothing to match a webhook against"
+
+    out = confirm_by_reference(reference=stored.settlement_ref, note="captured")
+    assert out["outcome"] == "confirmed"
+    assert money_view(case_id)["paid_inr"] == 30_000
+
+
+def test_a_failed_capture_does_not_count_as_paid(case):
+    from anbu_care.payments.run import confirm_by_reference
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=30_000)
+    stored = service.list_payments(case_id)[0]
+
+    confirm_by_reference(reference=stored.settlement_ref, note="failed", failed=True)
+
+    view = money_view(case_id)
+    assert view["paid_inr"] == 0
+    assert view["initiated_unconfirmed_inr"] == 0, "a failure is not pending"
+
+    kinds = [r.kind for r in service.get_chain(case_id).receipts]
+    assert "payment.failed" in kinds
+    assert "payment.confirmed" not in kinds
+
+
+def test_the_label_follows_the_mode_not_the_intention(monkeypatch):
+    """A deployment with no keys says simulated even if the mode says razorpay,
+    because what it does is what it should say."""
+    from anbu_care.payments import settlement
+
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "razorpay")
+    monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
+    assert "simulated" in settlement.label().lower()
+
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_x")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "y")
+    assert "test mode" in settlement.label().lower()

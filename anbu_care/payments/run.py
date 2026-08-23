@@ -90,7 +90,20 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
     payment_id = service.new_id("pay")
     result = settlement.initiate(payment_id=payment_id,
                                  amount_inr=verdict.amount_inr,
-                                 payee_ref=verdict.payee_ref)
+                                 payee_ref=verdict.payee_ref,
+                                 payee_label=mandate.payee_label,
+                                 bill_id=bill_id)
+    if not result.initiated:
+        # The rail refused. Nothing was authorised away and nothing is
+        # recorded as a payment: this is an escalation like any other refusal.
+        return _escalate(
+            case_id=case_id, parent_id=parent_id, bill_id=bill_id,
+            amount_inr=verdict.amount_inr, mandate=mandate,
+            verdict=Decision(pay=False, guards_passed=verdict.guards_passed,
+                             failed_check="provider",
+                             reason=f"the payment provider did not accept it: "
+                                    f"{result.detail}",
+                             amount_inr=verdict.amount_inr))
 
     record = PaymentRecord(
         payment_id=payment_id, case_id=case_id, parent_id=parent_id,
@@ -99,6 +112,7 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
         mandate_id=mandate.mandate_id, autonomous=autonomous,
         guards_passed=verdict.guards_passed,
         settlement_note=result.detail,
+        settlement_ref=result.reference,
     )
     service.save_payment(record)
 
@@ -190,7 +204,7 @@ def confirm(*, case_id: str, payment_id: str) -> dict:
     if record.confirmed_at is not None:
         return {"outcome": "already_confirmed", "payment_id": payment_id}
 
-    result = settlement.confirmation_for(f"sim-{payment_id}")
+    result = settlement.confirmation_for(record.settlement_ref or f"sim-{payment_id}")
     if not result.confirmed:
         raise PaymentRefused(result.detail)
 
@@ -208,6 +222,35 @@ def confirm(*, case_id: str, payment_id: str) -> dict:
                           "never written by the code that initiates a payment.")})
     return {"outcome": "confirmed", "payment_id": payment_id,
             "amount_inr": record.amount_inr, "settlement_note": result.detail}
+
+
+def confirm_by_reference(*, reference: str, note: str, failed: bool = False) -> dict:
+    """Settle or fail the payment carrying this provider reference.
+
+    The webhook knows an order id and nothing about our cases, so the lookup
+    goes the other way: find the stored payment that carries it. A reference
+    nobody stored is ignored rather than guessed at, because an unmatched
+    callback is far more likely to be somebody else's traffic than ours.
+    """
+    for payment in service.find_payments_by_settlement_ref(reference):
+        if failed:
+            payment.failed_at = datetime.now(UTC)
+            payment.settlement_note = f"the provider reported this {note}"
+            service.save_payment(payment)
+            service.append_receipt(
+                payment.case_id, kind="payment.failed", actor="payment_rail",
+                payload={"payment_id": payment.payment_id,
+                         "bill_id": payment.bill_id,
+                         "amount_inr": payment.amount_inr,
+                         "note": "The provider reported this payment failed. "
+                                 "Nothing settled."})
+            return {"status": "failed", "payment_id": payment.payment_id}
+
+        if payment.confirmed_at is not None:
+            return {"status": "already_confirmed", "payment_id": payment.payment_id}
+        return confirm(case_id=payment.case_id, payment_id=payment.payment_id)
+
+    return {"status": "ignored", "reason": "no payment carries that reference"}
 
 
 def money_view(case_id: str) -> dict:
@@ -236,7 +279,7 @@ def money_view(case_id: str) -> dict:
             "window_closes_at": mandate.window_closes_at.isoformat(),
         },
         "settlement": "simulated",
-        "note": settlement.LABEL,
+        "note": settlement.label(),
     }
 
 

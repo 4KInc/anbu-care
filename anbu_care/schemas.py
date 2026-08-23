@@ -778,6 +778,10 @@ class PaymentRecord(BaseModel):
     mandate_id: str
     autonomous: bool
     guards_passed: list[str] = Field(default_factory=list)
+    # The provider's own identifier for this instruction. A confirmation
+    # arrives naming it, and without it stored there is nothing to match a
+    # webhook against except a guess.
+    settlement_ref: str = ""
     initiated_at: datetime = Field(default_factory=utcnow)
     confirmed_at: datetime | None = None
     failed_at: datetime | None = None

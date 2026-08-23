@@ -10,6 +10,7 @@ family or insurer can call without going through an agent.
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
 import urllib.parse
@@ -681,6 +682,9 @@ def case_payments(case_id: str,
              "amount_inr": p.amount_inr, "payee_label": p.payee_label,
              "payee_ref": p.payee_ref, "autonomous": p.autonomous,
              "guards_passed": p.guards_passed,
+             # The provider's own identifier, so a figure on screen can be
+             # matched against the provider's dashboard.
+             "settlement_ref": p.settlement_ref,
              "initiated_at": p.initiated_at.isoformat(),
              "confirmed": p.confirmed_at is not None,
              "settlement_note": p.settlement_note}
@@ -757,6 +761,43 @@ def approve_payment(case_id: str, body: dict[str, Any],
         raise HTTPException(status_code=400, detail=str(refused)) from None
     except (TypeError, ValueError) as bad:
         raise HTTPException(status_code=400, detail=str(bad)) from None
+
+
+@app.post("/api/payments/razorpay")
+async def razorpay_webhook(request: Request) -> dict[str, Any]:
+    """The provider reporting what actually happened to an instruction.
+
+    Deliberately unauthenticated in the session sense, because the caller is
+    Razorpay and not a person. It is not unauthenticated in any real sense: the
+    body is HMAC-verified against a shared secret, and an unverified callback
+    is refused. Without that this route would be a way for anybody to mark a
+    payment as settled, which is the same class of mistake as trusting a token
+    the browser decoded for itself.
+    """
+    from anbu_care.payments import providers
+    from anbu_care.payments.run import confirm_by_reference
+
+    raw = await request.body()
+    signature = request.headers.get("x-razorpay-signature", "")
+    if not providers.verify_webhook(body=raw, signature=signature):
+        raise HTTPException(status_code=401, detail="signature did not verify")
+
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body was not JSON") from None
+
+    kind = str(event.get("event") or "")
+    entity = (((event.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+    order_id = str(entity.get("order_id") or "")
+    if not order_id:
+        return {"status": "ignored", "reason": "no order on this event"}
+
+    if kind == "payment.captured":
+        return confirm_by_reference(reference=order_id, note="captured")
+    if kind == "payment.failed":
+        return confirm_by_reference(reference=order_id, note="failed", failed=True)
+    return {"status": "ignored", "event": kind}
 
 
 @app.get("/api/cases/{case_id}/verify")

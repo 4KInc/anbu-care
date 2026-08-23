@@ -108,6 +108,23 @@ def list_payments(case_id: str, store: Store | None = None) -> list[PaymentRecor
                   key=lambda p: p.initiated_at)
 
 
+def find_payments_by_settlement_ref(reference: str,
+                                   store: Store | None = None) -> list[PaymentRecord]:
+    """Every payment carrying this provider reference.
+
+    A webhook names an order, not a case, so this is the one payment lookup
+    that cannot start from a partition key. It scans, which is honest about
+    what it costs: at demo scale that is nothing, and at real scale it would
+    want an index rather than a cleverer scan.
+    """
+    if not reference:
+        return []
+    store = store or get_store()
+    rows = store.query_sk_prefix_across("PAYMENT#")
+    payments = [PaymentRecord.model_validate(_clean(r)) for r in rows]
+    return [p for p in payments if p.settlement_ref == reference]
+
+
 # --------------------------------------------------------------------------
 # Cases
 # --------------------------------------------------------------------------

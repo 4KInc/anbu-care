@@ -1,13 +1,23 @@
-"""Settlement. Simulated, and labelled everywhere it surfaces.
+"""Settlement. A real provider in test mode, or a stub, and it says which.
 
-Real autonomous UPI debit needs a licensed payment provider plus UPI Autopay
-or e-mandate rails under NPCI. That is out of scope in this window, and
-pretending otherwise would be the one dishonesty this project has avoided
-everywhere else — the TPA is simulated and says so, the coverage figure is an
-estimate and says so, and this is the same.
+`ANBU_PAYMENT_MODE` picks:
 
-What is real: the mandate, the envelope, the payee lock, idempotency, the
-anomaly step-up, the receipts. What is simulated: the movement of money.
+  razorpay   a real API call to Razorpay in TEST MODE. Real order, real
+             identifier, real webhook. Test-mode money, which does not exist.
+  simulated  no call at all. The fallback when no keys are configured.
+  off        refuse to do anything.
+
+The distinction matters and the label follows it, because "we integrate a
+payment provider" and "we move money" are different claims and only the first
+is true here.
+
+What is real either way: the mandate, the envelope, the payee lock,
+idempotency, the anomaly step-up, the receipts.
+
+What is NOT real in any mode: autonomous debit. Creating an order is an
+instruction; pulling funds from somebody's account while they are asleep needs
+UPI Autopay or an e-mandate under NPCI, which needs a registered merchant and
+approved mandates rather than more code.
 
 `initiate` deliberately returns UNCONFIRMED. Confirmation is a separate act,
 because a system that assumes its own success reports money as paid that is
@@ -20,8 +30,26 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-LABEL = ("Settlement simulated. Production integrates a licensed payment "
-         "provider; no money moved.")
+SIMULATED_LABEL = ("Settlement simulated. Production integrates a licensed "
+                   "payment provider; no money moved.")
+TEST_MODE_LABEL = ("Razorpay in test mode. The order is real; the money is not. "
+                   "Going live needs a registered merchant account.")
+
+# What the surfaces show. Read at call time so a deployment without keys says
+# the honest thing rather than the configured thing.
+def label() -> str:
+    from anbu_care.payments import providers
+
+    return TEST_MODE_LABEL if _mode() == "razorpay" and providers.configured() \
+        else SIMULATED_LABEL
+
+
+def _mode() -> str:
+    return os.getenv("ANBU_PAYMENT_MODE", "simulated").strip().lower()
+
+
+# Kept as a module attribute because callers import it directly.
+LABEL = SIMULATED_LABEL
 
 
 @dataclass(frozen=True)
@@ -33,7 +61,8 @@ class Settlement:
     simulated: bool = True
 
 
-def initiate(*, payment_id: str, amount_inr: int, payee_ref: str) -> Settlement:
+def initiate(*, payment_id: str, amount_inr: int, payee_ref: str,
+             payee_label: str = "", bill_id: str = "") -> Settlement:
     """Hand the payment to the rail. Returns INITIATED, never confirmed.
 
     Nothing here takes a credential, and there is no parameter one could be
@@ -41,15 +70,32 @@ def initiate(*, payment_id: str, amount_inr: int, payee_ref: str) -> Settlement:
     because this function does not need to know where money goes in order to
     model that it was asked to send it.
     """
-    if os.getenv("ANBU_PAYMENT_MODE", "simulated").strip().lower() == "off":
+    mode = _mode()
+    if mode == "off":
         return Settlement(initiated=False, reference="", confirmed=False,
                           detail="payment is switched off on this deployment")
+
+    if mode == "razorpay":
+        from anbu_care.payments import providers
+
+        result = providers.create_order(
+            payment_id=payment_id, amount_inr=amount_inr,
+            payee_label=payee_label, bill_id=bill_id)
+        if not result.ok:
+            # A provider that refuses is a refusal, not a silent fall back to
+            # pretending. The payment stays uninitiated and somebody is told.
+            return Settlement(initiated=False, reference="", confirmed=False,
+                              detail=result.detail, simulated=False)
+        return Settlement(initiated=True, reference=result.reference,
+                          confirmed=False,
+                          detail=f"{result.detail}. {TEST_MODE_LABEL}",
+                          simulated=False)
 
     return Settlement(
         initiated=True,
         reference=f"sim-{payment_id}",
         confirmed=False,
-        detail=LABEL,
+        detail=SIMULATED_LABEL,
     )
 
 
@@ -65,5 +111,9 @@ def confirmation_for(reference: str) -> Settlement:
     if not reference:
         return Settlement(initiated=False, reference="", confirmed=False,
                           detail="no settlement reference to confirm")
+    simulated = reference.startswith("sim-")
     return Settlement(initiated=True, reference=reference, confirmed=True,
-                      detail=f"simulated settlement confirmed. {LABEL}")
+                      simulated=simulated,
+                      detail=("simulated settlement confirmed. " + SIMULATED_LABEL)
+                      if simulated else
+                      ("the provider reported this captured. " + TEST_MODE_LABEL))

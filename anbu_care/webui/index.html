@@ -1094,9 +1094,8 @@ function vPayments(){
                         :"background:var(--red-bg);color:var(--red-ink)"}">
      ${esc(S.payNote)}</div>`:""}
   ${S.signInFor?signInPanel(S.signInFor):""}
-  <div class="strip note">Settlement is simulated. Production integrates a licensed
-    payment provider, and no money moves in this build. Autonomy is bounded: the agent
-    pays only inside the limits you set, and anything else comes to you.</div>
+  <div class="strip note">${esc(p.note || "")} Autonomy is bounded: the agent pays only
+    inside the limits you set, and anything else comes to you.</div>
   ${open.map(refusalCard).join("")}
   ${vUnconsidered()}
   ${vMandate(m, p)}

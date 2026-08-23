@@ -38,6 +38,7 @@ class Store(Protocol):
     def get(self, pk: str, sk: str) -> dict[str, Any] | None: ...
     def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]: ...
     def query_by_sk(self, sk: str) -> list[dict[str, Any]]: ...
+    def query_sk_prefix_across(self, sk_prefix: str) -> list[dict[str, Any]]: ...
     def delete(self, pk: str, sk: str) -> None: ...
 
 
@@ -59,6 +60,17 @@ class MemoryStore:
         with self._lock:
             rows = [dict(v) for (p, s), v in self._data.items() if p == pk and s.startswith(sk_prefix)]
         return sorted(rows, key=lambda r: r["sk"])
+
+
+    def query_sk_prefix_across(self, sk_prefix: str) -> list[dict[str, Any]]:
+        """Every row with this sort-key prefix, in any partition.
+
+        A payment webhook names a provider order and nothing else, so this is
+        the one lookup that cannot start from a partition key.
+        """
+        with self._lock:
+            return [dict(v) for (_p, sk), v in self._data.items()
+                    if sk.startswith(sk_prefix)]
 
     def query_by_sk(self, sk: str) -> list[dict[str, Any]]:
         """Every row with this exact sort key, across partitions.
@@ -115,6 +127,24 @@ class FirestoreStore:
 
         query = self._client.collection(COLLECTION).where(
             filter=FieldFilter("sk", "==", sk))
+        return [doc.to_dict() for doc in query.stream()]
+
+    def query_sk_prefix_across(self, sk_prefix: str) -> list[dict[str, Any]]:
+        """Every row with this sort-key prefix, across every partition.
+
+        No pk equality, so this is a range read on sk alone. It exists for the
+        payment webhook, which knows a provider order id and nothing about our
+        cases. At demo scale that is free; at real scale it wants an index on
+        the reference itself rather than a cleverer scan.
+        """
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        query = (
+            self._client.collection(COLLECTION)
+            .where(filter=FieldFilter("sk", ">=", sk_prefix))
+            .where(filter=FieldFilter("sk", "<", sk_prefix + "\uf8ff"))
+            .order_by("sk")
+        )
         return [doc.to_dict() for doc in query.stream()]
 
     def delete(self, pk: str, sk: str) -> None:

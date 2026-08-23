@@ -15,6 +15,21 @@ settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)
+def no_payment_provider_calls(monkeypatch):
+    """The suite never talks to a payment provider.
+
+    ANBU_PAYMENT_MODE lives in .env, so the moment Razorpay was wired the whole
+    suite started making real API calls: 3 seconds became 28, and a machine
+    without keys or without a network would have failed for reasons unrelated
+    to the code under test.
+
+    A test that wants the provider path asks for it explicitly by setting the
+    mode itself, which is a visible decision rather than an inherited one.
+    """
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "simulated")
+
+
+@pytest.fixture(autouse=True)
 def fresh_store():
     """Every test gets its own store — receipt sequences must not leak between tests."""
     set_store(MemoryStore())
