@@ -293,6 +293,31 @@ input:focus{outline:0;border:2px solid var(--teal);padding:10px 11px}
   font-weight:700;color:var(--teal-ink);cursor:pointer;text-decoration:underline;
   text-underline-offset:3px;text-decoration-thickness:1.5px}
 .paper:hover{color:var(--teal)}
+/* A refusal is the centrepiece, not an error tucked at the bottom. It is the
+   moment the system declines to spend somebody's money and says exactly why,
+   which is the only reason to trust it with the times it does not decline. */
+.refusal{border:2px solid var(--amber);background:var(--amber-bg);
+  border-radius:var(--r-lg);padding:16px;margin-bottom:12px}
+.refusal .head{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.refusal .amt{font-size:26px;font-weight:800;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;color:var(--amber)}
+.refusal .why{font-size:14.5px;line-height:1.6;color:var(--ink)}
+.refusal .named{display:inline-block;font-size:11px;font-weight:800;
+  letter-spacing:.05em;text-transform:uppercase;background:var(--amber);
+  color:#fff;padding:3px 8px;border-radius:var(--r-sm);margin-bottom:8px}
+.cleared{border-left:3px solid var(--teal);background:var(--teal-bg);
+  border-radius:var(--r);padding:12px 14px;margin-bottom:10px}
+.guards{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.guard{font-size:11px;font-weight:700;background:var(--card);color:var(--teal-ink);
+  border:1px solid var(--teal);padding:2px 7px;border-radius:999px}
+.split2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.split2{grid-template-columns:1fr}}
+.moneybox{background:var(--card-low);border-radius:var(--r);padding:14px}
+.moneybox .k{font-size:11.5px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-soft)}
+.moneybox .v{font-size:24px;font-weight:800;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;margin-top:4px}
 .big{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1}
 
 /* ---- nav -------------------------------------------------------------- */
@@ -349,7 +374,7 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
             record:null, verify:null, wellbeing:null, careCircle:null, linkToken:null, bills:null,
-            who:null, authConfig:null, authError:null,
+            who:null, authConfig:null, authError:null, pay:null, payBusy:null,
             hospitals:null,
             notified:null, view:"now" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -1047,11 +1072,191 @@ function vBills(){
   </div>`;
 }
 
+// ---- interim bill payment ------------------------------------------------
+//
+// This view renders what the enforcer decided. It computes no cap, makes no
+// pay/refuse decision, and never sees a payment address: the API returns a
+// label and a hash reference, so the raw destination cannot reach the DOM even
+// by accident. Every figure below is a field the backend already summed.
+
+function vPayments(){
+  const p = S.pay;
+  if(!p || p.__denied || p.__error) return "";
+  const m = p.mandate;
+  const open = (p.escalations || []).filter(e => e.open);
+  const done = (p.escalations || []).filter(e => !e.open);
+
+  return `<div class="sec">Interim bills</div>
+  <div class="strip note">Settlement is simulated — production integrates a licensed
+    payment provider, and no money moves in this build. Autonomy is bounded: the agent
+    pays only inside the limits you set, and anything else comes to you.</div>
+  ${open.map(refusalCard).join("")}
+  ${vMandate(m, p)}
+  ${vMoney(p)}
+  ${(p.payments || []).map(paymentCard).join("")}
+  ${done.length?`<details class="covered"><summary>${done.length} earlier
+      refusal${done.length===1?"":"s"}, since dealt with</summary>
+      ${done.map(e => `<div class="row stack"><div class="k">${esc(e.bill_id)}</div>
+        <div class="v">${esc(e.reason||"")}</div></div>`).join("")}</details>`:""}`;
+}
+
+// The lead. A bill the agent would not pay, why not, and the one action that
+// resolves it — all in the same place, because a family reading this on a phone
+// at 3am should not have to go looking for the button.
+function refusalCard(e){
+  const named = String(e.failing_check || "a check").replace(/_/g, " ");
+  return `<div class="refusal">
+    <span class="named">not paid — ${esc(named)}</span>
+    <div class="head">
+      <div><strong>Bill ${esc(e.bill_id)}</strong> needs you</div>
+      <div class="amt">${inr(e.amount_inr)}</div>
+    </div>
+    <p class="why">${esc(e.reason || "")}</p>
+    <p class="mute" style="margin-top:8px">Nothing has moved. The agent checked this
+      against the limits you set and stopped rather than guessing.</p>
+    <div class="btns">
+      <button class="btn" onclick="approvePayment('${esc(e.bill_id)}',${Number(e.amount_inr)||0})"
+        ${S.payBusy===e.bill_id?"disabled":""}>
+        ${S.payBusy===e.bill_id?"Approving…":`Approve ${inr(e.amount_inr)}`}</button>
+    </div>
+  </div>`;
+}
+
+function vMandate(m, p){
+  if(!m) return `<div class="card edge-amber">
+    <h2 class="mini">No payment mandate</h2>
+    <p>Every interim bill needs your approval. Nothing is paid automatically,
+      and nothing can be — there is no authorised destination on this case.</p>
+    ${S.token?`<div class="btns"><button class="btn" onclick="showMandateForm()">
+      Set up automatic payment</button></div>`:`<p class="mute" style="margin-top:10px">
+      Granting one needs a signed-in family session.</p>`}
+    ${S.mandateForm?mandateForm():""}
+  </div>`;
+
+  return `<div class="card edge-teal">
+    <h2 class="mini">Automatic payment is on</h2>
+    ${row("Pays only", esc(m.payee_label))}
+    ${row("Account reference", `<span class="num" style="font-size:13px">${esc(m.payee_ref)}</span>`)}
+    ${row("Per bill, at most", `<span class="num">${inr(m.per_bill_cap_inr)}</span>`)}
+    ${row("In total, at most", `<span class="num">${inr(m.total_cap_inr)}</span>`)}
+    ${row("Still authorised", `<span class="num">${inr(m.remaining_inr)}</span>`)}
+    ${row("Until", esc(new Date(m.window_closes_at).toLocaleString()))}
+    <p class="mute" style="margin-top:10px">The destination is fixed. A bill can ask for
+      an amount; it can never change where money goes. To pay somewhere else you would
+      stop this and set it up again.</p>
+    ${S.token?`<div class="btns"><button class="btn ghost" onclick="revokeMandate()">
+      Stop automatic payment</button></div>`:""}
+  </div>`;
+}
+
+function vMoney(p){
+  return `<div class="split2" style="margin-bottom:12px">
+    <div class="moneybox"><div class="k">Settled</div>
+      <div class="v">${inr(p.paid_inr)}</div>
+      <p class="mute" style="margin-top:4px">confirmed by the rail</p></div>
+    <div class="moneybox"><div class="k">Initiated, not confirmed</div>
+      <div class="v">${inr(p.initiated_unconfirmed_inr)}</div>
+      <p class="mute" style="margin-top:4px">sent, and not yet acknowledged — not counted as paid</p></div>
+  </div>`;
+}
+
+function paymentCard(x){
+  return `<div class="cleared">
+    <div class="head" style="display:flex;justify-content:space-between;gap:12px">
+      <div><strong>Bill ${esc(x.bill_id)}</strong>
+        ${x.autonomous?" — cleared without waking anyone":" — you approved this"}</div>
+      <div class="num" style="font-weight:800">${inr(x.amount_inr)}</div>
+    </div>
+    <p class="mute" style="margin-top:4px">
+      ${x.confirmed?"Settled (simulated).":"Initiated. Not settled — this is not counted as paid."}
+      Paid to ${esc(x.payee_label)}.</p>
+    ${(x.guards_passed||[]).length?`<div class="guards">${
+      x.guards_passed.map(g=>`<span class="guard">${esc(String(g).replace(/_/g," "))}</span>`).join("")
+    }</div>`:""}
+  </div>`;
+}
+
+function mandateForm(){
+  return `<div class="card" style="margin-top:12px">
+    <h2 class="mini">Authorise automatic payment</h2>
+    <p class="mute">Read the hospital's UPI address off their billing desk and type it
+      here. It is pinned from that moment: no bill and no reading can change it.</p>
+    <div class="row stack"><div class="k">Hospital UPI address</div>
+      <input id="mvpa" placeholder="name@bank" style="width:100%;padding:10px;
+        border:1px solid var(--line);border-radius:var(--r);font-family:inherit"></div>
+    <div class="row stack"><div class="k">Hospital name</div>
+      <input id="mlabel" placeholder="Sacred Heart Hospital" style="width:100%;padding:10px;
+        border:1px solid var(--line);border-radius:var(--r);font-family:inherit"></div>
+    <div class="row stack"><div class="k">Per bill, at most (INR)</div>
+      <input id="mper" type="number" value="50000" style="width:100%;padding:10px;
+        border:1px solid var(--line);border-radius:var(--r);font-family:inherit"></div>
+    <div class="row stack"><div class="k">In total, at most (INR)</div>
+      <input id="mtot" type="number" value="200000" style="width:100%;padding:10px;
+        border:1px solid var(--line);border-radius:var(--r);font-family:inherit"></div>
+    <div class="row stack"><div class="k">For how many hours</div>
+      <input id="mhrs" type="number" value="48" style="width:100%;padding:10px;
+        border:1px solid var(--line);border-radius:var(--r);font-family:inherit"></div>
+    ${S.mandateError?`<p class="mute" style="color:var(--red-ink)">${esc(S.mandateError)}</p>`:""}
+    <div class="btns">
+      <button class="btn" onclick="confirmMandate()">Review and grant</button>
+      <button class="btn ghost" onclick="S.mandateForm=false;S.mandateError=null;render()">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function showMandateForm(){ S.mandateForm = true; S.mandateError = null; render(); }
+
+async function confirmMandate(){
+  const vpa = document.getElementById("mvpa")?.value?.trim() || "";
+  const label = document.getElementById("mlabel")?.value?.trim() || "";
+  // Shown back before anything is granted, because this is the one value in
+  // the system that decides where money goes.
+  if(!confirm(`Authorise automatic payment to:\n\n${label || "(no name)"}\n${vpa}\n\n`
+      + `This becomes the only destination on this case. It cannot be changed by a bill.`)) return;
+
+  const body = {
+    payee_vpa: vpa, payee_label: label,
+    per_bill_cap_inr: Number(document.getElementById("mper")?.value || 0),
+    total_cap_inr: Number(document.getElementById("mtot")?.value || 0),
+    hours: Number(document.getElementById("mhrs")?.value || 0),
+    granted_by: S.who?.name || "family",
+  };
+  const r = await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}/payment-mandate`,
+    {method:"POST", headers:{Authorization:`Bearer ${S.token}`,
+     "content-type":"application/json"}, body: JSON.stringify(body)});
+  const out = await r.json();
+  if(!r.ok){ S.mandateError = out.detail || `HTTP ${r.status}`; render(); return; }
+  S.mandateForm = false; S.mandateError = null;
+  await load();
+}
+
+async function revokeMandate(){
+  if(!confirm("Stop automatic payment? Every further bill will need your approval.")) return;
+  await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}/payment-mandate`,
+    {method:"DELETE", headers:{Authorization:`Bearer ${S.token}`}});
+  await load();
+}
+
+async function approvePayment(billId, amount){
+  if(!S.token){ S.authError = "Approving a payment needs a signed-in family session.";
+                S.view="record"; render(); return; }
+  if(!confirm(`Approve ${inr(amount)} for bill ${billId}?`)) return;
+  S.payBusy = billId; render();
+  try{
+    await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}/payments/approve`,
+      {method:"POST", headers:{Authorization:`Bearer ${S.token}`,
+       "content-type":"application/json"},
+       body: JSON.stringify({bill_id: billId, amount_inr: amount,
+                             approved_by: S.who?.name || "family"})});
+  } finally { S.payBusy = null; }
+  await load();
+}
+
 function vClaim(){
   if(!S.trail) return vOpen();
   if(S.trail.__denied) return denied(S.trail.detail,"The claim status");
   const adjs=kinds("claim.adjudicated"), sub=last("claim.submitted");
-  const bills = vBills();
+  const bills = vPayments() + vBills();
   if(!adjs.length && !sub) return `${synthOnce()}
     ${title("Bills and claim","What was billed, and what the policy is estimated to cover.")}
     ${bills || `<div class="card"><h2>Claim</h2><p>${unknown("no claim has been submitted on this case")}</p></div>`}`;
@@ -1517,6 +1722,7 @@ async function load(){
     S.brief=await api(`/api/cases/${S.caseId}/brief`,{auth:true});
     S.verify=await api(`/api/cases/${S.caseId}/verify`);
     S.bills=await api(`/api/cases/${S.caseId}/bills`,{auth:true});
+    S.pay=await api(`/api/cases/${S.caseId}/payments`,{auth:true});
     if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
   if(S.parentId && (S.token || S.linkToken)){

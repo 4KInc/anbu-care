@@ -665,7 +665,7 @@ def revoke_mandate(case_id: str,
 def case_payments(case_id: str,
                   _session: str = Depends(require_case_access)) -> dict[str, Any]:
     """What has been paid, what is merely initiated, and what authority remains."""
-    from anbu_care.payments import money_view
+    from anbu_care.payments import escalations, money_view
 
     payments = service.list_payments(case_id)
     return {
@@ -680,6 +680,10 @@ def case_payments(case_id: str,
              "settlement_note": p.settlement_note}
             for p in payments
         ],
+        # Refusals, reconciled against the chain. A bill refused and later
+        # approved comes back resolved, so the dashboard never keeps asking
+        # for an approval that already happened.
+        "escalations": escalations(case_id),
         **money_view(case_id),
     }
 

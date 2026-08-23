@@ -237,3 +237,56 @@ def money_view(case_id: str) -> dict:
         "settlement": "simulated",
         "note": settlement.LABEL,
     }
+
+
+# ---- what was refused, and whether it still needs somebody ----------------
+#
+# A refusal pays nothing, so it stores no payment row. The only record is the
+# `payment.escalated` receipt on the chain, which is the right place for it —
+# a parallel table would be a second answer to "why was this not paid", and two
+# answers to that question is worse than none.
+#
+# So the join happens here, server-side, reading the chain. The browser is
+# never asked to work out from receipt payloads whether a bill still needs its
+# owner; it renders what this returns.
+
+_RESOLVING = ("payment.approved", "payment.auto_initiated", "payment.confirmed")
+
+
+def escalations(case_id: str) -> list[dict]:
+    """Bills the enforcer refused, each marked open or resolved.
+
+    Open means: this bill was escalated and nothing has paid it since. A bill
+    that was refused and then approved by a person is RESOLVED and must not
+    keep asking to be approved — which is why this reconciles by sequence
+    against the chain rather than trusting a flag somebody has to remember to
+    clear.
+    """
+    receipts = service.get_chain(case_id).receipts
+
+    last_escalated: dict[str, object] = {}
+    last_resolved: dict[str, int] = {}
+
+    for receipt in receipts:
+        bill_id = str(receipt.payload.get("bill_id") or "")
+        if not bill_id:
+            continue
+        if receipt.kind == "payment.escalated":
+            last_escalated[bill_id] = receipt
+        elif receipt.kind in _RESOLVING:
+            last_resolved[bill_id] = max(last_resolved.get(bill_id, 0), receipt.seq)
+
+    out: list[dict] = []
+    for bill_id, receipt in last_escalated.items():
+        payload = receipt.payload
+        out.append({
+            "bill_id": bill_id,
+            "amount_inr": payload.get("amount_inr"),
+            "failing_check": payload.get("failed_check"),
+            "reason": payload.get("reason"),
+            "guards_passed": payload.get("guards_passed") or [],
+            "at": receipt.created_at.isoformat(),
+            # Resolved when something paid this bill AFTER it was refused.
+            "open": last_resolved.get(bill_id, 0) <= receipt.seq,
+        })
+    return sorted(out, key=lambda e: e["at"])

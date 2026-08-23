@@ -581,3 +581,160 @@ def test_a_bill_naming_a_payable_address_still_stops_everything(case):
         assert result["outcome"] == "escalated", claimed
         assert "payee_mismatch" in result["reason"]
     assert service.list_payments(case_id) == []
+
+
+# =========================================================================
+# ESCALATIONS, RECONCILED AGAINST THE CHAIN
+# =========================================================================
+
+
+def test_a_refused_bill_shows_as_open(case):
+    from anbu_care.payments import escalations
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=10_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=50_000)
+
+    open_ones = escalations(case_id)
+    assert len(open_ones) == 1
+    assert open_ones[0]["bill_id"] == "IP/1"
+    assert open_ones[0]["failing_check"] == "per_bill_cap"
+    assert open_ones[0]["amount_inr"] == 50_000
+    assert open_ones[0]["open"] is True
+
+
+def test_a_bill_escalated_then_approved_shows_resolved(case):
+    """The guard that matters. A bill somebody already dealt with must stop
+    asking to be dealt with, and that has to be reconciled from the chain
+    rather than from a flag somebody has to remember to clear."""
+    from anbu_care.payments import escalations
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=10_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=50_000)
+    assert escalations(case_id)[0]["open"] is True
+
+    approve_escalated(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                      amount_inr=50_000, approved_by="Karthik")
+
+    resolved = escalations(case_id)
+    assert len(resolved) == 1, "the refusal stays on the record"
+    assert resolved[0]["open"] is False, "but it no longer needs anybody"
+
+
+def test_two_bills_are_reconciled_independently(case):
+    from anbu_care.payments import escalations
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=10_000)
+    for bill_id in ("IP/1", "IP/2"):
+        consider_bill(case_id=case_id, parent_id=parent_id, bill_id=bill_id,
+                      amount_inr=50_000)
+    approve_escalated(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                      amount_inr=50_000, approved_by="Karthik")
+
+    by_bill = {e["bill_id"]: e["open"] for e in escalations(case_id)}
+    assert by_bill == {"IP/1": False, "IP/2": True}
+
+
+def test_an_auto_paid_bill_resolves_an_earlier_refusal(case):
+    """Refused for being outside the window, then paid inside it. Resolving
+    is about a payment existing after the refusal, not about who made it."""
+    from anbu_care.payments import escalations
+
+    parent_id, case_id = case
+    mandate = _mandate(case_id, parent_id, hours=2)
+    after = mandate.window_closes_at + timedelta(hours=1)
+
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=20_000, now=after)
+    assert escalations(case_id)[0]["open"] is True
+
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=20_000, now=mandate.window_opens_at + timedelta(minutes=5))
+    assert escalations(case_id)[0]["open"] is False
+
+
+# =========================================================================
+# THE BROWSER RENDERS THE DECISION. IT NEVER MAKES ONE.
+# =========================================================================
+
+
+def _client() -> str:
+    return (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+
+
+def test_the_client_computes_no_cap_and_no_pay_decision():
+    """Same rule the dashboard already lives under for severity and sub-limits.
+
+    If the browser decided whether a bill was inside the envelope, the
+    guarantee would have moved into unversioned client code that nothing
+    audits. It renders `failing_check` and `guards_passed` as the enforcer
+    recorded them; it never derives either.
+    """
+    page = _client()
+    forbidden = [
+        "SPIKE_FACTOR", "BURST_WINDOW", "NEAR_CAP", "LATE_WINDOW",
+        "per_bill_cap_inr >", "> m.per_bill_cap_inr",
+        "amount_inr > ", "total_cap_inr >",
+        "payee_vpa ==", ".payee_vpa",     # never reads a destination back
+    ]
+    for token in forbidden:
+        assert token not in page, f"the client appears to decide: {token!r}"
+
+
+def test_no_payment_response_carries_a_destination(case):
+    """The strongest form of "no raw VPA in the DOM": the API never sends one,
+    so it cannot reach the page even by mistake."""
+    from anbu_care.payments import escalations, money_view
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=10_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                  amount_inr=50_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/2",
+                  amount_inr=5_000)
+
+    blob = str({"view": money_view(case_id),
+                "escalations": escalations(case_id),
+                "payments": [p.model_dump(mode="json")
+                             for p in service.list_payments(case_id)]}).lower()
+    assert HOSPITAL_VPA not in blob
+    assert "hdfcbank" not in blob
+    assert "payee_vpa" not in blob
+
+
+def test_the_payment_form_holds_no_credential_field():
+    """The son types a UPI ADDRESS at grant time — a destination, not a
+    credential. There is nowhere in the form a PIN could be entered, and no
+    field named like one."""
+    page = _client()
+    form = page[page.index("function mandateForm()"):page.index("function showMandateForm")]
+
+    assert 'id="mvpa"' in form          # the address, which is the point
+    for word in ("pin", "cvv", "password", "card", "otp", "secret"):
+        assert f'id="{word}' not in form.lower()
+        assert f'type="password"' not in form.lower()
+
+
+def test_the_refusal_is_the_visual_lead():
+    """Structural, not aesthetic: the refusals render BEFORE the mandate panel
+    and before the payment list, so a bill needing a person is the first thing
+    on the tab rather than something found by scrolling."""
+    page = _client()
+    view = page[page.index("function vPayments()"):page.index("function refusalCard")]
+
+    refusals = view.index("open.map(refusalCard)")
+    mandate = view.index("vMandate(m, p)")
+    money = view.index("vMoney(p)")
+    assert refusals < mandate < money, "the refusal is no longer the lead"
+
+
+def test_the_settlement_label_is_on_the_payment_view():
+    page = _client()
+    view = page[page.index("function vPayments()"):page.index("function refusalCard")]
+    assert "Settlement is simulated" in view
+    assert "Autonomy is bounded" in view
