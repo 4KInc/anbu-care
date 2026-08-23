@@ -31,6 +31,7 @@ import statistics
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from anbu_care.money import group
 from anbu_care.schemas import PaymentMandate
 
 # ---- anomaly thresholds ---------------------------------------------------
@@ -104,7 +105,7 @@ def _anomalies(amount: int, mandate: PaymentMandate, history: list,
         mean = statistics.fmean(priors)
         if mean > 0 and amount > SPIKE_FACTOR * mean:
             found.append(
-                f"amount_spike: INR {amount:,} is more than {SPIKE_FACTOR:g}x the "
+                f"amount_spike: INR {group(amount)} is more than {SPIKE_FACTOR:g}x the "
                 f"INR {mean:,.0f} average of {len(priors)} earlier bills")
 
     # NOT used as a destination. Used as evidence that this bill is not what it
@@ -149,7 +150,7 @@ def _anomalies(amount: int, mandate: PaymentMandate, history: list,
 
     if amount >= NEAR_CAP_FRACTION * mandate.per_bill_cap_inr:
         found.append(
-            f"near_cap: INR {amount:,} is at or above "
+            f"near_cap: INR {group(amount)} is at or above "
             f"{NEAR_CAP_FRACTION:.0%} of the per-bill cap")
 
     span = (mandate.window_closes_at - mandate.window_opens_at).total_seconds()
@@ -223,16 +224,16 @@ def decide(*, bill_id: str, case_id: str, amount_inr: int,
         return refuse("amount_positive", "the amount read off the bill was not positive")
     if amount_inr > mandate.per_bill_cap_inr:
         return refuse("per_bill_cap",
-                      f"INR {amount_inr:,} is above the per-bill cap of "
-                      f"INR {mandate.per_bill_cap_inr:,}")
+                      f"INR {group(amount_inr)} is above the per-bill cap of "
+                      f"INR {group(mandate.per_bill_cap_inr)}")
     passed.append("per_bill_cap")
 
     spent = sum(p.amount_inr for p in history)
     if spent + amount_inr > mandate.total_cap_inr:
         return refuse("total_cap",
-                      f"INR {spent:,} has been paid already and INR "
-                      f"{amount_inr:,} more would pass the total cap of "
-                      f"INR {mandate.total_cap_inr:,}")
+                      f"INR {group(spent)} has been paid already and INR "
+                      f"{group(amount_inr)} more would pass the total cap of "
+                      f"INR {group(mandate.total_cap_inr)}")
     passed.append("total_cap")
 
     # 6 — the destination. ASSIGNED from the mandate, never taken from the bill.

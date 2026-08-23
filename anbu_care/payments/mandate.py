@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from anbu_care import service
+from anbu_care.money import group
 from anbu_care.payments.enforcer import payee_ref
 from anbu_care.schemas import PaymentMandate
 
@@ -43,8 +44,8 @@ def grant(*, parent_id: str, case_id: str, payee_vpa: str, payee_label: str,
         raise MandateRejected("both caps must be positive")
     if per_bill_cap_inr > total_cap_inr:
         raise MandateRejected(
-            f"the per-bill cap (INR {per_bill_cap_inr:,}) is above the total "
-            f"cap (INR {total_cap_inr:,}), which would let one bill exhaust "
+            f"the per-bill cap (INR {group(per_bill_cap_inr)}) is above the total "
+            f"cap (INR {group(total_cap_inr)}), which would let one bill exhaust "
             f"the whole authority")
     if hours <= 0:
         raise MandateRejected("the window must be a positive number of hours")

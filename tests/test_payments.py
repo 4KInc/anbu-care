@@ -998,16 +998,16 @@ def test_the_two_money_figures_are_not_confusable(case, monkeypatch):
         payable_total_inr = 370_720
 
     line = _owed_now(_Bill(), 270_720)
-    assert "wants INR 270,720 of it now" in line
-    assert "less the INR 100,000 already paid" in line
+    assert "wants INR 2,70,720 of it now" in line
+    assert "less the INR 1,00,000 already paid" in line
 
     # "of that" is gone: nothing describes one of these as part of the other.
     from anbu_care.comms.policy import TEMPLATES
 
     body = str(TEMPLATES["bill_recorded"]["body"])
     assert "of that is outstanding" not in body
-    # The immediate demand leads; the estimate reads as the eventual outcome.
-    assert body.index("{payment_line}") < body.index("Once the insurer settles")
+    # The immediate demand leads; the settlement picture reads as what follows.
+    assert body.index("{payment_line}") < body.index("{settlement_lines}")
 
 
 def test_a_bill_with_no_advance_does_not_invent_one(case):
@@ -1019,3 +1019,82 @@ def test_a_bill_with_no_advance_does_not_invent_one(case):
     line = _owed_now(_Bill(), 8_890)
     assert "wants INR 8,890 of it now" in line
     assert "already paid" not in line
+
+
+def test_the_settlement_lines_reconcile_the_two_directions(case, monkeypatch):
+    """Reported as: if the insurer covers 1,42,030 of the 2,70,720, do I pay
+    2,28,690, or pay now and get reimbursed?
+
+    Neither, as stated. The insurer's share is deducted from the BILL, not from
+    the balance owed today — so 1,42,030 + 2,28,690 splits the whole 3,70,720,
+    while the 2,70,720 owed today is the unpaid balance and INCLUDES the
+    insurer's part. Paying it is therefore larger than the final share, and the
+    difference comes back.
+    """
+    from anbu_care.server import _settlement_lines
+
+    class _Bill:
+        payable_total_inr = 370_720
+        balance_due_inr = 270_720
+
+    class _Estimate:
+        estimated_covered_inr = 142_030
+        estimated_you_pay_inr = 228_690
+
+    lines = _settlement_lines(_Bill(), _Estimate())
+
+    # The split is named as being OF THE BILL, which is what makes it add up.
+    assert "of the INR 3,70,720 bill" in lines
+    assert "your share of it is about INR 2,28,690" in lines
+    # The advance is accounted for against the share, not against the balance.
+    assert "already paid INR 1,00,000 of that share" in lines
+    assert "INR 1,28,690 of it is still to come" in lines
+    # And the reason today's demand is bigger than the final share.
+    assert "includes the insurer's part" in lines
+    assert "not kept by the hospital" in lines
+
+
+def test_a_fully_covered_bill_still_explains_why_money_is_wanted_today(case):
+    """This is the case that started all of it: the family was told "about INR
+    0 to pay" and then that INR 3,890 had been paid. Both true, and together
+    they read as the system arguing with itself.
+
+    Nothing is owed once the insurer settles, and the hospital still wants the
+    money now. The line saying why is most needed exactly here.
+    """
+    from anbu_care.server import _settlement_lines
+
+    class _Bill:
+        payable_total_inr = 8_890
+        balance_due_inr = 8_890
+
+    class _Estimate:
+        estimated_covered_inr = 8_890
+        estimated_you_pay_inr = 0
+
+    lines = _settlement_lines(_Bill(), _Estimate())
+    assert "your share of it is about INR 0" in lines
+    assert "includes the insurer's part" in lines
+    # No advance was paid against this one, so nothing claims there was.
+    assert "already paid" not in lines
+
+
+def test_every_rupee_a_person_reads_is_grouped_the_indian_way():
+    """The dashboard rendered 2,70,720 and the messages rendered 270,720. One
+    figure, two shapes, for a family reading both."""
+    from anbu_care.money import group, inr
+
+    assert group(100_000) == "1,00,000"
+    assert group(1_23_45_678) == "1,23,45,678"
+    assert inr(270_720) == "INR 2,70,720"
+
+    # No message-building code formats rupees with Python's own separator.
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "anbu_care"
+    for name in ("server.py", "payments/run.py", "payments/enforcer.py",
+                 "payments/mandate.py"):
+        source = (root / name).read_text()
+        for line in source.splitlines():
+            if ":,}" in line and "INR" in line:
+                raise AssertionError(f"{name}: {line.strip()[:70]}")

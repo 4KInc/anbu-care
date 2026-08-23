@@ -95,18 +95,16 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "{adjustment_line}"
                 "{payment_line}"
                 "{running_total_line}"
-                "Once the insurer settles, about INR {estimated_covered} of it "
-                "is estimated to be covered, leaving your share at about "
-                "INR {estimated_you_pay}. That is an estimate from the policy "
-                "terms, not the insurer's decision.\n\n"
+                "{settlement_lines}"
+                "That is an estimate from the policy terms, not the insurer's "
+                "decision.\n\n"
                 "The itemised breakdown, and the photo it was read from, are "
                 "here: {dashboard_url}",
         # Opens on the bill rather than the front page: a message about money
         # that lands you on a triage timeline reads as a broken link.
         "view": "claim",
         "params": ["parent_name", "line_count", "this_bill", "adjustment_line",
-                   "running_total_line", "estimated_covered", "estimated_you_pay",
-                   "payment_line"],
+                   "running_total_line", "settlement_lines", "payment_line"],
     },
     "document_recorded": {
         # LOGISTICS. The summary line repeats what the document states and is

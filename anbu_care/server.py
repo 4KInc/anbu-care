@@ -30,6 +30,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
 from anbu_care import service
+from anbu_care.money import group
 from anbu_care.care_circle import notify as care_notify
 from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
@@ -1391,7 +1392,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     running = ""
     if len(bills) > 1:
         running = (f"Across {len(bills)} bills on this stay: "
-                   f"INR {estimate.total_billed_inr:,} billed.\n")
+                   f"INR {group(estimate.total_billed_inr)} billed.\n")
 
     # Quote what the bill says it comes to, not what the line items add up to.
     # An Indian bill prints a sub-total, then a discount, then GST, then a
@@ -1400,11 +1401,11 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     adjustment = ""
     parts = []
     if bill.discount_inr:
-        parts.append(f"a discount of INR {bill.discount_inr:,}")
+        parts.append(f"a discount of INR {group(bill.discount_inr)}")
     if bill.tax_inr:
-        parts.append(f"GST of INR {bill.tax_inr:,}")
+        parts.append(f"GST of INR {group(bill.tax_inr)}")
     if parts and bill.subtotal_inr:
-        adjustment = (f"That is INR {bill.subtotal_inr:,} of charges, with "
+        adjustment = (f"That is INR {group(bill.subtotal_inr)} of charges, with "
                       f"{' and '.join(parts)}.\n")
 
     # The payment decision runs FIRST so its outcome rides in the same message.
@@ -1416,11 +1417,10 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     tell("bill_recorded", {
         "parent_name": first_name,
         "line_count": str(len(bill.line_items)),
-        "this_bill": f"{bill.payable_total_inr:,}",
+        "this_bill": f"{group(bill.payable_total_inr)}",
         "adjustment_line": adjustment,
         "running_total_line": running,
-        "estimated_covered": f"{estimate.estimated_covered_inr:,}",
-        "estimated_you_pay": f"{estimate.estimated_you_pay_inr:,}",
+        "settlement_lines": _settlement_lines(bill, estimate),
         "payment_line": payment_line,
     }, "billing", consent.BILLING_UPDATES)
 
@@ -1463,8 +1463,8 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
     view = money_view(case_id)
     running = ""
     if view["payment_count"] > 1:
-        running = (f"Across this stay: INR {view['paid_inr']:,} settled and INR "
-                   f"{view['initiated_unconfirmed_inr']:,} initiated but not yet "
+        running = (f"Across this stay: INR {group(view['paid_inr'])} settled and INR "
+                   f"{group(view['initiated_unconfirmed_inr'])} initiated but not yet "
                    f"confirmed.\n")
     return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
             f"It has been paid automatically, inside the limits you set: "
@@ -1473,6 +1473,41 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
             f"{running}"
             f"A paid interim amount is normally adjusted when the insurer "
             f"settles.\n\n")
+
+
+def _settlement_lines(bill, estimate) -> str:
+    """How the immediate demand and the eventual share relate to each other.
+
+    Reported as not following the numbers, and fairly: the insurer's share is
+    deducted from the BILL, not from the balance the hospital is asking for. So
+    "covered 1,42,030" and "your share 2,28,690" split the whole 3,70,720,
+    while the 2,70,720 owed today is the unpaid balance and INCLUDES the part
+    the insurer is expected to cover.
+
+    Paying it is therefore larger than the final share, and the difference
+    comes back. Saying only "normally adjusted when the insurer settles" left
+    the reader to work that out, and they could not.
+    """
+    covered = estimate.estimated_covered_inr
+    share = estimate.estimated_you_pay_inr
+    total = bill.payable_total_inr
+    owed_now = bill.balance_due_inr or 0
+    advance = total - owed_now if total > owed_now else 0
+
+    out = (f"Once the insurer settles, about INR {group(covered)} of the "
+           f"INR {group(total)} bill is estimated to be covered, so your share "
+           f"of it is about INR {group(share)}.\n")
+
+    if advance > 0 and share > advance:
+        out += (f"You have already paid INR {group(advance)} of that share, so "
+                f"about INR {group(share - advance)} of it is still to come.\n")
+
+    if owed_now > share:
+        out += (f"The INR {group(owed_now)} the hospital wants today is more "
+                f"than your share because it includes the insurer's part. That "
+                f"part is settled with the insurer, not kept by the hospital.\n")
+
+    return out + "\n"
 
 
 def _owed_now(bill, amount_inr: int) -> str:
@@ -1487,9 +1522,9 @@ def _owed_now(bill, amount_inr: int) -> str:
     total = bill.payable_total_inr
     advance = total - amount_inr if total and total > amount_inr else 0
     if advance > 0:
-        return (f"The hospital wants INR {amount_inr:,} of it now, which is the "
-                f"total less the INR {advance:,} already paid against it.\n")
-    return f"The hospital wants INR {amount_inr:,} of it now.\n"
+        return (f"The hospital wants INR {group(amount_inr)} of it now, which is the "
+                f"total less the INR {group(advance)} already paid against it.\n")
+    return f"The hospital wants INR {group(amount_inr)} of it now.\n"
 
 
 def _payee_label(case_id: str) -> str:
