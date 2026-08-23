@@ -430,3 +430,82 @@ def test_the_preference_is_read_off_the_contact_not_their_role(tamil, monkeypatc
     assert send("+14155550142")["rendering"]["rendered_language"] == "en+ta"
     assert send("+919000000077")["rendering"]["rendered_language"] == "ta"
     assert send("+14155550143")["rendering"]["rendered_language"] == "en"
+
+
+# ---- the language belongs to the reader, on every path -------------------
+
+
+@pytest.mark.real_translation
+def test_one_event_reaches_mother_and_son_each_in_their_own_language(tamil):
+    """The son prefers English and reads Tamil; his mother reads only Tamil.
+
+    Same case, same moment. Nothing about the event decides the language, and
+    nothing about one reader's preference reaches the other's message.
+    """
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id = onboarding_tools.create_parent_profile(
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, language="en+ta",
+        consent_purposes=["status_updates", "outbound_notify"],
+    )
+    onboarding_tools.record_parent_channel(
+        parent_id, whatsapp_e164="+919000000055", language="ta")
+    onboarding_tools.record_recovery_checkin_consent(parent_id)
+    case = service.open_case(parent_id)
+
+    to_son = whatsapp_tools.send_family_update(
+        case_id=case.case_id, parent_id=parent_id, to_e164="+16692167706",
+        template_name="status_update",
+        template_params={"parent_name": "Ashanthi", "status": "resting",
+                         "hospital_name": "Sacred Heart", "timestamp": "4:12 PM"},
+        message_class="status",
+    )
+    from anbu_care.comms import consent as consent_purposes
+    from anbu_care.recovery.checkin import TEMPLATE as CHECKIN_TEMPLATE
+
+    to_mother = whatsapp_tools.send_parent_message(
+        parent_id=parent_id, template_name=CHECKIN_TEMPLATE,
+        template_params={"parent_name": "Ashanthi", "day": "2"},
+        message_class="logistics",
+        purpose=consent_purposes.RECOVERY_CHECKINS,
+        case_id=case.case_id,
+    )
+
+    assert to_son["rendering"]["rendered_language"] == "en+ta"
+    assert to_mother["rendering"]["rendered_language"] == "ta"
+
+    # She gets one language. A message twice as long is not a kindness to
+    # somebody who does not read the half on top.
+    assert translate.BILINGUAL_HEADING not in to_mother["message"]["body"]
+
+
+def test_no_sender_chooses_a_language_for_somebody_else():
+    """The two entry points look the preference up; callers cannot pass one.
+
+    This is what makes it per-recipient rather than per-deployment. A caller
+    able to name a language is a caller able to send a frightened seventy-one
+    year old a message in one she does not read, and every send in this system
+    goes through one of these two.
+    """
+    import inspect
+
+    from anbu_care.tools import whatsapp_tools
+
+    for entry in (whatsapp_tools.send_family_update,
+                  whatsapp_tools.send_parent_message):
+        signature = inspect.signature(entry)
+        assert "language" not in signature.parameters, (
+            f"{entry.__name__} lets its caller choose the reader's language")
+
+    # And each derives it from the person being written to, not from a default.
+    assert 'language=getattr(contact, "language", "en")' in inspect.getsource(
+        whatsapp_tools.send_family_update)
+    assert 'language=getattr(profile, "language", "en")' in inspect.getsource(
+        whatsapp_tools.send_parent_message)
