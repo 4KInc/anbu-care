@@ -297,6 +297,10 @@ def demo_seed() -> dict[str, Any]:
         # messages and reading the record are separate permissions here.
         email=os.getenv("ANBU_DEMO_FAMILY_EMAIL") or "",
         timezone_name="America/Los_Angeles",
+        # Per-recipient, and English by default: the son reads English while
+        # his mother reads Tamil, which is the whole point of the preference
+        # living on the person rather than on the deployment.
+        language=os.getenv("ANBU_DEMO_FAMILY_LANGUAGE") or "en",
         is_primary=True,
         consent_purposes=[
             "admission_alerts", "status_updates", "billing_updates", "claim_updates",

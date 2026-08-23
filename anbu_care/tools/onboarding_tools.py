@@ -123,6 +123,7 @@ def record_family_contact(
     is_primary: bool,
     consent_purposes: list[str],
     email: str = "",
+    language: str = "en",
 ) -> dict[str, Any]:
     """Register a family member and their purpose-specific consent.
 
@@ -142,6 +143,11 @@ def record_family_contact(
         email: Google account address this contact signs in with, or "" if they
             do not sign in. Messages go to the WhatsApp number either way;
             this is only what a dashboard session is matched against.
+        language: What THIS contact reads. "ta" renders their messages into
+            Tamil from the recorded English; "en" leaves them as they are.
+            Per-contact and not global: a daughter in Thoothukudi and a son in
+            California read the same case in different languages, and one
+            setting cannot serve both.
 
     Returns:
         The stored contact with consent timestamps.
@@ -156,6 +162,7 @@ def record_family_contact(
         whatsapp_e164=whatsapp_e164,
         email=email.strip().lower(),
         timezone=timezone_name,
+        language=(language or "en").strip().lower(),
         is_primary=is_primary,
         consents={purpose: now for purpose in consent_purposes},
     )

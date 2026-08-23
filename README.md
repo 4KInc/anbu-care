@@ -256,7 +256,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 761 tests, no GCP or model access needed
+make test             # 762 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -419,7 +419,7 @@ scripts/
   make_documents.py     synthetic discharge summary, lab report, prescription, policy
   link_google_account.py  link a Google address to a family contact
   backfill_document_details.py  re-read stored photographs into `details`
-tests/                  761 tests, no GCP or model access needed
+tests/                  762 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 

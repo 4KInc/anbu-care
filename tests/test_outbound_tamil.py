@@ -264,3 +264,55 @@ def test_every_template_body_is_free_of_em_dashes():
 
     for name, spec in TEMPLATES.items():
         assert "\u2014" not in str(spec["body"]), f"{name} uses an em dash"
+
+
+# ---- the preference lives on the person, not the deployment --------------
+
+
+@pytest.mark.real_translation
+def test_two_people_on_one_case_read_it_in_different_languages(monkeypatch, tamil):
+    """The claim that makes this per-recipient rather than a global switch.
+
+    Same case, same event, same gated English. The daughter in Thoothukudi
+    gets Tamil; the son in California gets exactly the bytes he got before any
+    of this existed.
+    """
+    from anbu_care import service
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id = onboarding_tools.create_parent_profile(
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin", relationship="son",
+        whatsapp_e164="+14155550142", timezone_name="America/Los_Angeles",
+        is_primary=True, consent_purposes=["status_updates"], language="en",
+    )
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Priya", relationship="daughter",
+        whatsapp_e164="+919000000077", timezone_name="Asia/Kolkata",
+        is_primary=False, consent_purposes=["status_updates"], language="ta",
+    )
+    case = service.open_case(parent_id)
+
+    def send(to):
+        return whatsapp_tools.send_family_update(
+            case_id=case.case_id, parent_id=parent_id, to_e164=to,
+            template_name="status_update",
+            template_params={"parent_name": "Ashanthi", "status": "resting",
+                             "hospital_name": "Sacred Heart", "timestamp": "4:12 PM"},
+            message_class="status",
+        )
+
+    son = send("+14155550142")
+    daughter = send("+919000000077")
+
+    assert son["rendering"]["translated"] is False
+    assert son["rendering"]["rendered_language"] == "en"
+
+    assert daughter["rendering"]["translated"] is True
+    assert daughter["rendering"]["rendered_language"] == "ta"
+    assert daughter["rendering"]["translated_from"] == "status update"
+    # Derived from the same record, and both receipts say so with the same hash.
+    assert daughter["rendering"]["source_sha256"] == son["rendering"]["source_sha256"]
