@@ -1388,10 +1388,25 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         running = (f"Across {len(bills)} bills on this stay: "
                    f"INR {estimate.total_billed_inr:,} billed.\n")
 
+    # Quote what the bill says it comes to, not what the line items add up to.
+    # An Indian bill prints a sub-total, then a discount, then GST, then a
+    # TOTAL — and the first real bill through here had a 12,000 discount, so
+    # the family was told a figure 12,000 higher than their own bill.
+    adjustment = ""
+    parts = []
+    if bill.discount_inr:
+        parts.append(f"a discount of INR {bill.discount_inr:,}")
+    if bill.tax_inr:
+        parts.append(f"GST of INR {bill.tax_inr:,}")
+    if parts and bill.subtotal_inr:
+        adjustment = (f"That is INR {bill.subtotal_inr:,} of charges, with "
+                      f"{' and '.join(parts)}.\n")
+
     tell("bill_recorded", {
         "parent_name": first_name,
         "line_count": str(len(bill.line_items)),
-        "this_bill": f"{bill.computed_total_inr:,}",
+        "this_bill": f"{bill.payable_total_inr:,}",
+        "adjustment_line": adjustment,
         "running_total_line": running,
         "estimated_covered": f"{estimate.estimated_covered_inr:,}",
         "estimated_you_pay": f"{estimate.estimated_you_pay_inr:,}",

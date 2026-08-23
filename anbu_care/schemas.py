@@ -507,6 +507,14 @@ class ExtractedBill(BaseModel):
     parent_id: str
     line_items: list[BillLineItem] = Field(default_factory=list)
     stated_total_inr: int | None = None
+    # An Indian bill usually prints a sub-total, a discount, GST and a total,
+    # and they differ. The extractor read all of them and ingestion dropped
+    # them, so `computed_total_inr` (the sum of line items) was quoted to a
+    # family as "on this bill" — 12,000 higher than the bill's own TOTAL on the
+    # first real bill it met, because a discount had been applied.
+    subtotal_inr: int | None = None
+    discount_inr: int | None = None
+    tax_inr: int | None = None
     # What is still owed after any advance. A payment is only ever for this,
     # never for the total: an interim bill with 1,00,000 already paid against
     # it is a 1,00,000 mistake waiting to happen.
@@ -532,7 +540,20 @@ class ExtractedBill(BaseModel):
 
     @property
     def computed_total_inr(self) -> int:
+        """The line items added up. This is the SUB-total on a discounted bill."""
         return sum(line.amount_inr for line in self.line_items)
+
+    @property
+    def payable_total_inr(self) -> int:
+        """What the bill says it comes to. The number to quote to a person.
+
+        The printed TOTAL where one was read, because that is what the bill
+        says and what the family will be asked for. The line items only agree
+        with it when nothing was discounted and no tax was added.
+        """
+        if isinstance(self.stated_total_inr, int) and self.stated_total_inr > 0:
+            return self.stated_total_inr
+        return self.computed_total_inr
 
 
 class CoverageLine(BaseModel):
@@ -566,6 +587,10 @@ class CoverageEstimate(BaseModel):
     lines: list[CoverageLine] = Field(default_factory=list)
     bills_counted: int = 0
     total_billed_inr: int = 0
+    # Discounts the hospitals printed on their own bills, summed. Shown rather
+    # than folded away, so the split adds up to what the paper says: charges
+    # minus this equals what the family was actually billed.
+    total_discount_inr: int = 0
     estimated_covered_inr: int = 0
     estimated_you_pay_inr: int = 0
     # Only ever set from a real claim.adjudicated receipt. None means nobody

@@ -87,6 +87,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "message_class": MessageClass.BILLING,
         "body": "Anbu Care: that bill is on {parent_name}'s record. "
                 "{line_count} line items, INR {this_bill} on this bill.\n"
+                "{adjustment_line}"
                 "{running_total_line}"
                 "Estimated split so far: about INR {estimated_covered} covered, "
                 "about INR {estimated_you_pay} to pay.\n\n"
@@ -96,8 +97,8 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # Opens on the bill rather than the front page: a message about money
         # that lands you on a triage timeline reads as a broken link.
         "view": "claim",
-        "params": ["parent_name", "line_count", "this_bill", "running_total_line",
-                   "estimated_covered", "estimated_you_pay"],
+        "params": ["parent_name", "line_count", "this_bill", "adjustment_line",
+                   "running_total_line", "estimated_covered", "estimated_you_pay"],
     },
     "document_recorded": {
         # LOGISTICS. The summary line repeats what the document states and is

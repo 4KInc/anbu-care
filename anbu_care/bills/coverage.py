@@ -125,6 +125,10 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
     profile = service.load_profile(case.parent_id) if case else None
     policy = profile.policy if profile else None
 
+    # Read off the bills, never inferred. A bill with no discount printed on it
+    # contributes nothing here.
+    discount = sum(b.discount_inr or 0 for b in bills)
+
     # A per-day sub-limit is multiplied by the length of THAT bill's stay.
     #
     # One case can carry bills from two different admissions — a general ward
@@ -198,8 +202,18 @@ def estimate_for_case(case_id: str, bills: list[ExtractedBill]) -> CoverageEstim
         lines=lines,
         bills_counted=len(bills),
         total_billed_inr=sum(line.claimed_inr for line in lines),
+        total_discount_inr=discount,
         estimated_covered_inr=sum(line.estimated_covered_inr for line in lines),
-        estimated_you_pay_inr=sum(line.estimated_you_pay_inr for line in lines),
+        # A hospital discount comes off what the FAMILY owes, not off what the
+        # insurer pays: the insurer's share is capped by sub-limits on the line
+        # items and a concession by the hospital does not raise that cap. So it
+        # reduces the residual, and the split then reconciles with the TOTAL
+        # printed on the bill instead of with the sub-total.
+        #
+        # Floored at zero. A discount larger than the residual would otherwise
+        # report the family as owed money, which no bill has ever meant.
+        estimated_you_pay_inr=max(
+            0, sum(line.estimated_you_pay_inr for line in lines) - discount),
         settled_inr=_settled_so_far(case_id),
         basis=(f"policy sub-limits applied over {'; '.join(bases) or 'no bills'}. "
                f"{'Cashless eligible at network hospitals.' if policy and policy.cashless_eligible else 'Reimbursement: the family pays first and is repaid later.'}"

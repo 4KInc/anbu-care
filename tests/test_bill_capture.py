@@ -938,3 +938,140 @@ def test_the_docvision_package_does_not_shadow_its_own_module():
 
     assert isinstance(bills_extract, types.ModuleType)
     assert isinstance(docvision_read, types.ModuleType)
+
+
+# =========================================================================
+# WHAT A BILL SAYS IT COMES TO
+# =========================================================================
+
+
+def test_the_printed_total_is_what_gets_quoted(case_id, parent_id, monkeypatch):
+    """Found on the first real discounted bill. The line items added up to
+    3,82,720 and the bill's own TOTAL was 3,70,720 after a 12,000 discount, and
+    the family was told the larger number as "on this bill".
+
+    A person holding the paper reads TOTAL. Quoting anything else is telling
+    them their own bill is wrong.
+    """
+    _reads(monkeypatch, [
+        {"label": "ICU bed", "item": "icu", "amount_inr": 300_000},
+        {"label": "Pharmacy", "item": "pharmacy", "amount_inr": 82_720},
+    ], stated=370_720)
+    bill = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    assert bill.computed_total_inr == 382_720      # the line items
+    assert bill.stated_total_inr == 370_720        # what the bill prints
+    assert bill.payable_total_inr == 370_720       # what a person is told
+
+
+def test_the_adjustments_survive_ingestion(case_id, parent_id, monkeypatch):
+    """The extractor read sub-total, discount and GST and ingestion dropped
+    all three, which is how the discount went missing."""
+    import json
+
+    payload = {
+        "line_items": [{"label": "ICU bed", "item": "icu", "amount_inr": 382_720}],
+        "subtotal_inr": 382_720, "discount_inr": 12_000, "tax_inr": 0,
+        "stated_total_inr": 370_720, "balance_due_inr": 270_720,
+        "vendor": "Sacred Heart Hospital", "bill_date": "2026-08-22",
+        "unreadable": False, "unreadable_reason": None,
+    }
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda image, mime_type: json.dumps(payload))
+    from anbu_care.comms import storage as gcs
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="": StoredArtifact(
+        stored=True, url="https://s/x", object_name=f"a/{filename}", detail="",
+        expires_in_seconds=900))
+    from anbu_care.docvision import read as docvision_read
+    monkeypatch.setattr(docvision_read, "read",
+                        lambda image, mime_type="image/jpeg": docvision_read.Reading(
+                            ok=True, kind="bill", engine="stub", detail="stubbed"))
+
+    bill = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert bill.subtotal_inr == 382_720
+    assert bill.discount_inr == 12_000
+    assert bill.payable_total_inr == 370_720
+
+
+def test_a_bill_with_no_printed_total_falls_back_to_the_lines(case_id, parent_id,
+                                                              monkeypatch):
+    """A bill whose TOTAL could not be read still has to say something, and the
+    line items are the honest fallback."""
+    _reads(monkeypatch, [{"label": "Ward", "item": "room_rent", "amount_inr": 4_500}])
+    bill = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert bill.stated_total_inr is None
+    assert bill.payable_total_inr == 4_500
+
+
+def test_the_message_names_the_discount_rather_than_hiding_it():
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._read_bill_and_report)
+    assert "bill.payable_total_inr" in source
+    assert "a discount of INR" in source
+    assert "bill.computed_total_inr:,}\"," not in source, "still quoting the line-item sum"
+
+
+def test_the_split_reconciles_with_the_printed_total(case_id, parent_id, monkeypatch):
+    """covered + you_pay must equal what the bill says it comes to.
+
+    It equalled the SUB-total, so a family reading "1,42,030 covered, 2,40,690
+    to pay" against a bill printing TOTAL 3,70,720 found the two sides 12,000
+    apart with nothing explaining it.
+    """
+    import json
+
+    payload = {
+        "line_items": [{"label": "ICU bed", "item": "icu", "amount_inr": 200_000},
+                       {"label": "Pharmacy", "item": "pharmacy", "amount_inr": 182_720}],
+        "subtotal_inr": 382_720, "discount_inr": 12_000, "tax_inr": 0,
+        "stated_total_inr": 370_720, "vendor": "Sacred Heart Hospital",
+        "bill_date": "2026-08-22", "unreadable": False, "unreadable_reason": None,
+    }
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(vision, "_call_model", lambda i, m: json.dumps(payload))
+    from anbu_care.comms import storage as gcs
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="": StoredArtifact(
+        stored=True, url="https://s/x", object_name=f"a/{filename}", detail="",
+        expires_in_seconds=900))
+    from anbu_care.docvision import read as docvision_read
+    monkeypatch.setattr(docvision_read, "read",
+                        lambda image, mime_type="image/jpeg": docvision_read.Reading(
+                            ok=True, kind="bill", engine="stub", detail="stubbed"))
+
+    bill = ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    est = coverage.estimate_for_case(case_id, [bill])
+
+    assert est.total_discount_inr == 12_000
+    assert est.estimated_covered_inr + est.estimated_you_pay_inr == bill.payable_total_inr
+    assert est.total_billed_inr == 382_720          # the charges, unchanged
+
+
+def test_a_discount_reduces_the_family_share_not_the_insurers(case_id, parent_id,
+                                                              monkeypatch):
+    """The insurer's share is capped by sub-limits on the line items, and a
+    concession by the hospital does not raise that cap. So it comes off the
+    residual."""
+    _reads(monkeypatch, [{"label": "Ward", "item": "room_rent", "amount_inr": 100_000}])
+    plain = coverage.estimate_for_case(
+        case_id, [ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")])
+    covered_before = plain.estimated_covered_inr
+    pay_before = plain.estimated_you_pay_inr
+
+    bills = ingest.list_bills(case_id)
+    bills[0].discount_inr = 5_000
+    discounted = coverage.estimate_for_case(case_id, bills)
+
+    assert discounted.estimated_covered_inr == covered_before
+    assert discounted.estimated_you_pay_inr == max(0, pay_before - 5_000)
+
+
+def test_a_discount_larger_than_the_residual_does_not_owe_money_back(
+        case_id, parent_id, monkeypatch):
+    _reads(monkeypatch, [{"label": "Ward", "item": "room_rent", "amount_inr": 4_000}])
+    bills = [ingest.ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")]
+    bills[0].discount_inr = 9_999_999
+
+    assert coverage.estimate_for_case(case_id, bills).estimated_you_pay_inr == 0
