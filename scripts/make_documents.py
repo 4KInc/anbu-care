@@ -40,10 +40,11 @@ RULE = (200, 210, 220)
 FLAG = (176, 42, 34)
 
 
-# The person who holds the policy on her behalf. Overridable so a recorded demo
-# shows whoever is presenting rather than a placeholder; unset, the synthetic
-# family stays synthetic for anyone else running this.
-PROPOSER = os.getenv("ANBU_DEMO_FAMILY_NAME", "Karthik Manickam")
+# The person who holds the policy on her behalf. Overridable, but the default
+# is the real one: this is a real project with a named author, and a placeholder
+# on a document that goes on camera is a thing to explain rather than a thing
+# that is true.
+PROPOSER = os.getenv("ANBU_DEMO_FAMILY_NAME") or "Heartlin Machado"
 
 
 def _font(size: int, bold: bool = False):

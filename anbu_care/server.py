@@ -275,21 +275,23 @@ def demo_seed() -> dict[str, Any]:
     )
     onboarding_tools.record_family_contact(
         parent_id,
-        # Overridable for the same reason as the number and the address: whoever
-        # records the demo is the person on camera, and the family contact
-        # should be them rather than a placeholder they have to explain away.
-        name=os.getenv("ANBU_DEMO_FAMILY_NAME", "Karthik Manickam"),
+        # `or` and not a getenv default: the deploy passes ${VAR:-} for each of
+        # these, so on Cloud Run they are SET AND EMPTY when unset in .env, and
+        # a getenv default never fires for a set-but-empty variable. A seeded
+        # contact with an empty name or number fails quietly and looks like data
+        # loss.
+        name=os.getenv("ANBU_DEMO_FAMILY_NAME") or "Heartlin Machado",
         relationship="son",
         # Overridable so a recorded demo can point at a real opted-in handset.
         # Defaults to a Twilio test number, which accepts sends and delivers
         # nothing, so an unconfigured deploy cannot message a real person.
-        whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164", "+14155550142"),
+        whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164") or "+14155550142",
         # Same reasoning as the number: a recorded demo needs the seeded family
         # bound to the account that will actually sign in, or every fresh seed
         # has to be re-linked by hand before the sign-in beat works. Empty by
         # default, which means the seeded contact cannot sign in — sending
         # messages and reading the record are separate permissions here.
-        email=os.getenv("ANBU_DEMO_FAMILY_EMAIL", ""),
+        email=os.getenv("ANBU_DEMO_FAMILY_EMAIL") or "",
         timezone_name="America/Los_Angeles",
         is_primary=True,
         consent_purposes=[

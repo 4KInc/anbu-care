@@ -345,15 +345,32 @@ def test_the_seeded_contact_can_be_named(monkeypatch, client):
     assert contact["relationship"] == "son"
 
 
-def test_the_default_stays_synthetic(monkeypatch, client):
-    """Unset, the repo seeds a synthetic family, so a stranger cloning this
-    does not get somebody's real name in their demo data."""
+def test_the_default_is_the_author(monkeypatch, client):
+    """This is a named project with a named author. The seeded family contact
+    is him, not a placeholder standing in for him."""
     monkeypatch.delenv("ANBU_DEMO_FAMILY_NAME", raising=False)
     parent_id = client.post("/api/demo/seed").json()["parent_id"]
 
     profile = client.get(f"/api/parents/{parent_id}",
                          headers=_auth("anbu-demo-family-token")).json()["profile"]
-    assert profile["family_contacts"][0]["name"] == "Karthik Manickam"
+    assert profile["family_contacts"][0]["name"] == "Heartlin Machado"
+
+
+def test_a_set_but_empty_override_does_not_erase_the_contact(monkeypatch, client):
+    """The deploy passes ${VAR:-} for each of these, so on Cloud Run they are
+    SET AND EMPTY when unset in .env — and a getenv default never fires for a
+    set-but-empty variable. That would seed a contact with no name and no
+    number, which fails quietly and looks like data loss.
+    """
+    for name in ("ANBU_DEMO_FAMILY_NAME", "ANBU_DEMO_FAMILY_E164"):
+        monkeypatch.setenv(name, "")
+    parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    contact = client.get(f"/api/parents/{parent_id}",
+                         headers=_auth("anbu-demo-family-token")
+                         ).json()["profile"]["family_contacts"][0]
+    assert contact["name"] == "Heartlin Machado"
+    assert contact["whatsapp_e164"] == "+14155550142"
 
 
 def test_the_scripts_take_the_same_name_override(monkeypatch):
@@ -365,12 +382,11 @@ def test_the_scripts_take_the_same_name_override(monkeypatch):
     root = pathlib.Path(__file__).resolve().parents[1] / "scripts"
     for script in ("demo_spine.py", "make_documents.py"):
         source = (root / script).read_text()
-        assert 'os.getenv("ANBU_DEMO_FAMILY_NAME"' in source, script
-        assert '"Karthik Manickam")' in source, f"{script} lost its synthetic default"
+        assert 'os.getenv("ANBU_DEMO_FAMILY_NAME")' in source, script
+        # `or`, never a getenv default, for the set-but-empty reason above.
+        assert 'ANBU_DEMO_FAMILY_NAME", "' not in source, \
+            f"{script} uses a getenv default that an empty env var defeats"
 
-    # And no script hardcodes the name any more.
+    # And the placeholder is gone from every script.
     for script in root.glob("*.py"):
-        source = script.read_text()
-        hardcoded = [ln for ln in source.splitlines()
-                     if "Karthik Manickam" in ln and "getenv" not in ln]
-        assert not hardcoded, f"{script.name}: {hardcoded}"
+        assert "Karthik Manickam" not in script.read_text(), script.name
