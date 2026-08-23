@@ -1361,3 +1361,44 @@ def test_the_label_follows_the_mode_not_the_intention(monkeypatch):
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_x")
     monkeypatch.setenv("RAZORPAY_KEY_SECRET", "y")
     assert "test mode" in settlement.label().lower()
+
+
+def test_a_payment_link_callback_is_matched_by_the_link_not_the_order(case, monkeypatch):
+    """A payment link creates its OWN order, so payment.captured names an
+    order id we have never seen. The identifier we stored is the link's, and
+    matching only on order_id would ignore every real capture."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.razorpay_webhook)
+    assert 'payload.get("payment_link")' in source
+    assert 'str(link.get("id") or "")' in source
+    # The link is tried FIRST, because it is what we stored.
+    assert source.index('link.get("id")') < source.index('payment.get("order_id")')
+
+
+def test_a_cancelled_link_is_a_failure_not_a_settlement():
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.razorpay_webhook)
+    assert '"payment_link.cancelled"' in source
+    failed_line = next(ln for ln in source.splitlines() if "failed = kind in" in ln)
+    assert "payment.failed" in failed_line and "cancelled" in failed_line
+
+
+def test_the_link_is_a_page_a_person_can_open(monkeypatch):
+    """The first version handed back checkout.razorpay.com/v1/checkout.js,
+    which is a JavaScript file. The instruction the agent created has to be one
+    somebody can actually complete, or the confirmation never arrives on its
+    own."""
+    import inspect
+
+    from anbu_care.payments import providers
+
+    source = inspect.getsource(providers.create_order)
+    assert '_post("/payment_links"' in source
+    assert 'body.get("short_url", "")' in source
+    assert "checkout.js" not in source.split('"""')[2]   # not in the code, only the note

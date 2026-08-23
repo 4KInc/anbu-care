@@ -782,6 +782,8 @@ class PaymentRecord(BaseModel):
     # arrives naming it, and without it stored there is nothing to match a
     # webhook against except a guess.
     settlement_ref: str = ""
+    # The provider's hosted page for this instruction, where one exists.
+    checkout_url: str = ""
     initiated_at: datetime = Field(default_factory=utcnow)
     confirmed_at: datetime | None = None
     failed_at: datetime | None = None

@@ -72,6 +72,9 @@ class Settlement:
     confirmed: bool
     detail: str
     simulated: bool = True
+    # A page the payer can actually open. Empty in simulated mode, where there
+    # is nothing to open.
+    checkout_url: str = ""
 
 
 def initiate(*, payment_id: str, amount_inr: int, payee_ref: str,
@@ -102,7 +105,7 @@ def initiate(*, payment_id: str, amount_inr: int, payee_ref: str,
         return Settlement(initiated=True, reference=result.reference,
                           confirmed=False,
                           detail=f"{result.detail}. {TEST_MODE_LABEL}",
-                          simulated=False)
+                          simulated=False, checkout_url=result.checkout_url)
 
     return Settlement(
         initiated=True,

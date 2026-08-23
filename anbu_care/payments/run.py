@@ -113,6 +113,7 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
         guards_passed=verdict.guards_passed,
         settlement_note=result.detail,
         settlement_ref=result.reference,
+        checkout_url=result.checkout_url,
     )
     service.save_payment(record)
 
@@ -145,6 +146,7 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
         "guards_passed": verdict.guards_passed,
         "autonomous": autonomous,
         "settlement_note": result.detail,
+        "checkout_url": result.checkout_url,
         "upi_intent": upi_intent(payee_vpa=verdict.payee_vpa,
                                  payee_label=mandate.payee_label,
                                  amount_inr=verdict.amount_inr,

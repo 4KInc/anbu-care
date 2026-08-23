@@ -1211,6 +1211,9 @@ function paymentCard(x){
       <div class="num" style="font-weight:800">${inr(x.amount_inr)}</div>
     </div>
     <p class="mute" style="margin-top:4px">${detail}</p>
+    ${!x.confirmed && x.checkout_url?`<button class="paper"
+      onclick="window.open('${esc(x.checkout_url)}','_blank')">
+      <span aria-hidden="true">\u25B8</span> Open the payment page</button>`:""}
     ${(x.guards_passed||[]).length?`<div class="guards">${
       x.guards_passed.map(g=>`<span class="guard">${esc(String(g).replace(/_/g," "))}</span>`).join("")
     }</div>`:""}

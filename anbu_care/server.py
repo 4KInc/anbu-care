@@ -685,6 +685,7 @@ def case_payments(case_id: str,
              # The provider's own identifier, so a figure on screen can be
              # matched against the provider's dashboard.
              "settlement_ref": p.settlement_ref,
+             "checkout_url": p.checkout_url,
              "initiated_at": p.initiated_at.isoformat(),
              "confirmed": p.confirmed_at is not None,
              "settlement_note": p.settlement_note}
@@ -788,16 +789,35 @@ async def razorpay_webhook(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="body was not JSON") from None
 
     kind = str(event.get("event") or "")
-    entity = (((event.get("payload") or {}).get("payment") or {}).get("entity")) or {}
-    order_id = str(entity.get("order_id") or "")
-    if not order_id:
-        return {"status": "ignored", "reason": "no order on this event"}
+    payload = event.get("payload") or {}
+    payment = (payload.get("payment") or {}).get("entity") or {}
+    link = (payload.get("payment_link") or {}).get("entity") or {}
 
-    if kind == "payment.captured":
-        return confirm_by_reference(reference=order_id, note="captured")
-    if kind == "payment.failed":
-        return confirm_by_reference(reference=order_id, note="failed", failed=True)
-    return {"status": "ignored", "event": kind}
+    # A payment link creates its OWN order, so a payment.captured callback
+    # names an order id we have never seen. The identifier we stored is the
+    # link's. Every place the provider might carry something we recognise, in
+    # the order of how directly it identifies our instruction.
+    candidates = [
+        str(link.get("id") or ""),                       # plink_… , what we stored
+        str(payment.get("order_id") or ""),              # bare-order integrations
+        str((payment.get("notes") or {}).get("reference_id") or ""),
+    ]
+    references = [c for c in candidates if c]
+    if not references:
+        return {"status": "ignored", "reason": "nothing on this event identifies a payment"}
+
+    failed = kind in {"payment.failed", "payment_link.cancelled"}
+    if kind not in {"payment.captured", "payment.failed", "payment_link.paid",
+                    "payment_link.cancelled"}:
+        return {"status": "ignored", "event": kind}
+
+    for reference in references:
+        result = confirm_by_reference(
+            reference=reference, note="failed" if failed else "captured",
+            failed=failed)
+        if result.get("status") != "ignored":
+            return result
+    return {"status": "ignored", "reason": "no payment carries any of those references"}
 
 
 @app.get("/api/cases/{case_id}/verify")
@@ -1502,11 +1522,19 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
         running = (f"Across this stay: INR {group(view['paid_inr'])} settled and INR "
                    f"{group(view['initiated_unconfirmed_inr'])} initiated but not yet "
                    f"confirmed.\n")
+    # The provider's own page for this instruction. Test mode has no funded
+    # mandate behind it, so completing the payment is still a human act; the
+    # deciding was not. Saying where it is beats leaving somebody to find it.
+    where = ""
+    if outcome.get("checkout_url"):
+        where = f"The payment page for it: {outcome['checkout_url']}\n"
+
     return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
             f"It has been sent automatically, inside the limits you set: "
             f"checked against your per-bill cap, your total cap, the window, "
             f"and the one account you authorised. It is not confirmed as "
             f"settled yet.\n"
+            f"{where}"
             f"{running}\n")
 
 
