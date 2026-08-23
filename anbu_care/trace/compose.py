@@ -31,6 +31,7 @@ actually happened.
 from __future__ import annotations
 
 from anbu_care import service
+from anbu_care.money import group
 from anbu_care.provenance.chain import Receipt
 from anbu_care.schemas import DecisionTrace, TraceStep
 
@@ -93,25 +94,27 @@ def _detail(receipt: Receipt) -> str:
             # asking to be trusted; one that lists what it checked can be
             # argued with by someone who was asleep when it happened.
             checked = f", {len(guards)} checks passed" if guards else ""
-            return (f"INR {amount:,}{checked} — initiated, not yet settled"
+            return (f"INR {group(amount)}{checked} — initiated, not yet settled"
                     if isinstance(amount, int) else "initiated, not yet settled")
 
         case "payment.escalated":
             amount = p.get("amount_inr")
             failed = str(p.get("failed_check") or "a check")
-            head = f"INR {amount:,}" if isinstance(amount, int) else "a bill"
+            head = f"INR {group(amount)}" if isinstance(amount, int) else "a bill"
             return f"{head} not paid — {failed.replace('_', ' ')} failed"
 
         case "payment.confirmed":
             amount = p.get("amount_inr")
-            return (f"INR {amount:,} settled (simulated)"
-                    if isinstance(amount, int) else "settled (simulated)")
+            rail = str(p.get("settlement") or "simulated")
+            where = "on Razorpay, test mode" if rail == "razorpay-test" else "simulated"
+            return (f"INR {group(amount)} settled, {where}"
+                    if isinstance(amount, int) else f"settled, {where}")
 
         case "mandate.granted":
             per_bill = p.get("per_bill_cap_inr")
             total = p.get("total_cap_inr")
             if isinstance(per_bill, int) and isinstance(total, int):
-                return (f"up to INR {per_bill:,} a bill, INR {total:,} in total, "
+                return (f"up to INR {group(per_bill)} a bill, INR {group(total)} in total, "
                         f"to one authorised account")
             return "bounded authority to pay"
 
@@ -125,7 +128,7 @@ def _detail(receipt: Receipt) -> str:
                 return f"{outcome} — asked for {', '.join(m.replace('_', ' ') for m in missing)}"
             disallowed = p.get("total_disallowed_inr")
             if isinstance(disallowed, int) and disallowed > 0:
-                return f"{outcome} — INR {disallowed:,} disallowed"
+                return f"{outcome} — INR {group(disallowed)} disallowed"
             return str(outcome)
 
         case "evidence.assessed":
@@ -142,7 +145,7 @@ def _detail(receipt: Receipt) -> str:
         case "claim.packet_assembled":
             total = p.get("total_claimed_inr")
             docs = len(p.get("attached_document_ids") or [])
-            amount = f"INR {total:,}" if isinstance(total, int) else "an amount"
+            amount = f"INR {group(total)}" if isinstance(total, int) else "an amount"
             return f"{amount} claimed, {docs} document(s) attached"
 
         case "claim.query_answered":

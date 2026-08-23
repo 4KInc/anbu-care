@@ -126,7 +126,7 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
             "payee_ref": verdict.payee_ref,
             "mandate_id": mandate.mandate_id,
             "guards_passed": verdict.guards_passed,
-            "settlement": "simulated",
+            "settlement": settlement.rail(),
             "confirmed": False,
             "note": ("Initiated, NOT settled. Every guard on the mandate "
                      "passed and the destination came from the mandate rather "
@@ -217,7 +217,7 @@ def confirm(*, case_id: str, payment_id: str) -> dict:
         payload={"payment_id": payment_id, "bill_id": record.bill_id,
                  "amount_inr": record.amount_inr,
                  "payee_ref": record.payee_ref,
-                 "settlement": "simulated",
+                 "settlement": settlement.rail(),
                  "note": ("A settlement confirmation arrived. This receipt is "
                           "never written by the code that initiates a payment.")})
     return {"outcome": "confirmed", "payment_id": payment_id,
@@ -278,7 +278,7 @@ def money_view(case_id: str) -> dict:
                                  - sum(p.amount_inr for p in payments)),
             "window_closes_at": mandate.window_closes_at.isoformat(),
         },
-        "settlement": "simulated",
+        "settlement": settlement.rail(),
         "note": settlement.label(),
     }
 

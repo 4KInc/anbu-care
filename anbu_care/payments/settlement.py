@@ -44,6 +44,19 @@ def label() -> str:
         else SIMULATED_LABEL
 
 
+def rail() -> str:
+    """Which rail actually carried this, for the record and the trace.
+
+    A receipt saying "simulated" for a real Razorpay order is the same class of
+    untruth as calling an unconfirmed payment paid, and it was hardcoded in
+    three places before a real provider existed to contradict it.
+    """
+    from anbu_care.payments import providers
+
+    return "razorpay-test" if _mode() == "razorpay" and providers.configured() \
+        else "simulated"
+
+
 def _mode() -> str:
     return os.getenv("ANBU_PAYMENT_MODE", "simulated").strip().lower()
 
