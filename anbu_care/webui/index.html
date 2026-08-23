@@ -1530,7 +1530,9 @@ function render(){
   const v={now:vNow,brief:vBrief,routing:vRouting,record:vRecord,claim:vClaim,audit:vAudit};
   document.getElementById("app").innerHTML=v[S.view]();
   const whoLabel = S.who?.signed_in ? ` · ${S.who.name}`
-    : S.token ? " · signed in" : " · not signed in";
+    : S.token ? " · signed in"
+    : S.linkToken ? " · opened from a link"
+    : " · not signed in";
   document.getElementById("sub").textContent=(S.caseId||"no case open")+whoLabel;
   renderAccount();
   const b=S.brief?.brief;
