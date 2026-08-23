@@ -307,6 +307,57 @@ INTERIM_DAY_TWO = {
 }
 
 
+# The second bill the agent can clear, for a run that needs a fresh one.
+#
+# The same photograph twice is one bill — both ingestion lanes dedupe on the
+# image SHA-256 — so re-sending day two gets "already on file" and never
+# reaches the payment checks. This is a different day, a different bill number
+# and a different image, which is what a second pass through the lane needs.
+#
+# Day three steps her down from the ICU to the HDU, which is why the bed charge
+# falls and a discharge-planning review appears. 31,650: under the 50,000
+# per-bill cap with room to spare, and well under the 90% near-cap threshold
+# that escalates a bill for sitting suspiciously close to the limit.
+INTERIM_DAY_THREE = {
+    "hospital": "Sacred Heart Hospital",
+    "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
+    "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "bill_title": "INTERIM BILL - DAY 3",
+    "bill_no": "IP/2026/04471-I3", "patient": "Ashanthi Machado",
+    "uhid": "SHH-0092841", "age_sex": "71 / F",
+    "consultant": "Dr A. Anand, Cardiology",
+    "ip_no": "IP-26-8841", "admitted": "19 Aug 2026, 02:40",
+    "discharged": "still admitted", "ward": "Cardiac HDU (stepped down)",
+    "sections": [
+        ("Room & nursing", [
+            ("Cardiac HDU bed charges", "1 day", 18000, 18000),
+            ("Nursing charges", "1 day", 1200, 1200),
+            ("Continuous cardiac monitoring", "1 day", 2500, 2500),
+        ]),
+        ("Professional fees", [
+            ("Consultant round - Cardiology", "1", 1500, 1500),
+            ("Physiotherapy review", "1", 600, 600),
+        ]),
+        ("Investigations", [
+            ("Troponin I (repeat)", "1", 1800, 1800),
+            ("2D Echocardiogram", "1", 3500, 3500),
+            ("Serum electrolytes", "1", 700, 700),
+            ("Chest X-ray", "1", 450, 450),
+        ]),
+        ("Pharmacy & consumables", [
+            ("Ward pharmacy - cardiac drugs", "-", 0, 1150),
+            ("IV fluids and injections", "-", 0, 250),
+        ]),
+    ],
+    "totals": [
+        ("Sub-total", 31650, False),
+        ("TOTAL", 31650, True),
+        ("Advance paid", 0, False),
+        ("BALANCE DUE", 31650, True),
+    ],
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="/tmp/bills")
@@ -315,7 +366,8 @@ def main() -> int:
 
     for name, spec in (("cardiac_icu", CARDIAC), ("general_ward", GENERAL_WARD),
                        ("icu_long_stay", ICU_LONG),
-                       ("interim_day_two", INTERIM_DAY_TWO)):
+                       ("interim_day_two", INTERIM_DAY_TWO),
+                       ("interim_day_three", INTERIM_DAY_THREE)):
         path = render(spec, out / f"bill_{name}.png")
         total = next(a for label, a, _ in spec["totals"] if label == "TOTAL")
         print(f"  {path}   TOTAL INR {total:,}")
