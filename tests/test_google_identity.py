@@ -235,3 +235,54 @@ def test_the_auth_config_says_what_is_offered(client, monkeypatch):
     body = client.get("/api/auth-config").json()
     assert body["google_client_id"] == "abc.apps.googleusercontent.com"
     assert body["demo_sign_in"] is True
+
+
+# =========================================================================
+# THE HEADER SAYS WHO, AND WHAT THAT PERMITS
+# =========================================================================
+
+
+def _page() -> str:
+    import pathlib
+
+    return (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+
+
+def test_the_account_menu_shows_authorisation_not_only_identity():
+    """"Signed in" answers the smaller half of the question. Signing in says
+    who you are; it does not say whose record you may open, and here those are
+    deliberately different facts."""
+    page = _page()
+    assert "function accountMenu()" in page
+    assert "On the record as" in page
+    assert "Can open" in page
+    assert "Signing in proves who you are." in page
+
+
+def test_the_menu_shows_the_consents_that_were_actually_given():
+    """DPDP consent is recorded per purpose with its own timestamp. A consent
+    the person who gave it cannot look at is a checkbox."""
+    page = _page()
+    assert "Consents you have given" in page
+    assert "CONSENT_LABEL" in page
+    assert "contact?.consents" in page
+
+
+def test_signing_out_clears_the_session_and_the_record():
+    """Leaving the record in memory after a sign-out means the next person at
+    the same laptop reads it."""
+    page = _page()
+    body = page[page.index("function signOut()"):]
+    body = body[:body.index("\n}")]
+    for cleared in ("S.token = null", "S.who = null", "S.record = null"):
+        assert cleared in body, f"signOut does not clear {cleared}"
+    # And Google is told, so the next sign-in asks rather than auto-selecting.
+    assert "disableAutoSelect" in body
+
+
+def test_the_avatar_never_falls_back_to_a_stock_person_icon():
+    """A generic silhouette where a name is known reads as a broken image."""
+    page = _page()
+    assert "function initials(" in page
+    assert 'S.who?.picture' in page

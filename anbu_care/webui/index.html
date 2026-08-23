@@ -51,6 +51,34 @@ body, input, button, pre, code{font-feature-settings:"zero" 0, "ss01" 0;
       color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;flex:none}
 .brand h1{font-size:17px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
 .brand .sub{font-size:11.5px;color:var(--ink-mute);font-weight:600}
+.bar-end{display:flex;align-items:center;gap:10px;flex:none}
+.acct{position:relative}
+.avatar{width:34px;height:34px;border-radius:999px;border:1px solid var(--line);
+  background:var(--slate-bg);color:var(--ink-soft);display:grid;place-items:center;
+  font-weight:800;font-size:13px;cursor:pointer;padding:0;overflow:hidden;
+  font-family:inherit}
+.avatar:hover{border-color:var(--teal)}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar.signed{border-color:var(--teal);background:var(--teal-bg);color:var(--teal-ink)}
+.menu{position:absolute;right:0;top:44px;width:308px;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 8px 28px
+  rgba(11,28,48,.14);padding:14px;z-index:40;text-align:left}
+.menu h4{font-size:15px;font-weight:800;margin:0}
+.menu .who{display:flex;gap:10px;align-items:center;margin-bottom:4px}
+.menu .email{font-size:12.5px;color:var(--ink-mute);word-break:break-all}
+.menu .grp{border-top:1px solid var(--line-soft);margin-top:12px;padding-top:12px}
+.menu .grp h5{font-size:11px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-soft);margin:0 0 7px}
+.menu .line{display:flex;justify-content:space-between;gap:10px;font-size:13px;
+  padding:3px 0;color:var(--ink)}
+.menu .line span:first-child{color:var(--ink-soft);flex:0 0 auto}
+.menu .line span:last-child{text-align:right;font-weight:700;min-width:0;
+  overflow-wrap:anywhere}
+.menu .act{display:block;width:100%;text-align:left;background:none;border:0;
+  font-family:inherit;font-size:13.5px;font-weight:700;color:var(--ink);
+  padding:9px 8px;margin:0 -8px;border-radius:var(--r-sm);cursor:pointer}
+.menu .act:hover{background:var(--surface)}
+.menu .act.danger{color:var(--red-ink)}
 
 /* ---- shell ------------------------------------------------------------ */
 main{max-width:760px;margin:0 auto;padding:var(--pad)}
@@ -298,7 +326,10 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
         <div class="sub" id="sub">no case open</div>
       </div>
     </div>
-    <span class="pill p-slate" id="stamp">snapshot</span>
+    <div class="bar-end">
+      <span class="pill p-slate" id="stamp">snapshot</span>
+      <div class="acct" id="acct"></div>
+    </div>
   </div>
 </header>
 
@@ -1147,6 +1178,131 @@ function denied(detail,what){
 }
 
 /* ===================== actions ===================== */
+
+// ---- who is signed in, and what that actually permits --------------------
+//
+// The header said "signed in" and nothing else, which answers the smaller
+// half of the question. Signing in says who you are; it does not say whose
+// record you may open, and in this system those are deliberately different
+// facts. The menu shows both, plus the consents this contact actually gave,
+// because a per-purpose consent nobody can look at is a checkbox.
+
+function initials(name){
+  const parts = String(name||"").trim().split(/\s+/).filter(Boolean);
+  if(!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length-1][0] : "")).toUpperCase();
+}
+
+// The contact this session corresponds to, if the record is open and one of
+// its contacts carries the signed-in address. Read from what the server
+// already returned rather than asked for separately.
+function signedInContact(){
+  const email = (S.who?.email || "").trim().toLowerCase();
+  if(!email) return null;
+  return (S.record?.profile?.family_contacts || [])
+    .find(c => (c.email || "").trim().toLowerCase() === email) || null;
+}
+
+const CONSENT_LABEL = {
+  admission_alerts: "Admission alerts", status_updates: "Status updates",
+  billing_updates: "Billing updates", claim_updates: "Claim updates",
+  wellbeing_updates: "Wellbeing updates", outbound_notify: "Care circle messages",
+};
+
+function renderAccount(){
+  const slot = document.getElementById("acct");
+  if(!slot) return;
+  const signedIn = !!S.token;
+  const name = S.who?.name || (signedIn ? "Signed in" : "");
+  const picture = S.who?.picture;
+
+  const face = picture
+    ? `<img src="${esc(picture)}" alt="">`
+    : signedIn ? esc(initials(name)) : "◔";
+
+  slot.innerHTML = `<button class="avatar ${signedIn?"signed":""}" id="avatarbtn"
+      onclick="toggleAccount(event)" aria-haspopup="true"
+      aria-expanded="${ACCOUNT_OPEN?"true":"false"}"
+      title="${signedIn?esc(name):"Not signed in"}">${face}</button>
+    ${ACCOUNT_OPEN?accountMenu():""}`;
+}
+
+function accountMenu(){
+  if(!S.token) return `<div class="menu" id="acctmenu">
+    <h4>Not signed in</h4>
+    <p class="mute" style="margin-top:6px">The clinical record needs a credential.
+      Open the Record tab to sign in.</p>
+  </div>`;
+
+  const contact = signedInContact();
+  const method = S.who?.method === "google" ? "Google account"
+    : S.who?.method === "demo" ? "Demo credential" : "Signed link";
+  const parent = S.record?.profile?.name;
+
+  const consents = Object.entries(contact?.consents || {});
+  const consentBlock = consents.length ? `<div class="grp">
+      <h5>Consents you have given</h5>
+      ${consents.map(([purpose, when]) => `<div class="line">
+        <span>${esc(CONSENT_LABEL[purpose] || purpose.replace(/_/g," "))}</span>
+        <span>${esc(String(when).slice(0,10))}</span></div>`).join("")}
+      <p class="mute" style="margin-top:8px">Recorded per purpose, with the date
+        each was given.</p>
+    </div>` : "";
+
+  return `<div class="menu" id="acctmenu">
+    <div class="who">
+      <div class="avatar signed" style="cursor:default">${
+        S.who?.picture?`<img src="${esc(S.who.picture)}" alt="">`
+                      :esc(initials(S.who?.name))}</div>
+      <div style="min-width:0">
+        <h4>${esc(S.who?.name || "Signed in")}</h4>
+        ${S.who?.email?`<div class="email">${esc(S.who.email)}</div>`:""}
+      </div>
+    </div>
+
+    <div class="grp">
+      <h5>This session</h5>
+      <div class="line"><span>Signed in with</span><span>${esc(method)}</span></div>
+      ${contact?`<div class="line"><span>On the record as</span>
+        <span>${esc(contact.name)} (${esc(contact.relationship)})</span></div>`:""}
+      <div class="line"><span>Can open</span>
+        <span>${parent?esc(parent)+"'s record":"nothing yet"}</span></div>
+      ${contact?.whatsapp_e164?`<div class="line"><span>Messages go to</span>
+        <span>${esc(contact.whatsapp_e164)}</span></div>`:""}
+      <p class="mute" style="margin-top:8px">Signing in proves who you are. What you
+        can open comes from being on this family's contacts.</p>
+    </div>
+
+    ${consentBlock}
+
+    <div class="grp">
+      <button class="act" onclick="copyCase()">Copy case id</button>
+      <button class="act" onclick="S.view='audit';closeAccount();render()">
+        See what has been recorded</button>
+      <button class="act danger" onclick="signOut()">Sign out</button>
+    </div>
+  </div>`;
+}
+
+let ACCOUNT_OPEN = false;
+function toggleAccount(event){
+  event?.stopPropagation();
+  ACCOUNT_OPEN = !ACCOUNT_OPEN;
+  renderAccount();
+}
+function closeAccount(){ ACCOUNT_OPEN = false; renderAccount(); }
+function copyCase(){
+  if(S.caseId) navigator.clipboard?.writeText(S.caseId);
+  closeAccount();
+}
+document.addEventListener("click", e => {
+  if(!ACCOUNT_OPEN) return;
+  if(!e.target.closest("#acct")) closeAccount();
+});
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" && ACCOUNT_OPEN) closeAccount();
+});
+
 async function signIn(){ S.token="anbu-demo-family-token"; S.who=null; await load(); }
 
 // Sign in with Google.
@@ -1330,6 +1486,9 @@ function tokenFromLink(){
 
 async function load(){
   if(!S.hospitals) S.hospitals = (await api("/api/hospitals"))?.hospitals || [];
+  // Whichever credential is held, the header should say who it belongs to.
+  // /api/whoami never 401s, so this is safe to ask on every load.
+  if(S.token && !S.who) S.who = await api("/api/whoami", {auth:true});
   if(S.caseId){
     S.trail=await api(`/api/cases/${S.caseId}/trail`,{auth:true});
     S.brief=await api(`/api/cases/${S.caseId}/brief`,{auth:true});
@@ -1350,6 +1509,7 @@ function render(){
   const whoLabel = S.who?.signed_in ? ` · ${S.who.name}`
     : S.token ? " · signed in" : " · not signed in";
   document.getElementById("sub").textContent=(S.caseId||"no case open")+whoLabel;
+  renderAccount();
   const b=S.brief?.brief;
   document.getElementById("stamp").textContent = b?.as_of
     ? "as of "+new Date(b.as_of).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
