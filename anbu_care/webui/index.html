@@ -1503,10 +1503,16 @@ function renderAccount(){
 }
 
 function accountMenu(){
+  // Asked from here, the panel renders HERE. Nobody is moved to another tab to
+  // sign in, and there is one #gbtn on the page at a time: the in-page panels
+  // stand down while the menu owns it.
+  if(S.signInFor) return `<div class="menu" id="acctmenu">${signInPanel(S.signInFor)}</div>`;
+
   if(!S.token && !S.linkToken) return `<div class="menu" id="acctmenu">
     <h4>Not signed in</h4>
-    <p class="mute" style="margin-top:6px">The clinical record needs a credential.
-      Open the Record tab to sign in.</p>
+    <p class="mute" style="margin-top:6px">The clinical record needs a credential.</p>
+    <div class="grp"><button class="act"
+      onclick="askSignIn('The clinical record needs a credential.')">Sign in</button></div>
   </div>`;
 
   // Opened from a link rather than a session. The holder is credentialed for
@@ -1526,7 +1532,7 @@ function accountMenu(){
     </div>
     <div class="grp">
       <button class="act" onclick="copyCase()">Copy case id</button>
-      <button class="act" onclick="closeAccount();signIn()">Sign in as the family</button>
+      <button class="act" onclick="askSignIn('Signing in lets you approve payments and share with a clinician.')">Sign in</button>
     </div>
   </div>`;
 

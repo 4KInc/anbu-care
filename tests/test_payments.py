@@ -970,7 +970,10 @@ def test_every_sign_in_entry_point_offers_google():
     # given the weaker of the two.
     import re
 
-    for match in re.finditer(r'onclick="signIn\(\)"', page):
+    # Any onclick that ends up calling signIn(), not just the bare form. The
+    # account menu used onclick="closeAccount();signIn()" and slipped past an
+    # earlier version of this test that matched the exact string.
+    for match in re.finditer(r'onclick="[^"]*\bsignIn\(\)', page):
         window = page[max(0, match.start() - 400):match.start()]
         assert 'id="gbtn"' in window, (
             "a demo sign-in button is offered without a Google one beside it: "
