@@ -29,6 +29,12 @@ set -euo pipefail
 # A backslash-newline joins the lines, so a `#` there comments out every flag
 # that follows it — silently, and `bash -n` will not tell you.
 
+# NOTE: the separator is ^|^ and NOT the more usual ^@^. An email address
+# contains @, so ANBU_DEMO_FAMILY_EMAIL split mid-value and gcloud rejected the
+# whole flag with "Bad syntax for dict arg: [blockintelai.com]". Any separator
+# here has to be a character that appears in NO value: not @ (emails), not + or
+# / or = (base64 keys, phone numbers), not : or . or - (URLs). Pipe is safe.
+#
 # NOTE: --set-env-vars must appear ONCE. gcloud replaces rather than merges on
 # a repeat, so a second flag silently discards everything the first one set.
 # The "^@^" prefix changes the delimiter to @ so values may contain commas.
@@ -58,7 +64,7 @@ gcloud run deploy "${SERVICE}" \
   --cpu 1 \
   --timeout 600 \
   --no-cpu-throttling \
-  --set-env-vars "^@^GOOGLE_GENAI_USE_VERTEXAI=TRUE@GOOGLE_CLOUD_PROJECT=${PROJECT_ID}@GOOGLE_CLOUD_LOCATION=global@ANBU_MODEL=${MODEL}@ANBU_STORE_BACKEND=firestore@ANBU_TPA_MODE=simulated@ANBU_WHATSAPP_MODE=${ANBU_WHATSAPP_MODE:-off}@ANBU_PUBSUB_ENABLED=${ANBU_PUBSUB_ENABLED:-false}@ANBU_DEMO_TOKEN=${ANBU_DEMO_TOKEN:-anbu-demo-family-token}@ANBU_SIGNING_KEY_B64=${ANBU_SIGNING_KEY_B64}@ANBU_ARTIFACT_BUCKET=${ANBU_ARTIFACT_BUCKET:-}@ANBU_DEMO_FAMILY_E164=${ANBU_DEMO_FAMILY_E164:-+14155550142}@ANBU_MAPS_API_KEY=${ANBU_MAPS_API_KEY:-}@ANBU_PUBLIC_BASE_URL=${ANBU_PUBLIC_BASE_URL:-}@ANBU_VOICE_MODE=${ANBU_VOICE_MODE:-off}@TWILIO_VOICE_FROM=${TWILIO_VOICE_FROM:-}@TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}@TWILIO_API_KEY_SID=${TWILIO_API_KEY_SID:-}@TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM:-}@ANBU_GOOGLE_CLIENT_ID=${ANBU_GOOGLE_CLIENT_ID:-}@ANBU_DEMO_FAMILY_EMAIL=${ANBU_DEMO_FAMILY_EMAIL:-}" \
+  --set-env-vars "^|^GOOGLE_GENAI_USE_VERTEXAI=TRUE|GOOGLE_CLOUD_PROJECT=${PROJECT_ID}|GOOGLE_CLOUD_LOCATION=global|ANBU_MODEL=${MODEL}|ANBU_STORE_BACKEND=firestore|ANBU_TPA_MODE=simulated|ANBU_WHATSAPP_MODE=${ANBU_WHATSAPP_MODE:-off}|ANBU_PUBSUB_ENABLED=${ANBU_PUBSUB_ENABLED:-false}|ANBU_DEMO_TOKEN=${ANBU_DEMO_TOKEN:-anbu-demo-family-token}|ANBU_SIGNING_KEY_B64=${ANBU_SIGNING_KEY_B64}|ANBU_ARTIFACT_BUCKET=${ANBU_ARTIFACT_BUCKET:-}|ANBU_DEMO_FAMILY_E164=${ANBU_DEMO_FAMILY_E164:-+14155550142}|ANBU_MAPS_API_KEY=${ANBU_MAPS_API_KEY:-}|ANBU_PUBLIC_BASE_URL=${ANBU_PUBLIC_BASE_URL:-}|ANBU_VOICE_MODE=${ANBU_VOICE_MODE:-off}|TWILIO_VOICE_FROM=${TWILIO_VOICE_FROM:-}|TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}|TWILIO_API_KEY_SID=${TWILIO_API_KEY_SID:-}|TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM:-}|ANBU_GOOGLE_CLIENT_ID=${ANBU_GOOGLE_CLIENT_ID:-}|ANBU_DEMO_FAMILY_EMAIL=${ANBU_DEMO_FAMILY_EMAIL:-}" \
   --set-secrets "TWILIO_API_KEY_SECRET=twilio-api-key-secret:latest,TWILIO_AUTH_TOKEN=twilio-auth-token:latest,ANBU_LINK_SECRET=anbu-link-secret:latest"
 
 URL=$(gcloud run services describe "${SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')
