@@ -358,6 +358,55 @@ INTERIM_DAY_THREE = {
 }
 
 
+# The third one the agent can clear, and the one that proves a stay bills more
+# than once without the family being made to wait.
+#
+# Day four is her last full day: off the monitor, on the ward, with the
+# discharge workup done. The bed charge falls again and the investigations are
+# the ones you run before letting somebody go home rather than the ones you run
+# when you are worried. 27,300, which sits under the 50,000 per-bill cap, under
+# the 90% near-cap threshold, and low enough that paying it hours after day
+# three still leaves the six-hour unattended spend under half the authority.
+INTERIM_DAY_FOUR = {
+    "hospital": "Sacred Heart Hospital",
+    "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
+    "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "bill_title": "INTERIM BILL - DAY 4",
+    "bill_no": "IP/2026/04471-I4", "patient": "Ashanthi Machado",
+    "uhid": "SHH-0092841", "age_sex": "71 / F",
+    "consultant": "Dr A. Anand, Cardiology",
+    "ip_no": "IP-26-8841", "admitted": "19 Aug 2026, 02:40",
+    "discharged": "still admitted", "ward": "Cardiac ward",
+    "sections": [
+        ("Room & nursing", [
+            ("Cardiac ward bed charges", "1 day", 9500, 9500),
+            ("Nursing charges", "1 day", 1200, 1200),
+        ]),
+        ("Professional fees", [
+            ("Consultant round - Cardiology", "1", 1500, 1500),
+            ("Dietitian consultation", "1", 800, 800),
+            ("Discharge planning review", "1", 1000, 1000),
+        ]),
+        ("Investigations", [
+            ("Lipid profile", "1", 1200, 1200),
+            ("HbA1c", "1", 750, 750),
+            ("Serum creatinine", "1", 400, 400),
+            ("Holter monitoring - 24 hour", "1", 4200, 4200),
+        ]),
+        ("Pharmacy & consumables", [
+            ("Ward pharmacy - cardiac drugs", "-", 0, 5900),
+            ("Oral medication - discharge stock", "-", 0, 850),
+        ]),
+    ],
+    "totals": [
+        ("Sub-total", 27300, False),
+        ("TOTAL", 27300, True),
+        ("Advance paid", 0, False),
+        ("BALANCE DUE", 27300, True),
+    ],
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="/tmp/bills")
@@ -367,7 +416,8 @@ def main() -> int:
     for name, spec in (("cardiac_icu", CARDIAC), ("general_ward", GENERAL_WARD),
                        ("icu_long_stay", ICU_LONG),
                        ("interim_day_two", INTERIM_DAY_TWO),
-                       ("interim_day_three", INTERIM_DAY_THREE)):
+                       ("interim_day_three", INTERIM_DAY_THREE),
+                       ("interim_day_four", INTERIM_DAY_FOUR)):
         path = render(spec, out / f"bill_{name}.png")
         total = next(a for label, a, _ in spec["totals"] if label == "TOTAL")
         print(f"  {path}   TOTAL INR {total:,}")
