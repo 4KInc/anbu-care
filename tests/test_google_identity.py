@@ -306,3 +306,27 @@ def test_the_account_menu_sits_above_the_nav():
     bar = page[page.index(".bar{position:sticky"):]
     bar = bar[:bar.index("}")]
     assert "z-index:50" in bar
+
+
+def test_the_seeded_family_can_be_bound_to_a_real_account(monkeypatch, client):
+    """A recorded demo re-seeds between takes. If the seeded contact carried no
+    address, the sign-in beat would need a manual link before every take — and
+    a step that is easy to forget between takes is a step that will be
+    forgotten during one."""
+    monkeypatch.setenv("ANBU_DEMO_FAMILY_EMAIL", "demo@example.com")
+    parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    profile = client.get(f"/api/parents/{parent_id}",
+                         headers=_auth("anbu-demo-family-token")).json()["profile"]
+    assert profile["family_contacts"][0]["email"] == "demo@example.com"
+
+
+def test_the_seeded_family_cannot_sign_in_by_default(monkeypatch, client):
+    """Unset, the seeded contact has no address and therefore no way in.
+    Receiving messages and reading the record are separate permissions."""
+    monkeypatch.delenv("ANBU_DEMO_FAMILY_EMAIL", raising=False)
+    parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    profile = client.get(f"/api/parents/{parent_id}",
+                         headers=_auth("anbu-demo-family-token")).json()["profile"]
+    assert profile["family_contacts"][0]["email"] == ""

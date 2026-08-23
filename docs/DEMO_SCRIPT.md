@@ -1,20 +1,30 @@
-# Demo script — ~5m30s, unedited
+# Demo script — ~5m45s, unedited
 
 One take. **Two phones** on camera (hers, and the nurse's), one terminal, one
 browser tab.
 
 **Live URL:** https://anbu-care-37j4eofpwq-el.a.run.app
 
-The arc changed with W1/W2. It used to open with a simulated intake signal
-arriving from outside. It now opens with **a seventy-one year old sending a
-voice note in Tamil at 2am**, because that is the actual product and the
-machinery underneath is more convincing once you have seen why it matters.
+The arc opens with **a seventy-one year old sending a voice note in Tamil at
+2am**, because that is the actual product and the machinery underneath is more
+convincing once you have seen why it matters.
 
-Two beats are new since the last recording and neither has been performed
-before: **the clinician handoff** (Beat 5), where a nurse scans a QR and reads
-her allergies without logging into anything, and **the trace** (Beat 7), where
-the agent's decision sequence is read off the chain and then verified by anyone
-watching. Rehearse both. Pre-flight §5 exists specifically for them.
+**What is new since the last version of this script**, and what it cost:
+
+- **Beat 6 is now a photograph, not a script.** The old claim beat ran
+  `demo_support.py claim-flow` and narrated the output. It now starts with a
+  hospital bill photographed on WhatsApp, and the money on screen is arithmetic
+  run over what Gemini read off that paper. Same length, entirely different
+  weight — a script producing a number proves nothing a slide could not.
+- **The same beat then sends a discharge summary**, and the arrival brief's
+  "not yet known" lines fill in. This is the clearest agentic moment in the
+  demo: the system reads a document, works out what it changes, and changes it.
+- **Sign-in is real** (Beat 4). A Google account, verified server-side, and
+  then a second and separate check that the account is on this family's
+  contacts. The 403 is the beat, not the sign-in.
+
+Rehearse Beat 6 hardest. It is the newest, it is the most visual, and it is the
+one with a state trap in it — see pre-flight §5.
 
 ---
 
@@ -102,7 +112,60 @@ curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
       the answer, and it is the chain working rather than failing. The case you
       create live during the demo will use the corrected coordinates.
 
-### 5. The handoff and the trace (new beats, new ways to fail)
+### 5. The paperwork beat — the state trap
+
+**Read this one twice.** The system refuses a photograph it has already seen,
+which is correct behaviour and will ruin a take if you meet it live.
+
+- [ ] **Regenerate the images, or seed a fresh family.** Dedup is by image hash
+      per parent for documents, per case for bills. If you rehearsed with these
+      exact files against this parent, they are already on the record.
+
+      ```bash
+      uv run python scripts/make_bill_images.py --out /tmp/demo
+      uv run python scripts/make_documents.py  --out /tmp/demo
+      curl -sX POST $URL/api/demo/seed      # a fresh parent, nothing on file
+      ```
+
+- [ ] **A fresh seed binds your handset and your Google account** — but only if
+      `ANBU_DEMO_FAMILY_E164` and `ANBU_DEMO_FAMILY_EMAIL` were set at deploy
+      time. Unset, seeding binds a Twilio test number, your photographs land on
+      the *previous* parent, and the new case sits there empty looking broken.
+      Check before you roll:
+
+      ```bash
+      gcloud run services describe anbu-care --project anbu-care-hack \
+        --region asia-south1 --format=json \
+        | jq -r '.spec.template.spec.containers[0].env[]
+                 | select(.name|test("DEMO_FAMILY")) | "\(.name)=\(.value)"'
+      ```
+
+- [ ] **Send one bill and one document as a rehearsal, then re-seed.** Do not
+      rehearse and record against the same parent.
+- [ ] **The bill read takes ~15s.** Know that, and have the line about the
+      fifteen-second webhook budget ready to fill it. Rehearse talking over it.
+- [ ] Have the four images **already in the WhatsApp thread's gallery** on the
+      handset. Hunting through Files on camera is thirty dead seconds.
+
+### 6. Sign-in, and a second parent to be refused by
+
+The 403 needs a parent your account is *not* a contact on.
+
+```bash
+OTHER_PARENT=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
+# then unset its email so your account is not on it
+uv run python scripts/link_google_account.py --parent $OTHER_PARENT
+```
+
+- [ ] `curl -s $URL/api/auth-config | jq .google_client_id` is **not null**.
+- [ ] Sign in on the deployed dashboard once, before recording. The first
+      sign-in on a new client can be slow.
+- [ ] Confirm the 403 fires for `$OTHER_PARENT` while signed in.
+- [ ] **Audience is Internal**, so only blockintelai.com accounts can sign in
+      at all. If a judge asks to try it themselves, hand them the demo
+      credential — do not promise them a Google sign-in they cannot have.
+
+### 7. The handoff and the trace (new beats, new ways to fail)
 
 Both of these were added after the last recording, so neither has muscle memory
 behind it. Dry-run them fully.
@@ -130,7 +193,7 @@ curl -s  -H "Authorization: Bearer $TOKEN" $URL/api/cases/$CASE/trace | jq '.que
 - [ ] If you are doing the optional voice-note-on-the-nurse's-phone moment, warm
       the transcriber first — same cold-start risk as Beat 2.
 
-### 6. Walk the dashboard by hand
+### 8. Walk the dashboard by hand
 
 Open `$URL/app` at the window size you will record.
 
@@ -142,7 +205,7 @@ Open `$URL/app` at the window size you will record.
       **SELF-REPORTED — NOT A MEASURED VITAL**.
 - [ ] `SYNTHETIC — DEMO DATA` visible on every clinical view.
 
-### 7. Recording hygiene
+### 9. Recording hygiene
 
 - [ ] Say **"synthetic"**, **"simulated"** and **"seeded snapshot"** at least
       once each. The honesty framing is the architecture case, not a disclaimer.
@@ -162,7 +225,7 @@ Open `$URL/app` at the window size you will record.
 - [ ] A voice note takes ~10s. Do not fill the silence with hedging; say what
       is happening ("it is transcribing, then matching") and let it land.
 
-### 8. Backup take
+### 10. Backup take
 
 Record a second pass immediately, before changing anything. Everything except
 the Gemini transcription and extraction is deterministic;
@@ -175,29 +238,32 @@ the Gemini transcription and extraction is deterministic;
 | Time | Beat | Point at |
 |---|---|---|
 | 0:00–0:20 | **The question** | "If something happens to my mother tonight, who makes sure the right decisions get made?" Every incumbent answers: a human coordinator. |
-| 0:20–1:20 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. |
-| 1:20–2:00 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
-| 2:00–2:35 | **The boundary** ⭐ | Clinical detail refused — and the family still told. |
-| 2:35–3:15 | **She arrives, and you are not there** ⭐⭐ | Scan the QR. A nurse reads her allergies with no login. |
-| 3:15–3:45 | **The claim** ⭐ | QUERY → resolved → PARTIAL. ₹66,000, told now. |
-| 3:45–4:30 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
-| 4:30–5:00 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
-| 5:00–5:30 | **The honest wall** | What it does not do, said out loud. |
+| 0:20–1:15 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. |
+| 1:15–1:50 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
+| 1:50–2:25 | **The boundary, and who is allowed to look** ⭐ | Clinical detail refused, family still told. Then a real sign-in, and a 403. |
+| 2:25–3:05 | **She arrives, and you are not there** ⭐⭐ | Scan the QR. A nurse reads her allergies with no login. |
+| 3:05–4:00 | **Photograph the paperwork** ⭐⭐ | A bill becomes an itemised claim. A discharge summary fills in the unknowns. |
+| 4:00–4:45 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
+| 4:45–5:10 | **Tamper** ⭐ | `verified: false, broken_at_seq: 1`. |
+| 5:10–5:45 | **The honest wall** | What it does not do, said out loud. |
 
-Runs ~5:30, up from ~5:00. Two beats were added and only one costs time: the
-handoff is new (~40s), while the trace beat **absorbs** the old
-public-vs-private beat rather than sitting beside it — showing the credentialed
-trace and then the open `/verify` makes the same point in one movement instead
-of two. The rest was tightened by five to ten seconds a beat.
+Runs ~5:45. The paperwork beat replaced the old scripted claim beat at roughly
+the same length, and the sign-in moment cost about fifteen seconds inside an
+existing beat rather than becoming one of its own — signing in is not
+interesting, being refused is.
 
-**If you must cut:** drop the claim beat (3:15–3:45), as before. It is the
-strongest single beat but the trace beat now carries the QUERY→gather→resolve
-arc anyway, so cutting it costs less than it used to. Do **not** cut the
-handoff or the trace — they are the two beats no other entry will have.
+**If you must cut:** take the tamper beat (4:45–5:10). That is a change from
+the last version, and it is deliberate. Tamper is a lovely thirty seconds but
+the trace beat already ends on `/verify`, so the verifiability point survives
+without it. **Do not cut** the paperwork beat, the handoff, or the trace — those
+three are the ones no other entry will have.
+
+**If you have time to spare**, the 403 in Beat 4 is worth an extra ten seconds.
+It is the only moment in the demo where the system tells *you* no.
 
 ---
 
-## Beat 2 (0:20–1:20) — she sends a voice note ⭐⭐
+## Beat 2 (0:20–1:15) — she sends a voice note ⭐⭐
 
 **On the handset**, record a WhatsApp voice note to the sandbox number saying,
 in Tamil:
@@ -268,7 +334,7 @@ attack".
 
 ---
 
-## Beat 3 (1:20–2:00) — what actually decided that ⭐
+## Beat 3 (1:15–1:50) — what actually decided that ⭐
 
 Terminal. This is where the architecture argument lands, and it now has two
 halves: what the model did, and what it was not allowed to do.
@@ -330,7 +396,7 @@ uv run pytest tests/test_escalation.py -k "junk or quieten or silent" -q
 **Do not say** "the AI decides" or "the AI knows". Say **the table decides, and
 the model can add**.
 
-## Beat 4 (2:00–2:35) — the boundary ⭐
+## Beat 4 (1:50–2:25) — the boundary, and who is allowed to look ⭐
 
 Two halves. The refusal, then the thing most people forget.
 
@@ -361,9 +427,39 @@ comms.sent      → urgent_family_alert_withheld   (no quote, still delivered)
 > send something and then says where it lives. If it did not, being more
 > clinically precise would make her harder to help."
 
+**Half three — "somewhere protected" is a real door.** Fifteen seconds, and it
+closes the argument the other two halves opened.
+
+Tap the link in the message. The record opens, because a signed link sent to a
+consented family member is a credential. Now open the **avatar menu**, top
+right, and sign out. Sign in with Google.
+
+> "That is a real Google account, verified server-side against Google's keys.
+> But look at what the menu says: signed in as me, **on the record as Karthik,
+> son** — and that second line is the one doing the work."
+
+Now the part worth the ten seconds. Paste `$OTHER_PARENT` (pre-flight §6) into
+the URL and hit enter.
+
+```
+403 — That Google account is signed in, but it is not on this parent's list of
+      family contacts, so it cannot read their record.
+```
+
+> "Same account. Same session. Different mother. Signing in proves who you are;
+> it does not say whose record you may open, and those are two different checks
+> in the code. It is a 403 and not a 401 on purpose — telling someone already
+> signed in to sign in again sends them round a loop."
+
+Scroll the menu to the consents.
+
+> "And this is what she agreed to, per purpose, with the date each was given.
+> DPDP requires that. Every system I looked at records it and never shows it to
+> the person who gave it, which makes it a checkbox."
+
 ---
 
-## Beat 5 (2:35–3:15) — she arrives, and you are not there ⭐⭐
+## Beat 5 (2:25–3:05) — she arrives, and you are not there ⭐⭐
 
 The beat nobody else will have. It needs **two devices on camera**: the laptop
 showing the family dashboard, and a second phone standing in for the nurse's.
@@ -418,29 +514,95 @@ Tap confirm. The note appears on the chain in the next beat.
 
 ---
 
-## Beat 6 (3:15–3:45) — the claim ⭐
+## Beat 6 (3:05–4:00) — photograph the paperwork ⭐⭐
 
-```bash
-uv run python scripts/demo_support.py claim-flow $CASE $PARENT
-```
+The most visual beat in the demo, and the one that most looks like the actual
+job. Everything before this was the night it happened. This is the week
+afterwards, which is where families in this situation actually lose money — and
+it has to come after the handoff, or you are showing a discharge summary for an
+admission the audience has not seen yet.
 
-QUERY first — a required document is missing, so nothing is priced. Then the
-document arrives, resubmission, **PARTIAL**.
+**Half one — a hospital bill becomes an itemised claim.**
 
-> "₹66,000 is the shortfall: ICU at 2% of a five-lakh policy per day, over three
-> days. That number is derived from the policy, not typed into a slide. And the
-> family is told **now**, not at settlement — that is the whole point.
+From the handset, photograph `bill_cardiac_icu.png` into the same WhatsApp
+thread. The reply comes back immediately:
+
+> "Got that. Reading it now."
+
+Say the next line while the read is running, because it takes about fifteen
+seconds and dead air is worse than narration:
+
+> "That acknowledgement is not the answer. Reading a bill takes a Gemini vision
+> call and the webhook has a fifteen-second budget, so the read happens after
+> the reply. The message says nothing is recorded until it has been read, and it
+> means it — if the read fails, nothing lands."
+
+Then the second message lands: line count, the bill total, and the split.
+
+Open the dashboard **Claim** tab.
+
+> "Every line item on that bill, read off the photograph, and every one priced
+> against her actual policy — one per cent of sum insured per day for a room, two per cent
+> for ICU. The gloves and the admission kit are struck out because IRDAI says
+> they are subsumed in the room charge, and this is where a family loses forty
+> thousand rupees without ever being told why.
 >
-> This is a **simulated** TPA. Deterministic local rules. No insurer is
-> contacted."
+> This is where it gets serious. Applying the sub-limit alone is the easy half.
+> Then there is **proportionate deduction** — if you take a room above your
+> limit, the insurer reduces the associated charges in the same ratio, and
+> almost nobody knows that. On this stay it moved what the family owes by
+> roughly five times. The family is told that now, not at settlement."
 
-If you want the attachment on screen, trigger the notify endpoint and show the
-PDF landing on the phone. Its `sha256` matches the receipt chain — you can
-download it and hash it.
+> **Read the figures off the screen. Do not memorise them.** They depend on how
+> many bills are on the case, and a fresh seed will not reproduce a rehearsal's
+> numbers. For calibration: the current demo case carries **three** bills —
+> ₹693,310 billed, ₹363,898 covered, ₹329,412 to pay, against ₹70,120 before
+> proportionate deduction was applied. One bill alone gives smaller numbers and
+> the same ratio. The *ratio* is the story and it survives whatever the state
+> is, so say "roughly five times" and point at what is actually on screen.
+
+Tap **Open the photograph**. The bill fills the screen.
+
+> "Every figure on that screen is one tap from the paper it was read from. A
+> number you cannot check against the page it came from is worth very little."
+
+**Half two — a discharge summary changes the record.**
+
+This is the agentic half. Send `doc_discharge_summary.png` to the same thread.
+
+Before it lands, put the **Arrival** tab on screen and point at the unknowns.
+
+> "Discharged on: not yet known. Diagnosis: not yet known. It says so rather
+> than guessing, and that has been true for the whole demo."
+
+Now the reply arrives, and refresh.
+
+> "Discharged 22 August. Non-ST elevation acute coronary syndrome. Condition at
+> discharge, follow-up on the fifth, treating consultant. Six of those lines
+> said *not yet known* thirty seconds ago.
+>
+> Nobody typed any of it. It classified the document, extracted the fields,
+> worked out which of them the record was missing, and filled them in. The
+> prescription on it replaced her medication list. Her allergies **merged** —
+> that one is deliberate, because a discharge summary lists what that admission
+> recorded, and a shorter list is not a retraction of an allergy somebody has
+> carried for years."
+
+Open the **Record** tab and show the medication card.
+
+> "Six medications with their dosing schedule. Morning, afternoon, night —
+> those three boxes are what the paper prints as 1-0-0, and they are only drawn
+> when the paper actually prints it. Where the prescription says 'once daily'
+> instead, the words are shown as written. Choosing a slot there would be a
+> renderer inventing a dosing time, and an invented one looks exactly as
+> authoritative as a read one."
+
+**If a photograph is refused as a duplicate**, that is the system working —
+see pre-flight §5. Say so and move on; do not re-send it.
 
 ---
 
-## Beat 7 (3:45–4:30) — watch it decide, then check that it did ⭐⭐
+## Beat 7 (4:00–4:45) — watch it decide, then check that it did ⭐⭐
 
 The agentic beat. Everything so far showed the system *acting*; this shows it
 **deciding**, and then lets anyone verify the decisions were real.
@@ -501,7 +663,7 @@ curl -s $URL/api/cases/$CASE/verify | jq                                # 200
 
 ---
 
-## Beat 8 (4:30–5:00) — tamper ⭐
+## Beat 8 (4:45–5:10) — tamper ⭐
 
 ```bash
 curl -s $URL/api/cases/case-a7cf9fa613/verify
@@ -519,7 +681,7 @@ reason: payload does not hash to the recorded hash — content was altered
 
 ---
 
-## Beat 9 (5:00–5:30) — the honest wall
+## Beat 9 (5:10–5:45) — the honest wall
 
 Do not skip this. It is the strongest beat in the demo, because everyone else's
 demo skips it.
@@ -543,14 +705,23 @@ demo skips it.
 > anything, and if she leaves a note it lands on our chain, not in the
 > hospital's. The care circle are notified parties, not partners.
 >
+> It does not read a document it has not been sent. Nothing is fetched from a
+> hospital portal or an insurer's system. Somebody photographs a piece of paper,
+> and if the photograph is unreadable the record says so rather than guessing at
+> what it probably said.
+>
+> The claim figure is an **estimate from the policy terms, not the insurer's
+> decision**. It is labelled that everywhere it appears. Being told the figure a
+> week early is worth a great deal and it is still not a settlement.
+>
 > And the handoff link cannot tell you *who* opened it. It is a link — whoever
 > holds it, holds it. So the receipt says a link holder read the summary, and
 > it does not put a doctor's name on something we could not verify. That is why
 > it dies in an hour and why the family can kill it from their phone.
 >
-> Every figure on screen is synthetic. The TPA is simulated. And when the
-> transport fails, the record says `not_delivered` — it never claims a message
-> it did not send."
+> Every figure on screen is synthetic. The TPA is simulated. The documents are
+> generated and say so on their face. And when the transport fails, the record
+> says `not_delivered` — it never claims a message it did not send."
 
 **Close:**
 
@@ -563,5 +734,10 @@ demo skips it.
 ## After the take
 
 - [ ] Do not delete **case-da1c2cb6db** or **case-a7cf9fa613**.
+- [ ] Note the parent and case you recorded against, and **do not re-send those
+      photographs to that parent** — the next attempt will be refused as a
+      duplicate, which is right and is not a re-shootable state.
+- [ ] If you re-shoot, seed a fresh family first. Regenerating the images is not
+      enough on its own for bills, which dedup per case.
 - [ ] Revoke the Twilio API key if the demo account is going idle.
 - [ ] The sandbox opt-in expires in 3 days — re-join before any re-shoot.

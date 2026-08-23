@@ -266,6 +266,12 @@ def demo_seed() -> dict[str, Any]:
         # Defaults to a Twilio test number, which accepts sends and delivers
         # nothing, so an unconfigured deploy cannot message a real person.
         whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164", "+14155550142"),
+        # Same reasoning as the number: a recorded demo needs the seeded family
+        # bound to the account that will actually sign in, or every fresh seed
+        # has to be re-linked by hand before the sign-in beat works. Empty by
+        # default, which means the seeded contact cannot sign in — sending
+        # messages and reading the record are separate permissions here.
+        email=os.getenv("ANBU_DEMO_FAMILY_EMAIL", ""),
         timezone_name="America/Los_Angeles",
         is_primary=True,
         consent_purposes=[
