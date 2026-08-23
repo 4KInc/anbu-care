@@ -30,10 +30,17 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/{case_id}/verify  # 200 
 
 Verification proves the record was not altered *without revealing what it says*,
 which is why it needs no credential. Anything returning case or patient content
-requires a family session. The demo credential is
-`anbu-demo-family-token` — published deliberately: secrecy is not what is being
-demonstrated, server-side enforcement is. Take the token out of the page and the
-401 still happens.
+requires a credential. Two are accepted:
+
+- **The demo credential**, `anbu-demo-family-token`, published deliberately:
+  secrecy is not what is being demonstrated, server-side enforcement is. Take
+  the token out of the page and the 401 still happens.
+- **A Google account**, verified against Google's keys — and then checked
+  against this parent's family contacts, which is the half that matters. A
+  verified stranger gets **403**, not a record.
+
+A signed link sent to a consented family member is a third, narrower one: it
+opens the case it was minted for and cannot mint further links for anyone else.
 
 All demo data is synthetic. Liveness probe is `/api/healthz`.
 
@@ -97,6 +104,26 @@ This matters more than any feature list, so it comes first.
   produce an itemised covered / not-covered / you-pay split with a running total
   across the stay. The photograph is kept privately so every number stays
   checkable against the paper it came from.
+- **Document capture, four kinds beyond bills.** The same WhatsApp thread takes a
+  discharge summary, a lab report, a prescription or a policy schedule. One
+  Gemini call classifies and extracts together — two calls would let the second
+  never disagree with the first — and each kind lands somewhere different: a
+  prescription replaces the medication list, a policy schedule sets the
+  sub-limits the coverage estimate is computed from, a discharge summary fills
+  in the dates, diagnosis, condition and follow-up the arrival brief was
+  reporting as "not yet known". The refusals are the interesting part. A
+  reading that finds no medication does not empty the list; a policy read with
+  no sum insured does not zero the cover; a discharge summary **merges**
+  allergies and never removes one, because a shorter list is not a retraction
+  of something someone has carried for years.
+- **Sign in with Google, with identity kept apart from permission.** The ID
+  token is verified server-side against Google's published keys with the client
+  id pinned as the audience — a token minted for another application is a valid
+  Google token and still not a credential for this one. Authorisation is a
+  separate check: the verified address must already be a family contact on the
+  parent being read, or the answer is 403. Being a real person is not permission
+  to read somebody's mother's lab results. The demo credential still works
+  alongside it, so the boundary can be shown without an account.
 - **A decision trace**: the chain rendered as the sequence a person can follow —
   the counterparty raising a query, the agent gathering what was asked for, the
   re-adjudication that followed. One step per receipt, so the view cannot
@@ -204,7 +231,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 499 tests, no GCP or model access needed
+make test             # 617 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -351,6 +378,10 @@ anbu_care/
   tools/                one tool module per agent — isolated scopes
   triage/               severity rules + hospital ranking (deterministic)
   comms/                WhatsApp message policy (deterministic)
+  bills/                bill vision, line items, sub-limit and co-pay arithmetic
+  docvision/            the other four document kinds: classify, extract, apply
+  brief/                the arrival brief, composed from receipts and the record
+  webauth.py            credentials: demo token, signed link, Google identity
   provenance/           hash chain, Ed25519 signing, Firestore/memory store
   kb/                   seeded Thoothukudi hospital knowledge base
   service.py            case state transitions, SLA clocks, Pub/Sub
@@ -358,7 +389,11 @@ anbu_care/
 scripts/
   demo_spine.py         end-to-end run, no model in the loop
   verify_stack.py       confirms Vertex / Firestore / Pub/Sub are reachable
-tests/                  499 tests, no GCP or model access needed
+  make_bill_images.py   synthetic Indian hospital bills, for the vision lane
+  make_documents.py     synthetic discharge summary, lab report, prescription, policy
+  link_google_account.py  link a Google address to a family contact
+  backfill_document_details.py  re-read stored photographs into `details`
+tests/                  617 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -392,6 +427,9 @@ Beyond ADK's own agent API:
 | `POST /api/cases/{id}/handoff-link/revoke` | Kill every outstanding link for the case |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
 | `GET /api/cases/{id}/bills/{bill_id}/image` | Short-lived signed URL for the source photograph |
+| `GET /api/parents/{id}/documents/{doc_id}/image` | The same, for a photographed document |
+| `GET /api/auth-config` | Which sign-in methods this deployment offers |
+| `GET /api/whoami` | Who the presented credential says you are. Never 401s |
 | `GET /handoff/{token}` | The clinician's read-only summary. No login, by design |
 | `POST /handoff/{token}/note/draft` | Transcribe a spoken note for review. Writes nothing |
 | `POST /handoff/{token}/note/confirm` | Record a confirmed note |
@@ -487,6 +525,39 @@ gcloud run services update anbu-care --region=asia-south1 --no-invoker-iam-check
 gcloud run services update anbu-care --region=asia-south1 --invoker-iam-check
 ```
 
+### Google Sign-In
+
+Optional. Unset, `/api/auth-config` reports `null`, the button says it is not
+configured, and the demo credential still works — nothing else changes.
+
+The client is created in the console; there is no `gcloud` path for a Web OAuth
+client (`gcloud alpha iap oauth-clients` is IAP brands, a different thing).
+
+1. **Google Auth Platform → Get started.** Audience **Internal** if the project
+   sits in a Workspace organization: no test-user list, and no "Google hasn't
+   verified this app" interstitial, which External-in-Testing shows even to
+   test users.
+2. **Clients → Create client → Web application.** Authorized JavaScript origin
+   is the deployed base URL, scheme and host only — no trailing slash, no path.
+   **Leave redirect URIs empty**: Google Identity Services returns the ID token
+   to the page, so there is no redirect leg to authorise.
+3. `ANBU_GOOGLE_CLIENT_ID=...apps.googleusercontent.com` and redeploy.
+
+The client ID is public by design — it identifies the app to Google and ships in
+every page offering the button. The **client secret** in the downloaded JSON is
+not used by this flow and is stored nowhere.
+
+Signing in is not permission. The verified address must already be on the
+parent's family contacts:
+
+```bash
+uv run python scripts/link_google_account.py --parent parent-xxxx \
+    --contact Karthik --email you@example.com --apply
+```
+
+Without that, a perfectly valid Google account gets a 403, which is the system
+working rather than failing.
+
 ### Liveness is `/api/healthz`, not `/healthz`
 
 Google Front End reserves the bare `/healthz` path and never forwards it to the
@@ -577,9 +648,13 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   value per analyte from assay and biological variation. The band is narrative
   only — the high/low flag against the reference range is untouched, and no
   triage or adjudication decision reads it.
-- **Ingestion provenance receipts.** Documents are ground-truthed by a stored
-  count today; a `document.ingested` receipt with a content hash would also make
-  *stored-then-altered* detectable. The topology audit in
+- **Ingestion provenance receipts — PARTLY SHIPPED.** A photographed document
+  now writes a `document.ingested` receipt carrying both a content hash and an
+  image hash, so a stored-then-altered reading is detectable and a duplicate
+  photograph is refused rather than double-counted. The remaining gap is the
+  **tool path**: `onboarding_tools.ingest_document`, used by the agent and the
+  seed script, still writes no receipt, so a document that never came through a
+  photograph is ground-truthed only by a stored count. The topology audit in
   [`docs/proposals/ingestion-provenance.md`](docs/proposals/ingestion-provenance.md)
   found the chain core is **already subject-agnostic** — `verify_chain`,
   sequence and `prev_hash` logic carry no case knowledge, so this is a new PK
