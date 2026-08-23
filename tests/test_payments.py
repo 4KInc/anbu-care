@@ -515,10 +515,8 @@ def test_a_bill_with_nothing_outstanding_is_not_paid(case, monkeypatch):
 
     from anbu_care.server import _consider_payment
 
-    sent = []
-    _consider_payment(case_id, parent_id, bill,
-                      lambda *a, **k: sent.append(a) or {"allowed": True})
-    assert sent == [], "a bill with no balance due should not reach the enforcer"
+    assert _consider_payment(case_id, parent_id, bill) == "", \
+        "a bill with no balance due should not reach the enforcer"
     assert service.list_payments(case_id) == []
 
 
@@ -883,34 +881,48 @@ def test_an_unreadable_vendor_does_not_block_payment(case):
         break
 
 
-def test_a_final_bill_is_not_called_an_interim_one():
-    """The template hardcoded the word, and the first real bill through it said
-    INPATIENT FINAL BILL on its face."""
+def test_no_message_calls_a_bill_something_the_bill_did_not(case):
+    """A template hardcoded "interim bill" and the first real bill through it
+    said INPATIENT FINAL BILL on its face. The merged copy sidesteps the whole
+    question: it says what is outstanding, which is true of any bill."""
+    from anbu_care.comms.policy import TEMPLATES
+
+    for name, spec in TEMPLATES.items():
+        body = str(spec["body"])
+        assert "interim bill of" not in body, name
+
+
+def test_one_photograph_produces_one_message():
+    """Two messages a second apart, both starting "Anbu Care:", both linking the
+    same tab, both about one photograph — and five different figures about one
+    piece of paper spread across them. The bill and what happened about paying
+    it are the same event to the person who sent it."""
     import inspect
 
     from anbu_care import server
 
-    source = inspect.getsource(server._consider_payment)
-    assert 'bill_kind = "interim bill" if bill.is_interim else "bill"' in source
+    source = inspect.getsource(server._read_bill_and_report)
+    # Exactly one billing message on the bill path.
+    assert source.count('"billing", consent.BILLING_UPDATES') == 1
+    assert "payment_line = _consider_payment" in source
 
-    from anbu_care.comms.policy import TEMPLATES
-
-    for name in ("payment_auto_initiated", "payment_escalated"):
-        body = str(TEMPLATES[name]["body"])
-        assert "interim bill of" not in body
-        assert "{bill_kind}" in body
+    # And the helper returns copy rather than sending its own message.
+    helper = inspect.getsource(server._consider_payment)
+    assert "tell(" not in helper, "_consider_payment still sends its own message"
+    assert "insurer settles" in helper
 
 
-def test_the_payment_message_explains_the_two_figures():
-    """A message saying INR 8,890 followed by one saying INR 3,890 reads as two
-    answers about one bill unless the difference is named."""
-    from anbu_care.comms.policy import TEMPLATES
+def test_the_message_explains_what_a_paid_interim_amount_means():
+    """"About INR 0 to pay" and "we just paid INR 3,890" are both true and look
+    like the system arguing with itself. One is what the insurer is expected to
+    settle; the other is what the hospital wanted today."""
+    import inspect
 
-    body = str(TEMPLATES["payment_auto_initiated"]["body"])
-    assert "{outstanding_line}" in body
-    assert "was outstanding on that" in body
-    # And what a paid interim amount means against the policy estimate.
-    assert "adjusted" in body and "insurer settles" in body
+    from anbu_care import server
+
+    helper = inspect.getsource(server._consider_payment)
+    assert "normally adjusted when the insurer settles" in helper
+    assert "what the hospital wanted now" in helper
 
 
 # =========================================================================

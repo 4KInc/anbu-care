@@ -143,6 +143,8 @@ def test_every_template_renders_and_passes_its_own_gate():
         "payee_label": "Sacred Heart Hospital",
         "bill_kind": "interim bill",
         "adjustment_line": "That is INR 3,82,720 of charges, with a discount of INR 12,000.\n",
+        "payment_line": "\nINR 2,70,720 of that is outstanding now, and it was NOT "
+                        "paid automatically: above the per-bill cap. Nothing has moved.\n",
         "outstanding_line": "The bill totals INR 8,890; INR 5,000 had already "
                             "been paid against it.\n",
         "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
@@ -271,6 +273,8 @@ def test_a_rendered_template_still_passes_the_gate():
         "payee_label": "Sacred Heart Hospital",
         "bill_kind": "interim bill",
         "adjustment_line": "That is INR 3,82,720 of charges, with a discount of INR 12,000.\n",
+        "payment_line": "\nINR 2,70,720 of that is outstanding now, and it was NOT "
+                        "paid automatically: above the per-bill cap. Nothing has moved.\n",
         "outstanding_line": "The bill totals INR 8,890; INR 5,000 had already "
                             "been paid against it.\n",
         "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
@@ -371,7 +375,7 @@ def test_a_template_may_choose_a_view_but_never_an_address():
 
     body = render_template("bill_recorded", {
         "parent_name": "Ashanthi", "line_count": "16", "this_bill": "3,70,720",
-        "adjustment_line": "", "running_total_line": "",
+        "adjustment_line": "", "payment_line": "", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
     }, case_id="case-x", parent_id="parent-x")
 
@@ -380,7 +384,7 @@ def test_a_template_may_choose_a_view_but_never_an_address():
     # And a caller still cannot supply the address.
     hijacked = render_template("bill_recorded", {
         "parent_name": "R", "line_count": "1", "this_bill": "1",
-        "adjustment_line": "", "running_total_line": "",
+        "adjustment_line": "", "payment_line": "", "running_total_line": "",
         "estimated_covered": "1", "estimated_you_pay": "1",
         "dashboard_url": "https://evil.example/steal",
     }, case_id="case-x", parent_id="parent-x")

@@ -92,13 +92,16 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "Estimated split so far: about INR {estimated_covered} covered, "
                 "about INR {estimated_you_pay} to pay.\n\n"
                 "That is an estimate from the policy terms, not the insurer's "
-                "decision. The itemised breakdown, and the photo it was read "
-                "from, are here: {dashboard_url}",
+                "decision.\n"
+                "{payment_line}"
+                "The itemised breakdown, and the photo it was read from, are "
+                "here: {dashboard_url}",
         # Opens on the bill rather than the front page: a message about money
         # that lands you on a triage timeline reads as a broken link.
         "view": "claim",
         "params": ["parent_name", "line_count", "this_bill", "adjustment_line",
-                   "running_total_line", "estimated_covered", "estimated_you_pay"],
+                   "running_total_line", "estimated_covered", "estimated_you_pay",
+                   "payment_line"],
     },
     "document_recorded": {
         # LOGISTICS. The summary line repeats what the document states and is
@@ -117,48 +120,6 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # A document that could not be read. Distinct from the bill wording,
     # because calling a lab report a bill and asking for "the amounts by hand"
     # is advice that cannot be followed.
-    # Money moved without a tap. The consequential facts first — how much,
-    # where, and that it is not settled — then what stopped it being a
-    # surprise: the caps he set himself.
-    "payment_auto_initiated": {
-        "message_class": MessageClass.BILLING,
-        # The amount is the OUTSTANDING balance, which is usually not the bill
-        # total — and the previous version stated only the balance right after
-        # another message stating only the total, which read as two different
-        # answers about one bill. It now says which is which.
-        #
-        # It also says what a paid interim amount means against the coverage
-        # estimate. "About INR 0 to pay" and "we just paid INR 3,890" are both
-        # true and look like a contradiction: one is what the insurer is
-        # expected to settle, the other is what the hospital wanted today.
-        "body": "Anbu Care: INR {amount} was outstanding on that {bill_kind} "
-                "and has been paid automatically, inside the limits you set.\n"
-                "{outstanding_line}"
-                "{running_line}"
-                "It was checked against your per-bill cap, your total cap, the "
-                "window, and the one account you authorised. Nothing else can "
-                "receive it.\n"
-                "This is what the hospital wanted now. It does not change the "
-                "policy estimate. A paid interim amount is normally adjusted "
-                "when the insurer settles.\n"
-                "Stop this at any time here: {dashboard_url}",
-        "view": "claim",
-        "params": ["amount", "bill_kind", "outstanding_line", "running_line"],
-    },
-
-    # Refused. The reason is the message: a family who is told only that it
-    # did not pay cannot act, and this one usually has to act fast because
-    # cashless stops when an interim bill goes unpaid.
-    "payment_escalated": {
-        "message_class": MessageClass.BILLING,
-        "body": "Anbu Care: INR {amount} outstanding on a {bill_kind} at "
-                "{payee_label} was NOT paid automatically and needs you.\n"
-                "Why: {reason}\n"
-                "Nothing has moved. Review and approve it here: {dashboard_url}",
-        "view": "claim",
-        "params": ["amount", "bill_kind", "payee_label", "reason"],
-    },
-
     "document_unreadable": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: that {subject} could not be read. {reason}\n"

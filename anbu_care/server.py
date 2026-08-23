@@ -1407,6 +1407,12 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         adjustment = (f"That is INR {bill.subtotal_inr:,} of charges, with "
                       f"{' and '.join(parts)}.\n")
 
+    # The payment decision runs FIRST so its outcome rides in the same message.
+    # Two arriving a second apart, both starting "Anbu Care:", both linking the
+    # same tab, both about one photograph, read as duplication — and carried
+    # five different figures about one piece of paper between them.
+    payment_line = _consider_payment(case_id, parent_id, bill)
+
     tell("bill_recorded", {
         "parent_name": first_name,
         "line_count": str(len(bill.line_items)),
@@ -1415,30 +1421,24 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         "running_total_line": running,
         "estimated_covered": f"{estimate.estimated_covered_inr:,}",
         "estimated_you_pay": f"{estimate.estimated_you_pay_inr:,}",
+        "payment_line": payment_line,
     }, "billing", consent.BILLING_UPDATES)
 
-    _consider_payment(case_id, parent_id, bill, tell)
 
+def _consider_payment(case_id: str, parent_id: str, bill) -> str:
+    """Hand a payable bill to the enforcer, and return what to tell the family.
 
-def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
-    """Hand a payable interim bill to the enforcer, and say what it decided.
-
-    The enforcer decides. This function only reports. It passes the extracted
-    vendor along as `extracted_payee` NOT so it can be paid to — nothing here
-    can choose a destination — but so the enforcer can treat a bill naming a
-    different payee as evidence the bill is wrong.
+    Returns a paragraph for the bill message rather than sending one of its
+    own. The enforcer decides; this only reports. The vendor rides along NOT so
+    it can be paid to — nothing here can choose a destination — but so the
+    enforcer can treat a bill from another hospital, or one naming a different
+    payee, as evidence that this is not the bill the authority was for.
     """
     from anbu_care.payments import consider_bill, money_view
 
     payable = bill.balance_due_inr
     if not payable or payable <= 0:
-        return  # nothing outstanding on this bill; nothing to pay
-
-    # The bill says what it is. Calling a final bill "interim" was a hardcoded
-    # word in a template, and it was wrong on the first real bill that reached
-    # it. The vendor rides along so the enforcer can notice a bill from a
-    # hospital the authority was never granted for.
-    bill_kind = "interim bill" if bill.is_interim else "bill"
+        return ""   # nothing outstanding on this bill; nothing to pay
 
     try:
         outcome = consider_bill(
@@ -1447,7 +1447,7 @@ def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
             extracted_vendor=bill.vendor)
     except Exception:  # noqa: BLE001 - a payment decision must not kill the lane
         logger.exception("payment decision failed")
-        return
+        return ""
 
     if outcome["outcome"] == "escalated":
         # No mandate at all is the ordinary state, not an incident. Telling a
@@ -1455,36 +1455,24 @@ def _consider_payment(case_id: str, parent_id: str, bill, tell) -> None:
         # would be noise on top of an already frightening day.
         if outcome["failed_check"] == "mandate_present" and \
                 "no payment mandate" in outcome["reason"]:
-            return
-        tell("payment_escalated", {
-            "amount": f"{outcome['amount_inr']:,}",
-            "bill_kind": bill_kind,
-            "payee_label": _payee_label(case_id),
-            "reason": outcome["reason"][:220],
-        }, "billing", consent.BILLING_UPDATES)
-        return
+            return ""
+        return (f"\nINR {outcome['amount_inr']:,} of that is outstanding now, and "
+                f"it was NOT paid automatically: {outcome['reason'][:180]}. "
+                f"Nothing has moved, and it needs you.\n")
 
     view = money_view(case_id)
     running = ""
     if view["payment_count"] > 1:
-        running = (f"Across this stay: INR {view['paid_inr']:,} settled, "
-                   f"INR {view['initiated_unconfirmed_inr']:,} initiated and "
-                   f"not yet confirmed.\n")
-    # Two figures for one bill read as a contradiction unless the difference is
-    # stated. It is the advance already paid against it.
-    outstanding_line = ""
-    total = bill.computed_total_inr
-    if total and total != payable:
-        outstanding_line = (f"The bill totals INR {total:,}; INR "
-                            f"{total - payable:,} had already been paid "
-                            f"against it.\n")
-
-    tell("payment_auto_initiated", {
-        "amount": f"{outcome['amount_inr']:,}",
-        "bill_kind": bill_kind,
-        "outstanding_line": outstanding_line,
-        "running_line": running,
-    }, "billing", consent.BILLING_UPDATES)
+        running = (f"Across this stay: INR {view['paid_inr']:,} settled and INR "
+                   f"{view['initiated_unconfirmed_inr']:,} initiated but not yet "
+                   f"confirmed.\n")
+    return (f"\nINR {outcome['amount_inr']:,} of that was outstanding and has "
+            f"been paid automatically, inside the limits you set: checked "
+            f"against your per-bill cap, your total cap, the window, and the "
+            f"one account you authorised.\n"
+            f"{running}"
+            f"That is what the hospital wanted now. A paid interim amount is "
+            f"normally adjusted when the insurer settles.\n")
 
 
 def _payee_label(case_id: str) -> str:
