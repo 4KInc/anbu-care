@@ -291,7 +291,7 @@ def test_the_family_link_opens_the_case_it_is_about():
     product failing at the only moment it matters."""
     body = render_template(
         "urgent_family_alert",
-        {"parent_name": "Rajeswari", "timestamp": "1:03 AM", "said": "chest pain",
+        {"parent_name": "Ashanthi", "timestamp": "1:03 AM", "said": "chest pain",
          "words_note": "Those are her own words.\n", "understood_as": "",
          "hospital_name": "Sacred Heart", "distance_km": "2.2",
          "why_hospital": "In network.", "cashless_status": "Cashless applies"},
@@ -348,7 +348,7 @@ def test_the_handoff_message_carries_no_clinical_detail():
     from anbu_care.comms.policy import MessageClass, classify_message
 
     body = str(TEMPLATES["clinician_handoff_link"]["body"]).format(
-        parent_name="Rajeswari", handoff_url="https://x/handoff/abc",
+        parent_name="Ashanthi", handoff_url="https://x/handoff/abc",
         expires_minutes="60")
 
     klass, hits = classify_message(body)
@@ -370,7 +370,7 @@ def test_a_template_may_choose_a_view_but_never_an_address():
     from anbu_care.comms.policy import render_template
 
     body = render_template("bill_recorded", {
-        "parent_name": "Rajeswari", "line_count": "16", "this_bill": "3,70,720",
+        "parent_name": "Ashanthi", "line_count": "16", "this_bill": "3,70,720",
         "adjustment_line": "", "running_total_line": "",
         "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
     }, case_id="case-x", parent_id="parent-x")

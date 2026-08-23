@@ -37,7 +37,7 @@ def case(monkeypatch):
                                        object_name=f"a/{filename}", detail="",
                                        expires_in_seconds=900))
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -72,7 +72,7 @@ def _document(monkeypatch, kind, body):
     monkeypatch.setenv("ANBU_DOC_VISION_MODE", "gemini")
     monkeypatch.setattr(dv, "_call_model", lambda image, mime_type: json.dumps(
         {"kind": kind, "confidence": 0.95, "unreadable": False,
-         "patient_name": "Rajeswari M.", kind: body}))
+         "patient_name": "Ashanthi M.", kind: body}))
 
 
 def _bill(monkeypatch):

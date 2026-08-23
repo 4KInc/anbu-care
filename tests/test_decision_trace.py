@@ -30,7 +30,7 @@ def client() -> TestClient:
 @pytest.fixture
 def parent_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -293,7 +293,7 @@ def test_the_public_verify_response_leaks_no_case_content(client, query_fork_cas
     """Integrity without disclosure — the boundary the trace must not cross."""
     public = client.get(f"/api/cases/{query_fork_case}/verify").text
 
-    for secret in ("Rajeswari", "Penicillin", "Sacred Heart", "96,000", "96000"):
+    for secret in ("Ashanthi", "Penicillin", "Sacred Heart", "96,000", "96000"):
         assert secret not in public
 
 

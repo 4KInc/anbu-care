@@ -19,7 +19,7 @@ from anbu_care.tools import intake_tools, onboarding_tools, triage_tools
 @pytest.fixture
 def parent_id() -> str:
     return onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=[],
     )["profile"]["parent_id"]
 

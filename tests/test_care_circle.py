@@ -37,7 +37,7 @@ def accepting(monkeypatch):
 
 def _parent_with(contacts: list[tuple[str, str, list[str]]]) -> str:
     parent_id = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(

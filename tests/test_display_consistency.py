@@ -21,7 +21,7 @@ from anbu_care.tools.onboarding_tools import MATERIAL_CHANGE_FRACTION, _is_mater
 @pytest.fixture
 def parent_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(

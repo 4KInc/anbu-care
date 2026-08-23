@@ -19,7 +19,7 @@ from anbu_care.tools import insurer_tools, onboarding_tools
 @pytest.fixture
 def parent_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -344,7 +344,7 @@ def test_the_gather_receipt_carries_ids_not_clinical_content(queried):
 
     # The document's own summary text must not ride along on the chain.
     assert "Admitted 19 Aug" not in payload
-    assert "Rajeswari" not in payload
+    assert "Ashanthi" not in payload
 
 
 def test_the_gather_receipt_did_not_change_the_adjudication(queried):

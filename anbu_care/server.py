@@ -250,7 +250,7 @@ def demo_seed() -> dict[str, Any]:
     onboarding tools the agent does, so nothing here is a special path.
     """
     created = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam",
+        name="Ashanthi Machado",
         age=71,
         city="Thoothukudi",
         lat=8.7642,

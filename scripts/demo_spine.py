@@ -39,7 +39,7 @@ def step(n: int, title: str) -> None:
 def main() -> int:
     step(1, "Onboarding — baseline record, insurance, and family consent")
     created = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam",
+        name="Ashanthi Machado",
         age=71,
         city="Thoothukudi",
         lat=8.7642,

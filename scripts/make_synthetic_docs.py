@@ -72,7 +72,7 @@ def lab_report(filename: str, collected: str, rows: list[tuple[str, str, str, st
     y = _banner(d)
     y = _header(d, y, "Meenakshi Diagnostics (Sample)", "Thoothukudi, Tamil Nadu · NABL-equivalent sample layout")
     y = _patient_block(d, y, [
-        ("Patient", "Rajeswari Manickam"),
+        ("Patient", "Ashanthi Machado"),
         ("Age / Sex", "71 Y / F"),
         ("Referring physician", "Dr. A. Ravi (sample)"),
         ("Sample collected", collected),
@@ -109,7 +109,7 @@ def prescription(filename: str) -> None:
     y = _banner(d)
     y = _header(d, y, "Dr. A. Ravi, MD (Sample)", "Consultant Physician · Thoothukudi · Reg. SAMPLE-0000")
     y = _patient_block(d, y, [
-        ("Patient", "Rajeswari Manickam"),
+        ("Patient", "Ashanthi Machado"),
         ("Age / Sex", "71 Y / F"),
         ("Date", "02 Aug 2026"),
         ("Known conditions", "Hypertension, Type 2 diabetes, Dyslipidaemia"),

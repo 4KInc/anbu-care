@@ -179,7 +179,7 @@ def _urgent_body(**over):
     from anbu_care.comms.policy import render_template
 
     params = {
-        "parent_name": "Rajeswari", "timestamp": "02:14 UTC",
+        "parent_name": "Ashanthi", "timestamp": "02:14 UTC",
         "said": "feels like an elephant is sitting on my chest",
         "hospital_name": "Sacred Heart Hospital", "distance_km": "2.2",
         "why_hospital": ("The extra distance was accepted because Sacred Heart is "
@@ -368,7 +368,7 @@ def test_someone_on_both_lists_is_told_once_and_named_once(monkeypatch):
     )
 
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=[], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -413,7 +413,7 @@ def test_a_separate_care_circle_contact_still_gets_their_notice(monkeypatch):
     )
 
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=[], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -454,7 +454,7 @@ def _clinical_case(monkeypatch):
         )[1],
     )
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=[], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -684,7 +684,7 @@ def test_the_spoken_line_says_it_did_not_call_an_ambulance(monkeypatch):
     monkeypatch.delenv("TWILIO_API_KEY_SID", raising=False)
     monkeypatch.setattr(requests, "post", fake_post)
 
-    spoken = ("This is Anbu Care. Rajeswari has sent an urgent message and may need help now. "
+    spoken = ("This is Anbu Care. Ashanthi has sent an urgent message and may need help now. "
               "Please call her. Anbu Care has not called an ambulance and cannot.")
     result = voice.place_call("+919000000101", spoken, mode="twilio")
 
@@ -829,7 +829,7 @@ def test_the_understood_line_is_still_gated(monkeypatch):
     from anbu_care.schemas import MessageClass
 
     body = render_template("urgent_family_alert", {
-        "parent_name": "Rajeswari", "timestamp": "02:14 UTC", "said": "chest hurts",
+        "parent_name": "Ashanthi", "timestamp": "02:14 UTC", "said": "chest hurts",
         "words_note": "Those are her own words, not a medical assessment.\n",
         "understood_as": "Understood as: troponin 0.94 ng/mL.\n",
         "hospital_name": "Sacred Heart", "distance_km": "2.2",

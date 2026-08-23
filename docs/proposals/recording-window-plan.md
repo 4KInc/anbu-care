@@ -151,7 +151,7 @@ to reclaim there.
 
 The request was to remove it. The recommendation is to make it visually lighter
 and keep it, for one reason: it is the label that stops a screenshot of
-"Rajeswari Manickam, 71, hypertension, high cholesterol, type 2 diabetes,
+"Ashanthi Machado, 71, hypertension, high cholesterol, type 2 diabetes,
 penicillin allergy" — on a **public** URL, from a **public** repo — from reading
 as published patient data. The repo being public is what makes this load-bearing
 rather than decorative.

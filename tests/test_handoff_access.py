@@ -36,7 +36,7 @@ def client() -> TestClient:
 
 def _parent(consented: bool = True) -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     if consented:
@@ -136,7 +136,7 @@ def test_an_expired_link_is_denied_and_shows_nothing(client):
     assert response.status_code == 403
     body = response.text
     assert "expired" in body.lower()
-    assert "Rajeswari" not in body
+    assert "Ashanthi" not in body
     assert "Penicillin" not in body
     assert case_id not in body
 
@@ -149,7 +149,7 @@ def test_a_forged_link_is_denied_and_shows_nothing(client):
     response = client.get(f"/handoff/{forged}")
     assert response.status_code == 403
     assert "Penicillin" not in response.text
-    assert "Rajeswari" not in response.text
+    assert "Ashanthi" not in response.text
 
 
 def test_garbage_and_expired_are_indistinguishable_to_the_holder(client):

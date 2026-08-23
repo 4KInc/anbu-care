@@ -42,7 +42,7 @@ ATTACKER_VPA = "definitely.not.the.hospital@okaxis"
 @pytest.fixture
 def case():
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     cid = triage_tools.run_triage(

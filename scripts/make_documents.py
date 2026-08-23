@@ -135,7 +135,7 @@ def discharge_summary(out: Path) -> Path:
            "NABH accredited   ·   Reg. No. TN/THO/1187")
     p.title("DISCHARGE SUMMARY", "IP-26-8841")
     p.pairs(
-        [("Name", "Rajeswari Manickam"), ("Age / Sex", "71 / Female"),
+        [("Name", "Ashanthi Machado"), ("Age / Sex", "71 / Female"),
          ("UHID", "SHH-0092841"), ("Consultant", "Dr A. Anand, Cardiology")],
         [("Date of admission", "19 Aug 2026, 02:40"), ("Date of discharge", "22 Aug 2026, 11:15"),
          ("Mode of admission", "Emergency"), ("Ward", "Cardiac ICU")],
@@ -193,7 +193,7 @@ def lab_report(out: Path) -> Path:
            "NABL accredited   ·   Lab Reg. No. TN/LAB/2291")
     p.title("LABORATORY REPORT", "LR/2026/118842")
     p.pairs(
-        [("Name", "Rajeswari Manickam"), ("Age / Sex", "71 / Female"), ("UHID", "SHH-0092841")],
+        [("Name", "Ashanthi Machado"), ("Age / Sex", "71 / Female"), ("UHID", "SHH-0092841")],
         [("Collected", "19 Aug 2026, 03:10"), ("Reported", "19 Aug 2026, 04:05"),
          ("Referred by", "Dr A. Anand")],
     )
@@ -245,7 +245,7 @@ def prescription(out: Path) -> Path:
            "Dr A. Anand,  MD DM (Cardiology)   ·   Reg. No. TN/54129")
     p.title("PRESCRIPTION", "OP/2026/22914")
     p.pairs(
-        [("Name", "Rajeswari Manickam"), ("Age / Sex", "71 / Female")],
+        [("Name", "Ashanthi Machado"), ("Age / Sex", "71 / Female")],
         [("Date", "22 Aug 2026"), ("UHID", "SHH-0092841")],
     )
     p.rule()
@@ -279,7 +279,7 @@ def policy_schedule(out: Path) -> Path:
            "IRDAI Reg. No. 129   ·   UIN: SHAHLIP26001V012526")
     p.title("POLICY SCHEDULE", "SH-NRI-4471902")
     p.pairs(
-        [("Insured", "Rajeswari Manickam"), ("Age", "71"), ("Proposer", PROPOSER)],
+        [("Insured", "Ashanthi Machado"), ("Age", "71"), ("Proposer", PROPOSER)],
         [("Policy period", "01 Apr 2026 to 31 Mar 2027"), ("Sum insured", "INR 5,00,000"),
          ("Cashless", "Yes, at network hospitals")],
     )

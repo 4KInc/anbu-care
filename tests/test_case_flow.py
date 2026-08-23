@@ -22,7 +22,7 @@ from anbu_care.tools import (
 @pytest.fixture
 def parent_id() -> str:
     created = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )
     pid = created["profile"]["parent_id"]

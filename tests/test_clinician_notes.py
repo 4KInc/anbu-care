@@ -35,7 +35,7 @@ def client() -> TestClient:
 @pytest.fixture
 def case_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     onboarding_tools.record_emergency_disclosure_consent(pid)

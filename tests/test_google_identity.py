@@ -39,7 +39,7 @@ def client() -> TestClient:
 @pytest.fixture
 def parent_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     onboarding_tools.record_family_contact(
@@ -64,7 +64,7 @@ def _google_says(monkeypatch, claims):
 
 def _verified(email=FAMILY_EMAIL, **extra):
     return {"sub": "1029384756", "email": email, "email_verified": True,
-            "name": "Karthik Manickam", **extra}
+            "name": "Heartlin Machado", **extra}
 
 
 def _auth(token=TOKEN):
@@ -227,7 +227,7 @@ def test_whoami_never_401s(client, parent_id, monkeypatch):
     _google_says(monkeypatch, _verified())
     body = client.get("/api/whoami", headers=_auth()).json()
     assert body["signed_in"] and body["method"] == "google"
-    assert body["name"] == "Karthik Manickam"
+    assert body["name"] == "Heartlin Machado"
 
 
 def test_the_auth_config_says_what_is_offered(client, monkeypatch):

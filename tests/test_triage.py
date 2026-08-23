@@ -17,7 +17,7 @@ from anbu_care.triage.severity import classify_severity
 def parent() -> ParentProfile:
     return ParentProfile(
         parent_id="p1",
-        name="Rajeswari M.",
+        name="Ashanthi M.",
         age=71,
         city="Thoothukudi",
         lat=8.7642,

@@ -26,7 +26,7 @@ IMAGE = b"\x89PNG\r\n\x1a\n" + b"x" * 9000
 @pytest.fixture
 def parent_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     onboarding_tools.record_medications(pid, [{"name": "Telmisartan", "dose": "40 mg"}])
@@ -44,7 +44,7 @@ def storage_stub(monkeypatch):
 
 def _reads(monkeypatch, kind, body, **top):
     payload = {"kind": kind, "confidence": 0.95, "unreadable": False,
-               "patient_name": "Rajeswari M.", kind: body, **top}
+               "patient_name": "Ashanthi M.", kind: body, **top}
     monkeypatch.setenv("ANBU_DOC_VISION_MODE", "gemini")
     monkeypatch.setattr(dv, "_call_model",
                         lambda image, mime_type: json.dumps(payload))
@@ -272,7 +272,7 @@ def test_the_message_summary_never_names_a_clinical_finding(parent_id, monkeypat
         assert analyte not in safe.lower()
 
     body = str(TEMPLATES["document_recorded"]["body"]).format(
-        parent_name="Rajeswari", document_kind="lab report", summary=safe,
+        parent_name="Ashanthi", document_kind="lab report", summary=safe,
         applied_line="", dashboard_url="https://example/app")
     assert classify_message(body)[0] is not MessageClass.CLINICAL
     assert gate_message(body, "logistics", template_name="document_recorded").allowed
@@ -305,7 +305,7 @@ def test_every_document_kind_produces_a_sendable_message(parent_id):
     for kind, payload in payloads.items():
         summary = message_summary_for(kind, payload)
         body = str(TEMPLATES["document_recorded"]["body"]).format(
-            parent_name="Rajeswari", document_kind=kind.replace("_", " "),
+            parent_name="Ashanthi", document_kind=kind.replace("_", " "),
             summary=summary, applied_line="", dashboard_url="https://example/app")
         verdict = gate_message(body, "logistics", template_name="document_recorded")
         assert verdict.allowed, f"{kind} would be blocked: {summary}"
@@ -318,7 +318,7 @@ def test_a_withheld_fallback_exists_for_when_the_gate_still_refuses():
     from anbu_care.comms.policy import TEMPLATES, gate_message
 
     body = str(TEMPLATES["document_recorded_withheld"]["body"]).format(
-        parent_name="Rajeswari", document_kind="lab report",
+        parent_name="Ashanthi", document_kind="lab report",
         dashboard_url="https://example/app")
     assert gate_message(body, "logistics",
                         template_name="document_recorded_withheld").allowed

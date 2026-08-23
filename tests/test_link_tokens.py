@@ -37,7 +37,7 @@ def client() -> TestClient:
 @pytest.fixture
 def two_families():
     made = []
-    for name in ("Rajeswari M.", "Lakshmi K."):
+    for name in ("Ashanthi M.", "Lakshmi K."):
         pid = onboarding_tools.create_parent_profile(
             name=name, age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
             chronic_conditions=[], allergies=[],

@@ -35,7 +35,7 @@ def sent(monkeypatch):
 @pytest.fixture
 def household():
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari Manickam", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=[], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(

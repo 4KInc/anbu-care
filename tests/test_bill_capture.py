@@ -38,7 +38,7 @@ def client() -> TestClient:
 @pytest.fixture
 def parent_id() -> str:
     pid = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=["Penicillin"],
     )["profile"]["parent_id"]
     onboarding_tools.record_insurance_policy(
@@ -159,7 +159,7 @@ def test_public_verify_reveals_no_bill_content(client, case_id, parent_id, monke
 
     public = client.get(f"/api/cases/{case_id}/verify")
     assert public.status_code == 200
-    for secret in ("96000", "96,000", "34500", "130500", "Sacred Heart", "Rajeswari"):
+    for secret in ("96000", "96,000", "34500", "130500", "Sacred Heart", "Ashanthi"):
         assert secret not in public.text
 
 

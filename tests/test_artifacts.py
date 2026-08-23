@@ -157,7 +157,7 @@ def seeded_case(monkeypatch):
     from anbu_care.tools import onboarding_tools
 
     parent_id = onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=[],
     )["profile"]["parent_id"]
     onboarding_tools.record_family_contact(

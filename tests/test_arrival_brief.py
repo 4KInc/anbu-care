@@ -23,7 +23,7 @@ from anbu_care.tools import insurer_tools, onboarding_tools, triage_tools
 def bare_parent() -> str:
     """A parent with a profile and nothing else — no policy, no contacts."""
     return onboarding_tools.create_parent_profile(
-        name="Rajeswari M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        name="Ashanthi M.", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
         chronic_conditions=["Hypertension"], allergies=[],
     )["profile"]["parent_id"]
 
