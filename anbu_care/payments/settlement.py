@@ -4,10 +4,13 @@
 
   razorpay   a real API call to Razorpay in TEST MODE. Real order, real
              identifier, real webhook. Test-mode money, which does not exist.
-  payout     the PAYOUT shape rather than the collection shape: money pushed
-             to a beneficiary, so there is no page for anyone to open and no
-             human in the loop. Simulated until RazorpayX credentials exist,
-             and it says so on every surface.
+  razorpayx  a real payout through RazorpayX in TEST MODE. Real API call,
+             real payout object, real webhook, against a test balance topped
+             up in the dashboard. Money is pushed rather than requested, so
+             nobody opens anything. KYC gates LIVE payouts, not these.
+  payout     the payout SHAPE with no provider behind it. What razorpayx does,
+             minus the API call, for a deployment with no RazorpayX keys. It
+             says so on every surface.
   simulated  no call at all. The fallback when no keys are configured.
   off        refuse to do anything.
 
@@ -45,6 +48,9 @@ SIMULATED_LABEL = ("Settlement simulated. Production integrates a licensed "
 PAYOUT_LABEL = ("Simulated payout. The instruction, the checks and the receipts "
                 "are real; no money moved. A live payout needs RazorpayX "
                 "credentials and a funded account.")
+RAZORPAYX_LABEL = ("RazorpayX payout in test mode. The payout is real and so is "
+                   "the balance it came from; that balance is test money. "
+                   "Going live needs an activated account.")
 TEST_MODE_LABEL = ("Razorpay in test mode. The order is real; the money is not. "
                    "Going live needs a registered merchant account.")
 
@@ -53,6 +59,8 @@ TEST_MODE_LABEL = ("Razorpay in test mode. The order is real; the money is not. 
 def label() -> str:
     from anbu_care.payments import providers
 
+    if _mode() == "razorpayx":
+        return RAZORPAYX_LABEL if providers.x_configured() else PAYOUT_LABEL
     if _mode() == "payout":
         return PAYOUT_LABEL
     return TEST_MODE_LABEL if _mode() == "razorpay" and providers.configured() \
@@ -68,9 +76,11 @@ def rail() -> str:
     """
     from anbu_care.payments import providers
 
+    if _mode() == "razorpayx":
+        # Falls back rather than pretending: keys missing means the payout was
+        # not carried by RazorpayX, and the receipt must not say it was.
+        return "razorpayx-test" if providers.x_configured() else "payout-simulated"
     if _mode() == "payout":
-        # Named for what it is. When RazorpayX credentials exist this becomes
-        # "razorpayx" and nothing else about the lane changes.
         return "payout-simulated"
     return "razorpay-test" if _mode() == "razorpay" and providers.configured() \
         else "simulated"
@@ -96,14 +106,35 @@ class Settlement:
     checkout_url: str = ""
 
 
+def self_confirming() -> bool:
+    """Whether this rail reports its own completion, having no provider to wait for.
+
+    True only for the simulated payout. Every rail with something real behind
+    it — a payment link, a RazorpayX payout — leaves here unconfirmed and is
+    settled later by a webhook, because a rail that reports its own success is
+    the exact failure this lane is built to avoid.
+    """
+    return rail() == "payout-simulated"
+
+
 def initiate(*, payment_id: str, amount_inr: int, payee_ref: str,
-             payee_label: str = "", bill_id: str = "") -> Settlement:
+             payee_label: str = "", bill_id: str = "",
+             payee_vpa: str = "") -> Settlement:
     """Hand the payment to the rail. Returns INITIATED, never confirmed.
 
-    Nothing here takes a credential, and there is no parameter one could be
-    passed in. The destination arrives as a reference, not as an address,
-    because this function does not need to know where money goes in order to
-    model that it was asked to send it.
+    Nothing here takes a banking credential; the API keys authorise our own
+    account and nothing else.
+
+    On the collecting rails the destination arrives as a REFERENCE rather than
+    an address, because asking somebody to pay does not require knowing where
+    the money finally lands. A payout does — pushing money somewhere means
+    naming the somewhere — so `payee_vpa` is passed for that rail alone and
+    ignored by the others.
+
+    That is not a loosening of the rule that matters. The address still comes
+    from the mandate and never from a bill, and the payee guard has already
+    passed by the time anything here runs. What changed is only that the last
+    mile can no longer pretend not to know.
     """
     mode = _mode()
     if mode == "off":
@@ -126,7 +157,24 @@ def initiate(*, payment_id: str, amount_inr: int, payee_ref: str,
                           detail=f"{result.detail}. {TEST_MODE_LABEL}",
                           simulated=False, checkout_url=result.checkout_url)
 
-    if mode == "payout":
+    if mode == "razorpayx":
+        from anbu_care.payments import providers
+
+        if providers.x_configured():
+            result = providers.create_payout(
+                payment_id=payment_id, amount_inr=amount_inr,
+                payee_vpa=payee_vpa, payee_label=payee_label, bill_id=bill_id)
+            if not result.ok:
+                return Settlement(initiated=False, reference="", confirmed=False,
+                                  detail=result.detail, simulated=False)
+            return Settlement(initiated=True, reference=result.reference,
+                              confirmed=False,
+                              detail=f"{result.detail}. {RAZORPAYX_LABEL}",
+                              simulated=False)
+        # Configured to use RazorpayX without the keys to do it. Falls through
+        # to the simulated payout, which says what it is.
+
+    if mode in {"payout", "razorpayx"}:
         # No checkout_url, deliberately. There is nobody to hand a page to:
         # a payout is pushed, and the absence of a link is the difference
         # between this rail and the collection one, not an omission.
@@ -157,6 +205,12 @@ def confirmation_for(reference: str) -> Settlement:
     if not reference:
         return Settlement(initiated=False, reference="", confirmed=False,
                           detail="no settlement reference to confirm")
+    if reference.startswith("pout_"):
+        # A RazorpayX payout id. Confirmation for it arrives by webhook; this
+        # only describes what having one means.
+        return Settlement(initiated=True, reference=reference, confirmed=True,
+                          simulated=False,
+                          detail="the payout was reported processed. " + RAZORPAYX_LABEL)
     if reference.startswith("payout-"):
         return Settlement(initiated=True, reference=reference, confirmed=True,
                           simulated=True,

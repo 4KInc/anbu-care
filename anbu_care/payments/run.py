@@ -92,7 +92,11 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
                                  amount_inr=verdict.amount_inr,
                                  payee_ref=verdict.payee_ref,
                                  payee_label=mandate.payee_label,
-                                 bill_id=bill_id)
+                                 bill_id=bill_id,
+                                 # From the mandate, which is the only place a
+                                 # destination has ever been allowed to come
+                                 # from, and only the paying rail reads it.
+                                 payee_vpa=verdict.payee_vpa)
     if not result.initiated:
         # The rail refused. Nothing was authorised away and nothing is
         # recorded as a payment: this is an escalation like any other refusal.
@@ -135,14 +139,18 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
                      " No banking credential is held or recorded."),
         })
 
-    # A payout completes without anybody opening anything, so the report it
-    # would send back arrives immediately. It goes through `confirm` — the same
-    # door the Razorpay webhook uses — rather than being written here, because
-    # the one rule this lane has is that the code initiating a payment never
-    # writes its confirmation. Two receipts, in order, exactly as a slower rail
-    # would produce them.
+    # The simulated payout has no provider to hear back from, so its report
+    # arrives immediately. It still goes through `confirm` — the same door the
+    # webhooks use — rather than being written here, because the one rule this
+    # lane has is that the code initiating a payment never writes its own
+    # confirmation. Two receipts, in order, exactly as a slower rail produces.
+    #
+    # A REAL RazorpayX payout is deliberately not included. It leaves as
+    # `processing` and becomes `processed` later, and the webhook says when.
+    # Confirming it here would be this code asserting an outcome it has not
+    # been told, which is the whole thing being avoided.
     settled = False
-    if settlement.rail().startswith("payout"):
+    if settlement.self_confirming():
         try:
             settled = confirm(case_id=case_id,
                               payment_id=payment_id)["outcome"] == "confirmed"

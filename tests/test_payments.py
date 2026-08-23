@@ -1576,3 +1576,209 @@ def test_a_payout_never_claims_money_moved(monkeypatch):
     assert settlement.rail() == "payout-simulated"
     assert "no money moved" in settlement.label()
     assert "RazorpayX" in settlement.label(), "no route to a real payout is named"
+
+
+# =========================================================================
+# RAZORPAYX PAYOUTS
+# =========================================================================
+
+
+def _x_keys(monkeypatch, key="rzp_test_X"):
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "razorpayx")
+    monkeypatch.setenv("RAZORPAYX_KEY_ID", key)
+    monkeypatch.setenv("RAZORPAYX_KEY_SECRET", "secret")
+    monkeypatch.setenv("RAZORPAYX_ACCOUNT_NUMBER", "2323230099089860")
+
+
+def _x_api(monkeypatch, payout_status="processing"):
+    """Stand in for RazorpayX. Records every call so the shape can be asserted."""
+    from anbu_care.payments import providers
+
+    calls = []
+    providers._fund_accounts.clear()
+
+    def fake_post(path, payload, idempotency_key=""):
+        calls.append({"path": path, "payload": payload, "idem": idempotency_key})
+        if path == "/contacts":
+            return 200, {"id": "cont_TEST"}
+        if path == "/fund_accounts":
+            return 200, {"id": "fa_TEST"}
+        if path == "/payouts":
+            return 200, {"id": "pout_TEST", "status": payout_status}
+        raise AssertionError(f"unexpected RazorpayX path {path}")
+
+    monkeypatch.setattr(providers, "_x_post", fake_post)
+    return calls
+
+
+def test_a_payout_names_the_destination_and_pushes_it(case, monkeypatch):
+    """The direction that removes the person.
+
+    A payment link asks somebody to pay. A payout sends, which is why it needs
+    the address the collecting rails never see.
+    """
+    _x_keys(monkeypatch)
+    calls = _x_api(monkeypatch)
+
+    from anbu_care.payments import consider_bill
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    out = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-x1",
+                        amount_inr=31_650, extracted_payee="Sacred Heart Hospital",
+                        extracted_vendor="Sacred Heart Hospital")
+
+    assert out["outcome"] == "initiated"
+    assert out["checkout_url"] == "", "a payout offered a page to open"
+
+    payout = next(c for c in calls if c["path"] == "/payouts")
+    assert payout["payload"]["amount"] == 3_165_000, "rupees were sent as paise"
+    assert payout["payload"]["mode"] == "UPI"
+    assert payout["payload"]["fund_account_id"] == "fa_TEST"
+    assert payout["payload"]["queue_if_low_balance"] is False
+
+    fund = next(c for c in calls if c["path"] == "/fund_accounts")
+    assert fund["payload"]["vpa"]["address"] == HOSPITAL_VPA, \
+        "the destination did not come from the mandate"
+
+
+def test_a_retried_payout_cannot_pay_the_hospital_twice(case, monkeypatch):
+    """Mandatory on RazorpayX since March 2025, and the reason why."""
+    _x_keys(monkeypatch)
+    calls = _x_api(monkeypatch)
+
+    from anbu_care.payments import consider_bill
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    out = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-x1",
+                        amount_inr=31_650, extracted_payee="Sacred Heart Hospital",
+                        extracted_vendor="Sacred Heart Hospital")
+
+    payout = next(c for c in calls if c["path"] == "/payouts")
+    assert payout["idem"] == out["payment_id"], "no idempotency key on a payout"
+
+
+def test_a_real_payout_is_never_confirmed_by_the_code_that_sent_it(case, monkeypatch):
+    """It leaves as processing and becomes processed later. The webhook says when.
+
+    The simulated payout reports its own completion because it has no provider
+    to hear from. A real one does, and confirming it here would be this code
+    asserting an outcome nobody told it.
+    """
+    _x_keys(monkeypatch)
+    _x_api(monkeypatch, payout_status="processing")
+
+    from anbu_care.payments import consider_bill, money_view
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-x1",
+                  amount_inr=31_650, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    view = money_view(case_id)
+    assert view["paid_inr"] == 0, "an unconfirmed payout counted as paid"
+    assert view["initiated_unconfirmed_inr"] == 31_650
+    assert [r.kind for r in service.get_chain(case_id).receipts].count(
+        "payment.confirmed") == 0
+
+
+def test_a_live_razorpayx_key_is_refused(monkeypatch):
+    """Worse than a live collection key. This one moves money with nobody present."""
+    _x_keys(monkeypatch, key="rzp_live_X")
+    from anbu_care.payments import providers
+
+    result = providers.create_payout(payment_id="pay-1", amount_inr=100,
+                                     payee_vpa="x@bank", payee_label="X",
+                                     bill_id="b1")
+    assert result.ok is False
+    assert "non-test" in result.detail
+
+
+def test_razorpayx_without_keys_falls_back_and_says_so(monkeypatch):
+    """Configured to use a rail we cannot reach must not report using it."""
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "razorpayx")
+    for name in ("RAZORPAYX_KEY_ID", "RAZORPAYX_KEY_SECRET",
+                 "RAZORPAYX_ACCOUNT_NUMBER"):
+        monkeypatch.delenv(name, raising=False)
+
+    from anbu_care.payments import settlement
+
+    assert settlement.rail() == "payout-simulated", "claimed a rail it cannot reach"
+    assert "no money moved" in settlement.label()
+
+
+def test_the_narration_fits_what_a_bank_statement_accepts(monkeypatch):
+    """30 characters, alphanumeric and space. A rejected payout helps nobody."""
+    from anbu_care.payments import providers
+
+    narration = providers._narration("bill-8dcca734c6-interim-day-three")
+    assert len(narration) <= 30
+    assert all(c.isalnum() or c == " " for c in narration)
+
+
+def test_a_payout_webhook_settles_the_payment_it_names(case, monkeypatch):
+    """The other half: a real payout is settled by being told, not by assuming."""
+    _x_keys(monkeypatch)
+    _x_api(monkeypatch, payout_status="processing")
+
+    from anbu_care.payments import consider_bill, money_view
+    from anbu_care.payments.run import confirm_by_reference
+    from anbu_care.server import _payout_event
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-x1",
+                  amount_inr=31_650, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+    assert money_view(case_id)["paid_inr"] == 0
+
+    _payout_event("payout.processed", {"id": "pout_TEST"}, confirm_by_reference)
+
+    assert money_view(case_id)["paid_inr"] == 31_650
+    assert money_view(case_id)["initiated_unconfirmed_inr"] == 0
+
+
+def test_a_reversed_payout_is_a_failure_however_far_it_got(case, monkeypatch):
+    """The money came back. Anything that still reads as paid is wrong."""
+    _x_keys(monkeypatch)
+    _x_api(monkeypatch, payout_status="processing")
+
+    from anbu_care.payments import consider_bill, money_view
+    from anbu_care.payments.run import confirm_by_reference
+    from anbu_care.server import _payout_event
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-x1",
+                  amount_inr=31_650, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    _payout_event("payout.reversed", {"id": "pout_TEST"}, confirm_by_reference)
+
+    view = money_view(case_id)
+    assert view["paid_inr"] == 0
+    assert view["initiated_unconfirmed_inr"] == 0, "a reversed payout still counted"
+
+
+def test_a_payout_still_in_flight_settles_nothing(case, monkeypatch):
+    """queued and processing are progress, not outcome."""
+    _x_keys(monkeypatch)
+    _x_api(monkeypatch, payout_status="processing")
+
+    from anbu_care.payments import consider_bill, money_view
+    from anbu_care.payments.run import confirm_by_reference
+    from anbu_care.server import _payout_event
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="bill-x1",
+                  amount_inr=31_650, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    for event in ("payout.initiated", "payout.queued"):
+        out = _payout_event(event, {"id": "pout_TEST"}, confirm_by_reference)
+        assert out["status"] == "ignored"
+
+    assert money_view(case_id)["paid_inr"] == 0

@@ -973,6 +973,39 @@ def approve_payment(case_id: str, body: dict[str, Any],
         raise HTTPException(status_code=400, detail=str(bad)) from None
 
 
+# RazorpayX payout outcomes. `processed` is the only one that settled
+# anything: `queued` and `processing` are still in flight, and reversed means
+# the money came back, which is a failure however far it got first.
+PAYOUT_SETTLED = {"payout.processed"}
+PAYOUT_FAILED = {"payout.failed", "payout.reversed", "payout.rejected",
+                 "payout.cancelled"}
+
+
+def _payout_event(kind: str, payout: dict[str, Any], confirm_by_reference) -> dict[str, Any]:
+    """What a RazorpayX payout callback means for the payment we recorded.
+
+    Separate from the collection branch because almost nothing carries over.
+    There is no capture, no link, and no part payment: a payout either
+    completed or it did not, and the amount cannot differ from what was asked
+    because we were the ones who asked.
+    """
+    reference = str(payout.get("id") or "")
+    if not reference:
+        return {"status": "ignored", "reason": "the payout event names no payout"}
+    if kind not in PAYOUT_SETTLED | PAYOUT_FAILED:
+        # Includes payout.initiated and payout.queued, which are progress
+        # rather than outcome. Named as ignored so it is a decision.
+        return {"status": "ignored", "event": kind}
+
+    failed = kind in PAYOUT_FAILED
+    result = confirm_by_reference(
+        reference=reference,
+        note=(f"RazorpayX reported this payout {kind.split('.', 1)[1]}."
+              if failed else "RazorpayX reported this payout processed."),
+        failed=failed)
+    return {"status": "recorded", "event": kind, "result": result}
+
+
 @app.post("/api/payments/razorpay")
 async def razorpay_webhook(request: Request) -> dict[str, Any]:
     """The provider reporting what actually happened to an instruction.
@@ -1001,6 +1034,14 @@ async def razorpay_webhook(request: Request) -> dict[str, Any]:
     payload = event.get("payload") or {}
     payment = (payload.get("payment") or {}).get("entity") or {}
     link = (payload.get("payment_link") or {}).get("entity") or {}
+    payout = (payload.get("payout") or {}).get("entity") or {}
+
+    # RazorpayX reports payouts on the same endpoint and the same secret, but
+    # they are the other direction: money we pushed, not money somebody paid.
+    # Handled first, because a payout event carries no payment entity and would
+    # otherwise fall through to "nothing identifies a payment".
+    if kind.startswith("payout."):
+        return _payout_event(kind, payout, confirm_by_reference)
 
     # A payment link creates its OWN order, so a payment.captured callback
     # names an order id we have never seen. The identifier we stored is the
