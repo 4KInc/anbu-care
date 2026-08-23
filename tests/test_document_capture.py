@@ -258,7 +258,7 @@ def test_the_message_summary_never_names_a_clinical_finding(parent_id, monkeypat
 
     So there are two summaries: the count is the news, the names are the record.
     """
-    from anbu_care.comms.policy import MessageClass, TEMPLATES, classify_message, gate_message
+    from anbu_care.comms.policy import TEMPLATES, MessageClass, classify_message, gate_message
     from anbu_care.docvision.ingest import message_summary_for
 
     payload = {"observations": [
@@ -403,7 +403,7 @@ def test_no_document_message_ever_calls_it_a_bill():
 
 
 def test_the_duplicate_messages_do_not_read_as_failures():
-    from anbu_care.comms.policy import TEMPLATES, gate_message, render_template
+    from anbu_care.comms.policy import gate_message, render_template
 
     doc = render_template("document_already_recorded",
                           {"parent_name": "Amma", "subject": "lab report"})

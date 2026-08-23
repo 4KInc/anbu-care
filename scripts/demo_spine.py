@@ -32,6 +32,12 @@ from anbu_care.tools import (
 BAR = "─" * 78
 
 
+# The handset this run notifies. One constant, because the contact and the send
+# have to agree: they diverged once, and a send to a number with no contact
+# behind it is refused for lack of consent rather than failing loudly.
+FAMILY_E164 = os.getenv("ANBU_DEMO_FAMILY_E164") or "+14155550142"
+
+
 def step(n: int, title: str) -> None:
     print(f"\n{BAR}\n{n}. {title}\n{BAR}")
 
@@ -71,7 +77,7 @@ def main() -> int:
         # because a set-but-empty variable would otherwise name nobody.
         name=os.getenv("ANBU_DEMO_FAMILY_NAME") or "Heartlin Machado",
         relationship="son",
-        whatsapp_e164=os.getenv("ANBU_DEMO_FAMILY_E164") or "+14155550142",
+        whatsapp_e164=FAMILY_E164,
         timezone_name="America/Los_Angeles",
         is_primary=True,
         consent_purposes=["admission_alerts", "status_updates", "billing_updates", "claim_updates"],
@@ -128,7 +134,7 @@ def main() -> int:
     step(4, "WhatsApp — what may go out, and what must not")
     hospital = triage["recommended_hospital"]
     allowed = whatsapp_tools.send_family_update(
-        case_id=case.case_id, parent_id=parent_id, to_e164="+14155550142",
+        case_id=case.case_id, parent_id=parent_id, to_e164=FAMILY_E164,
         template_name="admission_alert",
         template_params={
             "parent_name": "Amma",
@@ -154,6 +160,11 @@ def main() -> int:
         itemized_bills_inr={"cardiac_icu_room": 96_000, "procedures": 210_000, "pharmacy": 34_500, "diagnostics": 18_000},
         diagnostics=[],
         attached_document_ids=[],
+        # A per-day sub-limit is multiplied by the length of stay, so the
+        # packet carries the dates rather than letting the arithmetic assume
+        # one day. These match the admission summary above.
+        admitted_on="2026-08-19",
+        discharged_on="2026-08-22",
     )
     packet_id = packet_result["packet"]["packet_id"]
     print(f"   packet:    {packet_id}  total INR {packet_result['packet']['total_claimed_inr']:,}")

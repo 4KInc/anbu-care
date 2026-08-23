@@ -78,8 +78,8 @@ def _line_estimate(item: str, label: str, amount: int,
     elif "icu" in key:
         stated_per_day = policy.sub_limits_inr.get("icu_per_day")
     capped = ((stated_per_day * days,
-               f"policy limit INR {stated_per_day:,}/day x {days} day(s) "
-               f"= INR {stated_per_day * days:,}")
+               (f"policy limit INR {stated_per_day:,}/day x {days} day(s) "
+                f"= INR {stated_per_day * days:,}"))
               if stated_per_day else _cap_for(key, policy.sum_insured_inr, days))
     if capped is not None:
         cap, rule = capped
@@ -292,7 +292,7 @@ def _apply_proportionate_deduction(lines, bills, policy):
             out.append(line)
             continue
         ratio, room_label = entry
-        covered = int(round(line.estimated_covered_inr * ratio))
+        covered = round(line.estimated_covered_inr * ratio)
         out.append(line.model_copy(update={
             "estimated_covered_inr": covered,
             "estimated_you_pay_inr": line.claimed_inr - covered,
@@ -318,7 +318,7 @@ def _apply_copay(lines, policy):
         if line.estimated_covered_inr <= 0:
             out.append(line)
             continue
-        covered = int(round(line.estimated_covered_inr * (100 - percent) / 100))
+        covered = round(line.estimated_covered_inr * (100 - percent) / 100)
         out.append(line.model_copy(update={
             "estimated_covered_inr": covered,
             "estimated_you_pay_inr": line.claimed_inr - covered,

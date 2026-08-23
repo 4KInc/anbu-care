@@ -24,6 +24,7 @@ that gets swallowed into silence.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
@@ -119,6 +120,9 @@ Output ONLY this JSON and nothing else:
 {"transcript": "...", "symptoms": ["..."], "urgent": true or false, "why": "short factual phrase"}
 
 If you cannot make out any speech at all, set transcript to exactly NO_SPEECH."""
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -240,7 +244,7 @@ def transcribe_dictation(audio: bytes, mime_type: str = "audio/ogg",
         try:
             text = str(_json.loads(text).get("transcript") or "").strip()
         except Exception:  # noqa: BLE001 - fall through to the raw text
-            pass
+            logger.debug("transcript JSON did not parse; using the raw text")
 
     if not text or text.upper().startswith("NO_SPEECH"):
         return Transcript(ok=False, engine="gemini",

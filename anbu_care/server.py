@@ -30,11 +30,11 @@ from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
 from anbu_care import service
-from anbu_care.money import group, inr
 from anbu_care.care_circle import notify as care_notify
 from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
 from anbu_care.kb.hospitals import KB_META, load_hospitals
+from anbu_care.money import group, inr
 from anbu_care.provenance.signing import load_signer
 from anbu_care.tools import (
     brief_tools,
@@ -907,7 +907,8 @@ def handoff_page(token: str) -> HTMLResponse:
     and malformed are indistinguishable to the holder, and none of them leak
     whether the case exists or whose it is.
     """
-    from anbu_care.handoff import access, summary as handoff_summary
+    from anbu_care.handoff import access
+    from anbu_care.handoff import summary as handoff_summary
 
     try:
         grant = access.resolve(token)
@@ -1312,7 +1313,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
                 template_name=template, template_params=params,
                 message_class=klass, purpose_override=purpose,
             )
-        except Exception:  # noqa: BLE001 - a failed telling must not hide the outcome
+        except Exception:
             logger.exception("could not report the document outcome")
             return None
 
@@ -1347,7 +1348,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
             else:
                 unreadable(rejected.subject, str(rejected))
             return
-        except Exception:  # noqa: BLE001 - never die silently
+        except Exception:
             logger.exception("document ingestion failed")
             unreadable("document", "something went wrong reading it.")
             return
@@ -1380,7 +1381,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
             tell("bill_unreadable", {"reason": str(rejected)[:200]},
                  "logistics", consent.STATUS_UPDATES)
         return
-    except Exception:  # noqa: BLE001 - never die silently
+    except Exception:
         logger.exception("bill ingestion failed")
         tell("bill_unreadable", {"reason": "something went wrong reading it."},
              "logistics", consent.STATUS_UPDATES)
@@ -1388,11 +1389,6 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
 
     bills = list_bills(case_id)
     estimate = estimate_for_case(case_id, bills)
-
-    running = ""
-    if len(bills) > 1:
-        running = (f"Across {len(bills)} bills on this stay: "
-                   f"INR {group(estimate.total_billed_inr)} billed.\n")
 
     # Quote what the bill says it comes to, not what the line items add up to.
     # An Indian bill prints a sub-total, then a discount, then GST, then a
@@ -1444,7 +1440,7 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
             case_id=case_id, parent_id=parent_id, bill_id=bill.bill_id,
             amount_inr=payable, extracted_payee=bill.vendor,
             extracted_vendor=bill.vendor)
-    except Exception:  # noqa: BLE001 - a payment decision must not kill the lane
+    except Exception:
         logger.exception("payment decision failed")
         return ""
 

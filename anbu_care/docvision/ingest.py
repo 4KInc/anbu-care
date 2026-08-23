@@ -283,7 +283,7 @@ def _apply_policy(parent_id: str, payload: dict) -> str:
         if isinstance(rupees, int) and rupees > 0:
             policy.sub_limits_inr[f"{key}_per_day"] = rupees
         elif isinstance(pct, (int, float)) and pct > 0:
-            policy.sub_limits_inr[f"{key}_per_day"] = int(round(sum_insured * pct / 100))
+            policy.sub_limits_inr[f"{key}_per_day"] = round(sum_insured * pct / 100)
 
     copay = payload.get("copay_percent")
     if isinstance(copay, (int, float)) and 0 <= copay <= 100:

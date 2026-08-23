@@ -327,7 +327,6 @@ def test_the_dashboard_script_actually_parses():
     Balanced-delimiter counting is not enough — the bug was inside otherwise
     balanced code. This parses the script the way a browser would.
     """
-    import json
     import shutil
     import subprocess
     from pathlib import Path
@@ -343,7 +342,8 @@ def test_the_dashboard_script_actually_parses():
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
             fh.write(script)
             path = fh.name
-        result = subprocess.run([node, "--check", path], capture_output=True, text=True)
+        result = subprocess.run([node, "--check", path], capture_output=True,
+                                text=True, check=False)
         assert result.returncode == 0, (
             f"the dashboard script does not parse:\n{result.stderr[:400]}")
     else:  # pragma: no cover - CI without node
@@ -351,7 +351,7 @@ def test_the_dashboard_script_actually_parses():
         # repeated on one line, which is always a botched edit.
         import re
 
-        for match in re.finditer(r"^(?:async )?function (\w+)\s*\(", script, re.M):
+        for match in re.finditer(r"^(?:async )?function (\w+)\s*\(", script, re.MULTILINE):
             line = script[match.start():script.index("\n", match.start())]
             assert line.count("function ") == 1, f"duplicated declaration: {line[:70]}"
 
@@ -364,7 +364,7 @@ def test_no_view_function_is_declared_twice():
 
     html = (Path(__file__).parent.parent / "anbu_care" / "webui" / "index.html").read_text()
     script = html[html.index("<script>"):html.rindex("</script>")]
-    names = re.findall(r"^(?:async )?function (\w+)\s*\(", script, re.M)
+    names = re.findall(r"^(?:async )?function (\w+)\s*\(", script, re.MULTILINE)
     duplicated = [n for n, c in Counter(names).items() if c > 1]
     assert not duplicated, f"declared more than once: {duplicated}"
 

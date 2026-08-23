@@ -3,6 +3,8 @@ is trying to slip past it, not just against an obvious one."""
 
 from __future__ import annotations
 
+import pathlib
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -121,36 +123,40 @@ def test_unknown_template_does_not_bypass_the_window():
 def test_every_template_renders_and_passes_its_own_gate():
     """A template that cannot pass the gate would be a trap for the agent."""
     sample = {
-        "parent_name": "Amma", "hospital_name": "Sacred Heart Hospital",
-        "hospital_area": "Thoothukudi", "reason_short": "chest pain, being assessed",
-        "status": "admitted", "timestamp": "4:12 PM", "stage": "under review",
-        "amount": "358500", "total": "358500", "line_count": "4",
-        "doctor_name": "Ravi", "department": "Cardiology",
-        "cashless_status": "Cashless approval is in progress",
-        "said": "I cannot catch my breath", "distance_km": "2.2",
+        # One entry per template parameter, and a test below asserts this dict
+        # covers exactly the set the templates ask for. It drifted into three
+        # duplicated blocks and twenty-one shadowed keys before that existed.
+        "parent_name": "Amma",
+        "status": "resting comfortably",
+        "stage": "approved",
+        "timestamp": "4:12 PM",
+        "hospital_name": "Sacred Heart Hospital",
+        "hospital_area": "Palayamkottai",
+        "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
+        "reason_short": "a fall at home",
+        "said": "I cannot catch my breath",
         "understood_as": "Understood as: chest pain.\n",
         "words_note": "Those are her own words, not a medical assessment.\n",
+        "doctor_name": "Iyer",
+        "department": "Cardiology",
+        "cashless_status": "Cashless approval is in progress",
+        "amount": "66,000",
+        "total": "1,20,000",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
-        "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
-        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
-        "reason": "the photograph was too dark to read.",
-        "document_kind": "discharge summary",
-        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
-        "applied_line": "",
-        "subject": "lab report",
-        "payee_label": "Sacred Heart Hospital",
-        "bill_kind": "interim bill",
+        "line_count": "16",
+        "this_bill": "3,70,720",
         "adjustment_line": "That is INR 3,82,720 of charges, with a discount of INR 12,000.\n",
         "payment_line": "\nThe hospital wants INR 2,70,720 of it now.\n",
         "settlement_lines": "Once the insurer settles, about INR 1,42,030 of the "
-                            "INR 3,70,720 bill is estimated to be covered, so your "
-                            "share of it is about INR 2,28,690.\n",
-        "outstanding_line": "The bill totals INR 8,890; INR 5,000 had already "
-                            "been paid against it.\n",
-        "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
-        "reason": "the amount is above the per-bill cap you set.",
+                            "INR 3,70,720 billed on this bill is estimated to be "
+                            "covered, so your share is about INR 2,28,690.\n",
+        "reason": "the photograph was too dark to read.",
+        "subject": "lab report",
+        "document_kind": "discharge summary",
+        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
+        "applied_line": "",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -240,49 +246,40 @@ def test_the_link_cannot_be_supplied_by_the_caller():
 def test_a_rendered_template_still_passes_the_gate():
     """Rewriting the copy must not accidentally trip the clinical classifier."""
     sample = {
-        "parent_name": "Amma", "status": "resting comfortably",
-        "hospital_name": "Sacred Heart Hospital", "timestamp": "4:12 PM",
-        "hospital_area": "Palayamkottai", "reason_short": "a fall at home",
-        "stage": "approved", "amount": "66,000", "total": "1,20,000",
-        "line_count": "14", "doctor_name": "Iyer", "department": "Cardiology",
-        "cashless_status": "Cashless approval is in progress",
-        "said": "I cannot catch my breath", "distance_km": "2.2",
+        # One entry per template parameter, and a test below asserts this dict
+        # covers exactly the set the templates ask for. It drifted into three
+        # duplicated blocks and twenty-one shadowed keys before that existed.
+        "parent_name": "Amma",
+        "status": "resting comfortably",
+        "stage": "approved",
+        "timestamp": "4:12 PM",
+        "hospital_name": "Sacred Heart Hospital",
+        "hospital_area": "Palayamkottai",
+        "distance_km": "2.2",
         "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
+        "reason_short": "a fall at home",
+        "said": "I cannot catch my breath",
         "understood_as": "Understood as: chest pain.\n",
         "words_note": "Those are her own words, not a medical assessment.\n",
-        "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
-        "expires_minutes": "60",
-        "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
-        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
-        "reason": "the photograph was too dark to read.",
-        "document_kind": "discharge summary",
-        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
-        "applied_line": "",
+        "doctor_name": "Iyer",
+        "department": "Cardiology",
         "cashless_status": "Cashless approval is in progress",
-        "said": "I cannot catch my breath", "distance_km": "2.2",
-        "why_hospital": "It is in your Star Health network, so the admission stays cashless.",
-        "understood_as": "Understood as: chest pain.\n",
-        "words_note": "Those are her own words, not a medical assessment.\n",
+        "amount": "66,000",
+        "total": "1,20,000",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
         "expires_minutes": "60",
-        "line_count": "16", "this_bill": "3,82,720", "running_total_line": "",
-        "estimated_covered": "2,54,500", "estimated_you_pay": "1,28,220",
-        "reason": "the photograph was too dark to read.",
-        "document_kind": "discharge summary",
-        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
-        "applied_line": "",
-        "subject": "lab report",
-        "payee_label": "Sacred Heart Hospital",
-        "bill_kind": "interim bill",
+        "line_count": "16",
+        "this_bill": "3,70,720",
         "adjustment_line": "That is INR 3,82,720 of charges, with a discount of INR 12,000.\n",
         "payment_line": "\nThe hospital wants INR 2,70,720 of it now.\n",
         "settlement_lines": "Once the insurer settles, about INR 1,42,030 of the "
-                            "INR 3,70,720 bill is estimated to be covered, so your "
-                            "share of it is about INR 2,28,690.\n",
-        "outstanding_line": "The bill totals INR 8,890; INR 5,000 had already "
-                            "been paid against it.\n",
-        "running_line": "Across this stay: INR 1,20,000 paid so far.\n",
-        "reason": "the amount is above the per-bill cap you set.",
+                            "INR 3,70,720 billed on this bill is estimated to be "
+                            "covered, so your share is about INR 2,28,690.\n",
+        "reason": "the photograph was too dark to read.",
+        "subject": "lab report",
+        "document_kind": "discharge summary",
+        "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
+        "applied_line": "",
     }
     for name, spec in TEMPLATES.items():
         body = render_template(name, {k: sample[k] for k in spec["params"]})  # type: ignore[index]
@@ -413,3 +410,26 @@ def test_a_message_opens_on_the_tab_it_is_about():
             assert spec.get("view") == "record", f"{name} should open the record"
         else:
             assert "view" not in spec, f"{name} unexpectedly names a view"
+
+
+def test_the_sample_covers_exactly_what_the_templates_ask_for():
+    """The sample dict drifted into three duplicated blocks and twenty-one
+    shadowed keys before anything checked it.
+
+    Duplicates are harmless in a test fixture and that is the problem: the
+    later value silently wins, the earlier one is dead, and nothing notices
+    until a linter does. Extra keys are the same fault in the other direction —
+    a parameter that no template asks for any more, kept alive by a fixture.
+    """
+    needed = {p for spec in TEMPLATES.values() for p in spec["params"]}
+
+    source = pathlib.Path(__file__).read_text()
+    start = source.index("    sample = {")
+    end = source.index("\n    }\n", start)
+    keys = re.findall(r'^\s{8}"(\w+)":', source[start:end], re.MULTILINE)
+
+    assert len(keys) == len(set(keys)), \
+        f"duplicated keys: {sorted(k for k in keys if keys.count(k) > 1)}"
+    assert set(keys) == needed, (
+        f"missing: {sorted(needed - set(keys))}  "
+        f"unused: {sorted(set(keys) - needed)}")

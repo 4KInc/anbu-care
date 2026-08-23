@@ -153,7 +153,7 @@ def latest_case_for_parent(parent_id: str, store: Store | None = None) -> Case |
     rows = store.query_prefix(f"PARENT#{parent_id}", "CASE#")
     if not rows:
         return None
-    newest = sorted(rows, key=lambda r: r.get("opened_at", ""))[-1]
+    newest = max(rows, key=lambda r: r.get("opened_at", ""))
     return load_case(newest["case_id"], store=store)
 
 

@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import urllib.parse
 from datetime import UTC, datetime
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -436,7 +437,7 @@ def test_the_signed_url_is_rebuilt_from_forwarded_headers():
 
     class FakeRequest:
         url = FakeURL()
-        headers = {"x-forwarded-proto": "https", "host": "anbu-care.example.app"}
+        headers: ClassVar[dict[str, str]] = {"x-forwarded-proto": "https", "host": "anbu-care.example.app"}
 
     assert public_url(FakeRequest()) == "https://anbu-care.example.app/api/wellbeing/inbound"
 
@@ -450,7 +451,7 @@ def test_a_spoofed_forwarded_header_cannot_redirect_verification():
 
     class FakeRequest:
         url = FakeURL()
-        headers = {"x-forwarded-proto": "https", "host": "evil.example.com",
+        headers: ClassVar[dict[str, str]] = {"x-forwarded-proto": "https", "host": "evil.example.com",
                    "x-original-path": "/somewhere/else"}
 
     assert public_url(FakeRequest()).endswith("/api/wellbeing/inbound")
@@ -464,6 +465,6 @@ def test_a_proxy_chain_uses_the_first_scheme_and_host():
 
     class FakeRequest:
         url = FakeURL()
-        headers = {"x-forwarded-proto": "https, http", "host": "front.example, back.internal"}
+        headers: ClassVar[dict[str, str]] = {"x-forwarded-proto": "https, http", "host": "front.example, back.internal"}
 
     assert public_url(FakeRequest()) == "https://front.example/api/wellbeing/inbound"

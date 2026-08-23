@@ -16,8 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from anbu_care import service
-from anbu_care.trace import compose_trace
 from anbu_care.tools import insurer_tools, onboarding_tools, triage_tools
+from anbu_care.trace import compose_trace
 
 
 @pytest.fixture

@@ -419,7 +419,7 @@ def registered(parent_id, case_id, monkeypatch):
 
 def test_a_bill_photo_over_whatsapp_is_ingested(client, registered, monkeypatch):
     """The whole point of the feature, end to end through the webhook."""
-    number, parent_id, case_id = registered
+    number, _parent_id, case_id = registered
     _reads(monkeypatch, [ICU, PHARM], stated=130_500)
     monkeypatch.setattr("anbu_care.comms.inbound.verify_twilio_signature",
                         lambda *a, **k: None)

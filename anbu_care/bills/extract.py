@@ -148,7 +148,7 @@ def _coerce_amount(value: object) -> int | None:
     if isinstance(value, int):
         return value if value >= 0 else None
     if isinstance(value, float):
-        return int(round(value)) if value >= 0 else None
+        return round(value) if value >= 0 else None
     if isinstance(value, str):
         cleaned = re.sub(r"[^\d.]", "", value)
         if not cleaned or cleaned.count(".") > 1:
@@ -157,7 +157,7 @@ def _coerce_amount(value: object) -> int | None:
             number = float(cleaned)
         except ValueError:
             return None
-        return int(round(number)) if number >= 0 else None
+        return round(number) if number >= 0 else None
     return None
 
 

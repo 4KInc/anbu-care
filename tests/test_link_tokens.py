@@ -51,7 +51,7 @@ def two_families():
 
 def test_a_link_for_one_case_cannot_read_another(client, two_families):
     """Two different families. A link minted for one must be inert on the other."""
-    (pid_a, case_a), (pid_b, case_b) = two_families
+    (pid_a, case_a), (_pid_b, case_b) = two_families
     token = make_link_token(pid_a, case_a)
 
     assert client.get(f"/api/cases/{case_a}?t={token}").status_code == 200
@@ -59,7 +59,7 @@ def test_a_link_for_one_case_cannot_read_another(client, two_families):
 
 
 def test_a_link_cannot_read_a_different_parents_record(client, two_families):
-    (pid_a, case_a), (pid_b, case_b) = two_families
+    (pid_a, case_a), (pid_b, _case_b) = two_families
     token = make_link_token(pid_a, case_a)
 
     assert client.get(f"/api/parents/{pid_a}?t={token}&case={case_a}").status_code == 200
@@ -99,7 +99,7 @@ def test_a_forged_signature_is_refused(client, two_families):
 
 @pytest.mark.parametrize("junk", ["", "nonsense", "123", "123.", ".sig", "abc.def"])
 def test_malformed_tokens_are_refused_not_crashed(client, two_families, junk):
-    (pid_a, case_a), _ = two_families
+    (_pid_a, case_a), _ = two_families
     assert client.get(f"/api/cases/{case_a}?t={junk}").status_code == 401
 
 

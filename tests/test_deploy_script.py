@@ -1,6 +1,7 @@
 
 import pathlib
 
+
 def test_the_env_var_separator_appears_in_no_value():
     """The deploy died on this. The separator was ^@^ and an email address
     contains @, so ANBU_DEMO_FAMILY_EMAIL split mid-value and gcloud rejected
@@ -15,7 +16,7 @@ def test_the_env_var_separator_appears_in_no_value():
 
     script = (pathlib.Path(__file__).resolve().parents[1]
               / "infra" / "deploy_cloud_run.sh").read_text()
-    match = re.search(r'--set-env-vars "\^(.+?)\^(.+?)"', script, re.S)
+    match = re.search(r'--set-env-vars "\^(.+?)\^(.+?)"', script, re.DOTALL)
     assert match, "no --set-env-vars flag with a custom separator"
 
     separator = match.group(1)

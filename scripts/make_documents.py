@@ -53,7 +53,9 @@ def _font(size: int, bold: bool = False):
         for base in ("/System/Library/Fonts/Supplemental/", "/System/Library/Fonts/"):
             try:
                 return ImageFont.truetype(base + name, size)
-            except Exception:  # noqa: BLE001
+            except OSError:
+                # Not installed here. Try the next path; the caller falls back
+                # to PIL's default if none of them load.
                 continue
     return ImageFont.load_default(size)
 

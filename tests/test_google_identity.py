@@ -17,6 +17,8 @@ opens is the part somebody has to get right.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -80,7 +82,7 @@ def test_a_token_is_verified_against_googles_keys_not_decoded_here():
     """A JWT read in the browser proves nothing; anyone can mint one. The
     verification has to be a signature check against Google's published keys
     with our own client id pinned as the audience."""
-    source = (webauth.__file__ and open(webauth.__file__).read()) or ""
+    source = pathlib.Path(webauth.__file__).read_text() if webauth.__file__ else ""
     assert "verify_oauth2_token" in source
     assert "google_requests.Request()" in source
     # The audience is pinned. Without it, a token minted for ANY Google app is

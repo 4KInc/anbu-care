@@ -52,7 +52,9 @@ def _font(size: int, bold: bool = False):
     for path in candidates:
         try:
             return ImageFont.truetype(path, size)
-        except Exception:  # noqa: BLE001 - fall through to the default
+        except OSError:
+            # This candidate is not installed. Try the next one; the caller
+            # falls back to PIL's default if none of them load.
             continue
     return ImageFont.load_default(size)
 

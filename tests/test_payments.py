@@ -125,7 +125,7 @@ def test_settlement_is_unreachable_from_the_agent_and_tool_layers():
 
 def test_settlement_is_not_exported_from_the_package():
     """`from anbu_care.payments import settlement` must not be the easy path."""
-    import anbu_care.payments as payments
+    from anbu_care import payments
 
     assert "settlement" not in payments.__all__
     assert not hasattr(payments, "initiate")
@@ -747,7 +747,7 @@ def test_the_payment_form_holds_no_credential_field():
     assert 'id="mvpa"' in form          # the address, which is the point
     for word in ("pin", "cvv", "password", "card", "otp", "secret"):
         assert f'id="{word}' not in form.lower()
-        assert f'type="password"' not in form.lower()
+        assert 'type="password"' not in form.lower()
 
 
 def test_the_refusal_is_the_visual_lead():
@@ -1040,9 +1040,8 @@ def test_the_settlement_block_says_what_scope_it_is(case, monkeypatch):
     so both figures came out larger than the bill they were said to be part of.
     That is not a wording problem; it is a sentence that cannot be true.
     """
-    from anbu_care.bills import ingest_bill_image
+    from anbu_care.bills import ingest_bill_image, list_bills
     from anbu_care.bills.coverage import estimate_for_case
-    from anbu_care.bills import list_bills
     from anbu_care.server import _settlement_lines
 
     parent_id, case_id = case
@@ -1051,7 +1050,6 @@ def test_the_settlement_block_says_what_scope_it_is(case, monkeypatch):
     estimate = estimate_for_case(case_id, list_bills(case_id))
 
     lines = _settlement_lines(bill, estimate)
-    payable = estimate.total_billed_inr - estimate.total_discount_inr
 
     # One bill: no "across N bills" claim, and the total is the real one.
     assert "on this bill" in lines
@@ -1105,8 +1103,8 @@ def test_the_interim_fixture_is_designed_to_clear(case):
     check — including the two that are easy to trip by accident: near-cap
     (90% of the per-bill cap) and vendor identity against the mandate.
     """
-    from scripts.make_bill_images import INTERIM_DAY_TWO
     from anbu_care.payments.enforcer import NEAR_CAP_FRACTION
+    from scripts.make_bill_images import INTERIM_DAY_TWO
 
     balance = next(a for label, a, _ in INTERIM_DAY_TWO["totals"]
                    if label == "BALANCE DUE")
