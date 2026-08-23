@@ -79,15 +79,28 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/cases/whatever/verify     # 20
 
 This is the beat that cannot be faked, so prove it before you roll.
 
-- [ ] Twilio sandbox webhook points at
-      `$URL/api/wellbeing/inbound`, method POST
-      (Console → Messaging → Try it out → Send a WhatsApp message → Sandbox settings)
-- [ ] Re-send **`join school-rate`** to **+1 415 523 8886** from the handset.
-      The sandbox session expires after 3 days and the 24-hour freeform window
-      has to be open. Do this even if you joined yesterday.
+**The sandbox is gone.** Anbu Care has its own WhatsApp sender now —
+`+1 239 453 5380`, display name **Anbu Care**, which is what the chat header
+reads. No `join school-rate`, no shared Twilio number, no Twilio logo.
+
+```bash
+uv run python scripts/verify_whatsapp_sender.py
+```
+
+- [ ] That script reports online, named, and pointed at this deployment. It
+      checks the three things that fail silently: a sender that is ONLINE with
+      no webhook (outbound works, every inbound photograph vanishes), a display
+      name that never got set, and a deployment still pointed at a different
+      sender.
+- [ ] **Message the sender once from the handset before recording.** WhatsApp's
+      24-hour window is per business-number-and-handset pair, and this is a new
+      number — no window exists until she writes first. Without it the first
+      outbound send fails at Twilio rather than in our code, which looks exactly
+      like a bug in the demo.
 - [ ] Send one throwaway `slept well` and confirm you get
-      **"Thanks, that's noted."** back. If you get a Twilio demo echo instead,
-      the webhook URL did not save.
+      **"Thanks, that's noted."** back — and that the chat header says
+      **Anbu Care**, not Twilio. That single reply proves the window is open,
+      the webhook is wired and the sender is branded, in one action.
 - [ ] Send one throwaway **voice note** and confirm it comes back transcribed,
       not as "could not make out what she said". Voice takes about ten seconds
       against a Twilio ceiling of roughly fifteen, so a cold start is the thing
@@ -740,4 +753,5 @@ demo skips it.
 - [ ] If you re-shoot, seed a fresh family first. Regenerating the images is not
       enough on its own for bills, which dedup per case.
 - [ ] Revoke the Twilio API key if the demo account is going idle.
-- [ ] The sandbox opt-in expires in 3 days — re-join before any re-shoot.
+- [ ] No sandbox opt-in to renew any more. But the 24-hour window still
+      closes: message the sender from the handset before any re-shoot.
