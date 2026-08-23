@@ -40,7 +40,9 @@ from anbu_care.schemas import PaymentMandate
 # discovered. These are code. No prompt can move them.
 SPIKE_FACTOR = 3.0            # amount vs the running mean of prior bills
 SPIKE_NEEDS_PRIORS = 2        # a mean of one number is not a mean
-BURST_WINDOW_HOURS = 6        # a second bill this soon is not a billing cycle
+BURST_WINDOW_HOURS = 6        # how far back "unattended just now" reaches
+BURST_FRACTION = 0.5          # of the total authority, spent unattended, in that window
+BURST_COUNT = 10              # a backstop against a lane paying in a loop
 NEAR_CAP_FRACTION = 0.90      # sitting just under a cap is a signature
 LATE_WINDOW_FRACTION = 0.90   # the last tenth of the mandate window
 
@@ -71,6 +73,11 @@ def payee_ref(vpa: str) -> str:
     money anywhere, which is why this and not the raw VPA goes on the chain.
     """
     return hashlib.sha256(vpa.strip().lower().encode()).hexdigest()[:16]
+
+
+def _aware(moment: datetime) -> datetime:
+    """A stored timestamp that lost its tzinfo is still UTC."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment
 
 
 def _hours_between(later: datetime, earlier: datetime) -> float:
@@ -129,16 +136,36 @@ def _anomalies(amount: int, mandate: PaymentMandate, history: list,
     # drained while nobody is watching, and a payment a person approved means
     # somebody was watching minutes ago. Counting those made an ordinary second
     # bill suspicious purely because its owner had just dealt with the first.
+    #
+    # And it measures MONEY, not events. It used to refuse any second automatic
+    # payment inside the window, which is not what draining looks like: two
+    # small pharmacy bills an hour apart drain nothing, while the second real
+    # bill of any hospital stay was made to wait six hours for no reason a
+    # family could follow. A stay bills more than once a day; that is the
+    # normal case, not the suspicious one.
+    #
+    # What is worth stopping is the authority going quickly while nobody looks.
+    # So: how much of the total the family granted has been spent unattended in
+    # the window, including this bill. Half of it in six hours is a thing a
+    # person should see before it becomes all of it.
     unattended = [p for p in history if getattr(p, "autonomous", True)]
-    if unattended:
-        last = max(p.initiated_at for p in unattended)
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=UTC)
-        gap = _hours_between(now, last)
-        if 0 <= gap < BURST_WINDOW_HOURS:
+    recent = [p for p in unattended
+              if 0 <= _hours_between(now, _aware(p.initiated_at)) < BURST_WINDOW_HOURS]
+    if recent:
+        spent = sum(p.amount_inr for p in recent) + amount
+        ceiling = BURST_FRACTION * mandate.total_cap_inr
+        if mandate.total_cap_inr > 0 and spent > ceiling:
             found.append(
-                f"burst: a second automatic payment {gap:.1f} hours after the "
-                f"last one, inside the {BURST_WINDOW_HOURS}h window")
+                f"burst: INR {group(spent)} would be paid automatically within "
+                f"{BURST_WINDOW_HOURS}h, over {BURST_FRACTION:.0%} of the INR "
+                f"{group(mandate.total_cap_inr)} you authorised in total")
+        elif len(recent) + 1 > BURST_COUNT:
+            # Amounts can be small enough to stay under the fraction for ever.
+            # No stay bills eleven times in six hours; a lane in a loop does.
+            found.append(
+                f"burst: this would be automatic payment number {len(recent) + 1} "
+                f"within {BURST_WINDOW_HOURS}h, which is more than a billing "
+                f"cycle produces")
 
     # A bill from a DIFFERENT HOSPITAL. The destination is locked either way, so
     # this is not a redirection risk — it is worse in a quieter way: paying the

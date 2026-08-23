@@ -271,7 +271,13 @@ def test_an_anomalous_but_in_cap_bill_still_escalates(case):
     assert "amount_spike" in result["reason"]
 
 
-def test_a_second_bill_within_hours_escalates(case):
+def test_an_ordinary_second_bill_the_same_day_is_paid(case):
+    """A stay bills more than once a day. That is the normal case.
+
+    This used to refuse any second automatic payment inside six hours, which
+    made the second real bill of an admission wait for a reason no family could
+    follow — and caught nothing, because two small bills drain nothing.
+    """
     parent_id, case_id = case
     _mandate(case_id, parent_id)
     base = datetime.now(UTC)
@@ -280,6 +286,46 @@ def test_a_second_bill_within_hours_escalates(case):
 
     result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="B",
                            amount_inr=21_000, now=base + timedelta(hours=1))
+    assert result["outcome"] == "initiated", result.get("reason")
+
+
+def test_spending_half_the_authority_unattended_still_stops(case):
+    """What the signal is actually for: the authority going fast, unwatched.
+
+    Not "a second payment happened" but "most of what you granted is gone in an
+    afternoon and nobody has looked at it yet".
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000, total=100_000)
+    base = datetime.now(UTC)
+
+    consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A",
+                  amount_inr=30_000, now=base)
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="B",
+                           amount_inr=30_000, now=base + timedelta(hours=1))
+
+    assert result["outcome"] == "escalated"
+    assert "burst" in result["reason"]
+    assert "60,000" in result["reason"], "the figure that triggered it is not named"
+
+
+def test_many_tiny_payments_in_a_row_still_stop(case):
+    """Amounts small enough to stay under the fraction for ever.
+
+    No stay bills eleven times in six hours. A lane in a loop does.
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000, total=400_000)
+    base = datetime.now(UTC)
+
+    for i in range(10):
+        out = consider_bill(case_id=case_id, parent_id=parent_id, bill_id=f"T{i}",
+                            amount_inr=200, now=base + timedelta(minutes=i))
+        assert out["outcome"] == "initiated", f"bill {i}: {out.get('reason')}"
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="T10",
+                           amount_inr=200, now=base + timedelta(minutes=11))
+    assert result["outcome"] == "escalated"
     assert "burst" in result["reason"]
 
 
@@ -1165,11 +1211,11 @@ def test_a_human_approval_does_not_make_the_next_payment_suspicious(case):
     assert result["outcome"] == "initiated", result.get("reason")
 
 
-def test_two_automatic_payments_in_a_row_still_escalate(case):
+def test_two_unattended_payments_draining_the_authority_still_escalate(case):
     """The other half. Nobody was watching either time, which is the case the
-    signal is actually for."""
+    signal is actually for — but it is the MONEY that makes it one."""
     parent_id, case_id = case
-    _mandate(case_id, parent_id, per_bill=50_000)
+    _mandate(case_id, parent_id, per_bill=50_000, total=80_000)
     base = datetime.now(UTC)
 
     consider_bill(case_id=case_id, parent_id=parent_id, bill_id="A",
@@ -1181,7 +1227,7 @@ def test_two_automatic_payments_in_a_row_still_escalate(case):
 
     assert result["outcome"] == "escalated"
     assert "burst" in result["reason"]
-    assert "automatic payment" in result["reason"]
+    assert "you authorised in total" in result["reason"]
 
 
 def test_nothing_is_called_paid_until_it_is_confirmed():
