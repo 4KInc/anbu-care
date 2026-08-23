@@ -984,7 +984,7 @@ def test_an_approval_says_what_happened():
     approve = page[page.index("async function approvePayment("):]
     approve = approve[:approve.index("\n}")]
     assert "S.payNote" in approve
-    assert "not settled yet" in approve
+    assert "Not settled yet" in approve
 
     view = page[page.index("function vPayments()"):page.index("function refusalCard")]
     assert "S.payNote" in view, "the note is never rendered"

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Atkinson Hyperlegible Next: drawn for low-vision readers. For an eldercare
      record read by frightened people on a phone, that is the right typeface.
-     A webfont only, with a full fallback stack — no CDN scripts ship here. -->
+     A webfont only, with a full fallback stack. No CDN scripts ship here. -->
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* Design system: "Vigilant Care", generated in Google Stitch for this project.
@@ -33,7 +33,7 @@ html{-webkit-text-size-adjust:100%}
 body{background:var(--surface);color:var(--ink);font-family:var(--font);
      font-size:16px;line-height:1.5;padding-bottom:84px;-webkit-font-smoothing:antialiased}
 /* Atkinson Hyperlegible slashes its zero on purpose, to separate 0 from O for
-   low-vision readers. That is the reason the typeface was chosen — but on a
+   low-vision readers. That is the reason the typeface was chosen, but on a
    recorded screen the slash reads as a rendering glitch, and it lands on every
    rupee figure in the demo. Turn the feature off rather than give up the
    typeface: the letterform disambiguation that matters most here is in the
@@ -88,7 +88,7 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
    load-bearing: this record is public, and without them a screenshot of a
    synthetic patient reads as a real one. Alarm-red trained the eye to skip it,
    which is the one failure that would actually cost us. So it drops to a
-   footnote — muted ground, a single amber rule down the left edge — and keeps
+   footnote: muted ground, a single amber rule down the left edge, and keeps
    saying exactly what it said. */
 .strip.demo{background:var(--slate-bg);color:var(--ink-soft);
             border:1px solid var(--line);border-left:3px solid var(--amber);
@@ -428,7 +428,7 @@ const last  = k => { const a=kinds(k); return a.length?a[a.length-1]:null; };
 function hospitalName(t){
   const id=t.payload.recommended_hospital_id;
   const h=(t.payload.ranked||[]).find(x=>x.hospital_id===id);
-  return h?h.name:(id||"—");
+  return h?h.name:(id||"not known");
 }
 function describe(r){
   const p=r.payload||{};
@@ -436,9 +436,9 @@ function describe(r){
     case "case.opened": return "Case opened.";
     case "intake.signal_received": return "Intake signal received from an external channel.";
     case "triage.decision": return `Triage assessed severity ${p.severity}.`;
-    case "comms.sent": return "Family message accepted by WhatsApp for delivery (sandbox — real delivery to opted-in test numbers; acceptance, not handset receipt).";
-    case "comms.not_delivered": return "Message permitted by the gate, but no transport was configured — nothing was sent.";
-    case "comms.blocked": return "Message blocked before sending — clinical detail may not go over WhatsApp.";
+    case "comms.sent": return "Family message accepted by WhatsApp for delivery (sandbox, real delivery to opted-in test numbers; acceptance, not handset receipt).";
+    case "comms.not_delivered": return "Message permitted by the gate, but no transport was configured, so nothing was sent.";
+    case "comms.blocked": return "Message blocked before sending. Clinical detail may not go over WhatsApp.";
     case "claim.packet_assembled": return "Claim packet assembled.";
     case "evidence.assessed": return `Evidence assessed: ${p.gate}.`;
     case "evidence.enriched": return "Evidence enriched before submission.";
@@ -489,9 +489,9 @@ function vNow(){
        <div class="why">${esc((t.payload.severity_rationale||[])[0]||"")}</div>
        <div class="hosp">${esc(hospitalName(t))}</div>
        <div class="pills">
-         <span class="pill p-teal">${(t.payload.ranked||[]).find(h=>h.hospital_id===t.payload.recommended_hospital_id)?.distance_km ?? "—"} km · cashless network</span>
+         <span class="pill p-teal">${(t.payload.ranked||[]).find(h=>h.hospital_id===t.payload.recommended_hospital_id)?.distance_km ?? "distance not known"} km · cashless network</span>
        </div>`
-      :`<div class="sev ok"><b>—</b></div><div class="why">${unknown("triage has not run on this case")}</div>`}
+      :`<div class="sev ok"><b>·</b></div><div class="why">${unknown("triage has not run on this case")}</div>`}
   </div>
   ${sig?`<div class="card edge-teal">
     <div class="row"><div class="k">Episode began</div>
@@ -499,7 +499,7 @@ function vNow(){
         <span class="why2">${esc(sig.payload.label)}</span></div></div>
   </div>`:""}
   <div class="card">
-    <h2>Case timeline — every entry is a signed receipt</h2>
+    <h2>Case timeline</h2>
     <div class="tl">
       ${(S.trail.receipts||[]).map(r=>{
         const alert=r.kind==="comms.blocked";
@@ -534,13 +534,13 @@ function vBrief(){
     const state = n => {
       const r = (last.results||[]).find(x=>x.to_e164===n);
       if(!r) return `<span class="pill">not notified on this case</span>`;
-      if(!r.consented) return `<span class="pill p-amber">no consent — nothing sent</span>`;
+      if(!r.consented) return `<span class="pill p-amber">no consent, nothing sent</span>`;
       if(r.delivered) return `<span class="pill p-green">notified</span>`;
       return `<span class="pill p-red">not delivered</span>`;
     };
     return `<div class="card"><h2>Care circle</h2>
       <div class="pills" style="margin-bottom:12px">
-        <span class="pill p-amber">NOTIFIED PARTIES — NOT INTEGRATED PROVIDERS</span></div>
+        <span class="pill p-amber">NOTIFIED PARTIES, NOT INTEGRATED PROVIDERS</span></div>
       ${c.contacts.map(x=>`
         <div class="row">
           <div class="k">${esc(x.name)} · ${esc(x.relationship)}</div>
@@ -563,7 +563,7 @@ function vBrief(){
     }
     return `<div class="card"><h2>Check-ins</h2>
       <div class="pills" style="margin-bottom:12px">
-        <span class="pill p-amber">SELF-REPORTED — NOT A MEASURED VITAL</span></div>
+        <span class="pill p-amber">SELF-REPORTED, NOT A MEASURED VITAL</span></div>
       ${e.entries.slice(0,8).map(x=>`
         <div class="row stack">
           <div class="k">${esc(new Date(x.received_at).toLocaleString())} · ${esc(x.source)}</div>
@@ -577,7 +577,7 @@ function vBrief(){
   return `${synthOnce()}
   ${title("Arrival brief","What is waiting when you land, and what is not yet known.")}
   <div class="strip note"><b>State as of ${esc(b.as_of?new Date(b.as_of).toLocaleString():"no activity recorded")}</b><br>
-    A snapshot of what has been recorded — not a live view. Anbu Care does not monitor continuously.</div>
+    A snapshot of what has been recorded, not a live view. Anbu Care does not monitor continuously.</div>
   <div class="card"><h2>Where things stand</h2>${(b.facts||[]).map(f).join("")}</div>
   ${checkIns()}
   ${careCircle()}
@@ -593,7 +593,7 @@ function vBrief(){
   <div class="card"><h2>Bring with you</h2>${(b.bring_with_you||[]).map(f).join("")}</div>
   <div class="card"><h2>Who to contact</h2>${(b.contacts||[]).map(f).join("")}</div>
   <div class="card"><h2>Grounding</h2><p class="mute">
-    ${(b.facts||[]).filter(x=>!x.known).length} item(s) not yet known — shown rather than guessed.
+    ${(b.facts||[]).filter(x=>!x.known).length} item(s) not yet known, shown rather than guessed.
     Every line carries the receipt or stored field it came from.</p></div>`;
 }
 
@@ -673,7 +673,7 @@ function vHandoff(){
       </div>
     </div>
     <p class="mute" style="margin-top:12px">Anyone holding this link can read the summary until it
-      expires. Every time it is opened, a receipt is written to this case — you will see it on the
+      expires. Every time it is opened, a receipt is written to this case. You will see it on the
       audit trail. It does not identify who opened it, because a link cannot.</p>
   </div>`;
 
@@ -1017,7 +1017,7 @@ function vBills(){
       <span><span class="key" style="background:var(--red)"></span>Estimated to pay <b>${inr(pay)}</b></span>
     </div>
     <div class="pills" style="margin-top:12px">
-      <span class="pill p-amber">ESTIMATE — NOT THE INSURER'S DECISION</span>
+      <span class="pill p-amber">ESTIMATE, NOT THE INSURER'S DECISION</span>
       ${est.needs_review?`<span class="pill p-red">A LINE NEEDS CHECKING</span>`:""}
       ${est.may_understate?`<span class="pill p-red">LIKELY TO BE MORE THAN THIS</span>`:""}
     </div>
@@ -1067,7 +1067,7 @@ function vBills(){
       </div>`).join("")}
     <div class="row"><div class="k">Actually settled</div>
       <div class="v">${est.settled_inr===null||est.settled_inr===undefined
-        ? unknown("no adjudication yet — nobody has decided anything, which is not the same as nothing being owed")
+        ? unknown("no adjudication yet. Nobody has decided anything, which is not the same as nothing being owed")
         : inr(est.settled_inr)}</div></div>
     <p class="mute" style="margin-top:12px">${esc(est.disclaimer||"")}</p>
     <p class="mute" style="margin-top:6px">${esc(est.basis||"")}</p>
@@ -1094,7 +1094,7 @@ function vPayments(){
                         :"background:var(--red-bg);color:var(--red-ink)"}">
      ${esc(S.payNote)}</div>`:""}
   ${S.signInFor?signInPanel(S.signInFor):""}
-  <div class="strip note">Settlement is simulated — production integrates a licensed
+  <div class="strip note">Settlement is simulated. Production integrates a licensed
     payment provider, and no money moves in this build. Autonomy is bounded: the agent
     pays only inside the limits you set, and anything else comes to you.</div>
   ${open.map(refusalCard).join("")}
@@ -1114,7 +1114,7 @@ function vPayments(){
 function refusalCard(e){
   const named = String(e.failing_check || "a check").replace(/_/g, " ");
   return `<div class="refusal">
-    <span class="named">not paid — ${esc(named)}</span>
+    <span class="named">not paid: ${esc(named)}</span>
     <div class="head">
       <div><strong>Bill ${esc(e.bill_id)}</strong> needs you</div>
       <div class="amt">${inr(e.amount_inr)}</div>
@@ -1134,7 +1134,7 @@ function vMandate(m, p){
   if(!m) return `<div class="card edge-amber">
     <h2 class="mini">No payment mandate</h2>
     <p>Every interim bill needs your approval. Nothing is paid automatically,
-      and nothing can be — there is no authorised destination on this case.</p>
+      and nothing can be: there is no authorised destination on this case.</p>
     ${S.token?`<div class="btns"><button class="btn" onclick="showMandateForm()">
       Set up automatic payment</button></div>`:`<p class="mute" style="margin-top:10px">
       Granting one needs a signed-in family session.</p>`}
@@ -1164,7 +1164,7 @@ function vMoney(p){
       <p class="mute" style="margin-top:4px">confirmed by the rail</p></div>
     <div class="moneybox"><div class="k">Initiated, not confirmed</div>
       <div class="v">${inr(p.initiated_unconfirmed_inr)}</div>
-      <p class="mute" style="margin-top:4px">sent, and not yet acknowledged — not counted as paid</p></div>
+      <p class="mute" style="margin-top:4px">sent, and not yet acknowledged. Not counted as paid</p></div>
   </div>`;
 }
 
@@ -1200,11 +1200,11 @@ function paymentCard(x){
   return `<div class="cleared">
     <div class="head" style="display:flex;justify-content:space-between;gap:12px">
       <div><strong>Bill ${esc(x.bill_id)}</strong>
-        ${x.autonomous?" — cleared without waking anyone":" — you approved this"}</div>
+        ${x.autonomous?" · paid automatically":" · you approved this"}</div>
       <div class="num" style="font-weight:800">${inr(x.amount_inr)}</div>
     </div>
     <p class="mute" style="margin-top:4px">
-      ${x.confirmed?"Settled (simulated).":"Initiated. Not settled — this is not counted as paid."}
+      ${x.confirmed?"Settled (simulated).":"Initiated. Not settled, so it is not counted as paid."}
       Paid to ${esc(x.payee_label)}.</p>
     ${(x.guards_passed||[]).length?`<div class="guards">${
       x.guards_passed.map(g=>`<span class="guard">${esc(String(g).replace(/_/g," "))}</span>`).join("")
@@ -1312,7 +1312,7 @@ async function approvePayment(billId, amount){
     // Say what happened. The refusal card disappears on reload, and a card
     // vanishing with nothing in its place reads as a failure.
     S.payNote = r.ok
-      ? `Approved. ${inr(out.amount_inr ?? amount)} initiated to ${out.payee_label || "the hospital"} — not settled yet.`
+      ? `Approved. ${inr(out.amount_inr ?? amount)} initiated to ${out.payee_label || "the hospital"}. Not settled yet.`
       : `Not approved: ${out.detail || `HTTP ${r.status}`}`;
     S.payNoteOk = r.ok;
   } catch(e){ S.payNote = `Not approved: ${String(e)}`; S.payNoteOk = false;
@@ -1372,7 +1372,7 @@ function vClaim(){
   </div>
   ${adjs.length>1?`<div class="delta base" style="border:0;margin-top:4px"><span class="ic">✓</span>
     <span>The claim was queried, the missing document was found on the record, and it was
-    resubmitted — that is what the receipts above record.</span></div>`:""}`;
+    resubmitted. That is what the receipts above record.</span></div>`:""}`;
 }
 
 function vAudit(){
@@ -1382,10 +1382,10 @@ function vAudit(){
     <div class="row"><div class="k"><span class="pill p-teal">open</span></div>
       <div class="v long"><code class="hash">/api/cases/{id}/verify</code>
         <span class="why2">Proves the record was not altered without revealing what it says.
-        No credential — anyone can check us, including you, from a terminal.</span></div></div>
+        No credential. Anyone can check us, including you, from a terminal.</span></div></div>
     <div class="row"><div class="k"><span class="pill p-red">credentialed</span></div>
       <div class="v long"><code class="hash">/api/parents/{id}</code> · <code class="hash">/trail</code> · <code class="hash">/brief</code>
-        <span class="why2">Return case or patient content. Rejected with 401 without a session —
+        <span class="why2">Return case or patient content. Rejected with 401 without a session.
         server-side, not a hidden link.</span></div></div>
   </div>
   <div class="card">
@@ -1423,11 +1423,11 @@ function gate(){
   <div class="card edge-teal">
     <h2>Clinical view</h2>
     <p style="font-size:15px;line-height:1.6">The health record holds lab values and diagnoses. It is
-    refused by the server without a credential — that refusal is what lets the WhatsApp gate
+    refused by the server without a credential, and that refusal is what lets the WhatsApp gate
     promise this data lives somewhere protected.</p>
     <p class="mute" style="margin-top:10px">A signed link sent to a consented family member is also a
     credential, and opens this view directly. The demo credential is not a secret; it is published in
-    the README. Secrecy is not what is being shown here — server-side enforcement is.</p>
+    the README. Secrecy is not what is being shown here; server-side enforcement is.</p>
     ${S.authError?`<p class="mute" style="color:var(--red-ink);margin-top:10px">${esc(S.authError)}</p>`:""}
     <div class="btns" style="align-items:center">
       <div id="gbtn"></div>

@@ -468,3 +468,42 @@ def test_the_logo_is_public_and_carries_nothing(client):
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
     assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_the_dashboard_copy_uses_no_em_dashes():
+    """The same rule the WhatsApp templates already live under.
+
+    An em dash reads as authored voice, and the dashboard is a record somebody
+    consults rather than an essay somebody wrote. Comments keep theirs: nobody
+    reads those but us, and the rule is about what the product says.
+
+    One exception, and it is not copy: a character class that matches a dosing
+    schedule printed as 1-0-0 with a hyphen, an en dash or an em dash. That
+    parses input; it does not produce a sentence.
+    """
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+
+    offenders = []
+    for number, line in enumerate(page.splitlines(), 1):
+        stripped = line.strip()
+        if "—" not in line:
+            continue
+        if stripped.startswith(("//", "*", "/*")):
+            continue
+        if "rest.match(" in line:          # the dosing-pattern character class
+            continue
+        offenders.append(f"{number}: {stripped[:70]}")
+
+    assert not offenders, "em dashes in dashboard copy:\n  " + "\n  ".join(offenders)
+
+
+def test_the_dashboard_does_not_narrate_the_demo():
+    """Phrases that pitch rather than report. The product is a record; the
+    demo is where the case gets made, and it is made by a person."""
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "anbu_care" / "webui" / "index.html").read_text()
+
+    for phrase in ("without waking anyone", "no other entry", "watch it decide",
+                   "the whole point", "this is the beat"):
+        assert phrase not in page, f"the dashboard is pitching: {phrase!r}"
