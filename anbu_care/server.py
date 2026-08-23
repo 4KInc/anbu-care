@@ -14,9 +14,11 @@ import json
 import logging
 import os
 import urllib.parse
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import (
     BackgroundTasks,
@@ -30,6 +32,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
+from anbu_care import intake as intake_ledger
 from anbu_care import service
 from anbu_care.care_circle import notify as care_notify
 from anbu_care.comms import consent, inbound
@@ -72,6 +75,74 @@ app = get_fast_api_app(
     host="0.0.0.0",
     port=int(os.getenv("PORT", "8080")),
 )
+
+
+async def _sweep_intakes_forever() -> None:
+    """Pick up reads the previous container did not survive, then keep watching.
+
+    A Cloud Run instance is replaced on every deploy and on every scale-down,
+    and a bill read runs after the response, so a container can go while a
+    photograph is halfway through being read. The instance that replaces it is
+    the first thing to exist afterwards, which makes startup the right moment
+    to look for what it left behind.
+
+    The first pass waits out the lease deliberately: a read the outgoing
+    instance actually finished must not be read a second time on the way past.
+    """
+    import asyncio
+
+    await asyncio.sleep(intake_ledger.LEASE.total_seconds() + 5)
+    while True:
+        try:
+            await asyncio.to_thread(_sweep_intakes)
+        except Exception:  # a sweep must never be the thing that ends the loop
+            logger.exception("intake sweep failed")
+        await asyncio.sleep(60)
+
+
+# ADK supplies its own lifespan, and Starlette ignores on_startup handlers when
+# a lifespan is set — registering one looked right, ran never, and would have
+# left the sweeper as decoration. So the sweeper is wrapped around ADK's
+# lifespan rather than registered beside it.
+_adk_lifespan = app.router.lifespan_context
+
+
+@asynccontextmanager
+async def _lifespan(scoped_app):
+    import asyncio
+
+    sweeper = asyncio.create_task(_sweep_intakes_forever())
+    try:
+        async with _adk_lifespan(scoped_app):
+            yield
+    finally:
+        sweeper.cancel()
+
+
+app.router.lifespan_context = _lifespan
+
+
+def _demo_family_timezone() -> str:
+    """The clock the seeded family's messages are written against.
+
+    Every alert says what time it was where the person reading it is, which is
+    the whole point of quoting both ends: "1:47 AM in Thoothukudi" only means
+    something next to the reader's own afternoon. Hardcoded to Pacific, it told
+    a reader in Central that a message ninety seconds old had arrived two hours
+    ago, which reads as a stale alert about something already over.
+
+    Same reasoning as the number and the email: whoever is being demonstrated
+    to has a real clock, and it belongs in the environment rather than in the
+    source. An unusable value degrades to UTC and says so, because a zone that
+    silently resolves to a different wrong one is the bug this replaces.
+    """
+    name = (os.getenv("ANBU_DEMO_FAMILY_TZ") or "").strip() or "America/Los_Angeles"
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("ANBU_DEMO_FAMILY_TZ=%r is not an IANA zone; using UTC", name)
+        return "UTC"
+    return name
 
 
 class IntakeSignalRequest(BaseModel):
@@ -296,7 +367,7 @@ def demo_seed() -> dict[str, Any]:
         # default, which means the seeded contact cannot sign in — sending
         # messages and reading the record are separate permissions here.
         email=os.getenv("ANBU_DEMO_FAMILY_EMAIL") or "",
-        timezone_name="America/Los_Angeles",
+        timezone_name=_demo_family_timezone(),
         # Per-recipient, and English by default: the son reads English while
         # his mother reads Tamil, which is the whole point of the preference
         # living on the person rather than on the deployment.
@@ -1451,13 +1522,97 @@ def _handle_bill_photo(sender: Any, media: Any, background: BackgroundTasks) -> 
             "has not been recorded. Send it again once a case is open."
         )
 
-    background.add_task(_read_bill_and_report, case_id, sender.parent_id,
-                        media.data, media.mime_type)
+    # Written down BEFORE the acknowledgement, because the acknowledgement
+    # promises a second message and nothing else was holding the photograph to
+    # that promise. A deploy killed this instance nine seconds into a read once
+    # and the family got the promise and then silence.
+    held = intake_ledger.record(sender.parent_id, case_id, media.data, media.mime_type)
+    if held is None:
+        # No bucket, or the upload failed. The read still runs, and still
+        # answers, but it is back to being only as durable as this container.
+        logger.warning("bill photo for %s is not recoverable if this instance dies",
+                       sender.parent_id)
+
+    background.add_task(_read_intake, case_id, sender.parent_id,
+                        media.data, media.mime_type, held)
     return _twiml(
         "Got that. Reading it now. What it turned out to be, and anything it "
         "changes, will follow in a moment. Nothing is recorded until it has "
         "been read."
     )
+
+
+def _read_intake(case_id: str, parent_id: str, image: bytes, mime_type: str,
+                 held: Any | None) -> None:
+    """Read one photograph and close its row. Never raises.
+
+    The row is what makes a dropped read recoverable, so it is closed only once
+    a message has actually gone out. An instance killed inside the read leaves
+    it open with a lease that expires, and the next sweep picks it up.
+    """
+    try:
+        _read_bill_and_report(case_id, parent_id, image, mime_type)
+    except BaseException:
+        # Includes the SystemExit an eviction raises. Leave the row open so
+        # somebody else finishes the job rather than closing it on a failure.
+        if held is not None:
+            intake_ledger.release(held, "attempt failed")
+        raise
+    if held is not None:
+        intake_ledger.finish(held)
+
+
+def _sweep_intakes(limit: int = 5) -> int:
+    """Read the photographs whose readers did not survive. Returns how many ran.
+
+    Called on startup and from the inbound webhook. Startup is the one that
+    matters: the instance replacing the one that died is the first thing to
+    exist afterwards, so it is the natural place to notice the work it left.
+    """
+    owner = os.getenv("K_REVISION") or "local"
+    done = 0
+    for held in intake_ledger.stale()[:limit]:
+        if held.exhausted:
+            _give_up_on(held)
+            continue
+        if not intake_ledger.claim(held, owner):
+            continue
+
+        image = intake_ledger.image_for(held)
+        if image is None:
+            intake_ledger.finish(held, intake_ledger.ABANDONED,
+                                 "the photograph is no longer in the bucket")
+            _tell_unreadable(held, "it could not be retrieved to be read")
+            continue
+
+        logger.info("sweeping intake %s (attempt %s)", held.intake_id, held.attempts)
+        _read_intake(held.case_id, held.parent_id, image, held.mime_type, held)
+        done += 1
+    return done
+
+
+def _give_up_on(held: Any) -> None:
+    """Say so, once, rather than leaving a row open forever."""
+    intake_ledger.finish(held, intake_ledger.ABANDONED,
+                         f"gave up after {held.attempts} attempts")
+    _tell_unreadable(held, "it could not be read after several attempts")
+
+
+def _tell_unreadable(held: Any, reason: str) -> None:
+    profile = service.load_profile(held.parent_id)
+    contacts = profile.family_contacts if profile else []
+    contact = next((c for c in contacts if c.is_primary), None) or next(iter(contacts), None)
+    if contact is None:
+        return
+    try:
+        whatsapp_tools.send_family_update(
+            case_id=held.case_id, parent_id=held.parent_id,
+            to_e164=contact.whatsapp_e164, template_name="document_unreadable",
+            template_params={"subject": "document", "reason": f"{reason}. Please send it again."},
+            message_class="logistics", purpose_override=consent.STATUS_UPDATES,
+        )
+    except Exception:
+        logger.exception("could not report an abandoned intake")
 
 
 def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type: str) -> None:

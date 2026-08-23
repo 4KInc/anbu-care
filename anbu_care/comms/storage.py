@@ -169,3 +169,28 @@ def signed_url(object_name: str) -> StoredArtifact:
         detail=f"signed for {int(SIGNED_URL_TTL.total_seconds() // 60)} minutes",
         expires_in_seconds=int(SIGNED_URL_TTL.total_seconds()),
     )
+
+
+def fetch(object_name: str) -> bytes | None:
+    """The bytes of an object already in the bucket, or None.
+
+    The counterpart to `store`, and the reason a dropped read can be retried at
+    all: an instance that dies mid-read leaves the photograph in the bucket and
+    nothing in memory, so the instance that picks the work up has to be able to
+    read the image back rather than ask the family to send it again.
+
+    None means "not available", never a partial or a placeholder. A caller that
+    gets None has nothing to read and must say so.
+    """
+    bucket_name = _bucket_name()
+    if not bucket_name:
+        return None
+
+    try:
+        from google.cloud import storage as gcs
+
+        client = gcs.Client()
+        blob = client.bucket(bucket_name).blob(object_name)
+        return blob.download_as_bytes()
+    except Exception:  # noqa: BLE001 - any failure means "no bytes"
+        return None
