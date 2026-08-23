@@ -1469,9 +1469,7 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
             f"It has been paid automatically, inside the limits you set: "
             f"checked against your per-bill cap, your total cap, the window, "
             f"and the one account you authorised.\n"
-            f"{running}"
-            f"A paid interim amount is normally adjusted when the insurer "
-            f"settles.\n\n")
+            f"{running}\n")
 
 
 def _settlement_lines(bill, estimate) -> str:

@@ -909,7 +909,10 @@ def test_one_photograph_produces_one_message():
     # And the helper returns copy rather than sending its own message.
     helper = inspect.getsource(server._consider_payment)
     assert "tell(" not in helper, "_consider_payment still sends its own message"
-    assert "normally adjusted when the insurer" in helper
+    # Said once, against the bill it is about, rather than twice in one message.
+    owed = inspect.getsource(server._owed_now)
+    assert "settled with them rather than kept by the" in owed
+    assert helper.count("insurer") <= 1, "the settlement point is repeated"
 
 
 def test_the_message_explains_what_a_paid_interim_amount_means():
@@ -921,7 +924,10 @@ def test_the_message_explains_what_a_paid_interim_amount_means():
     from anbu_care import server
 
     helper = inspect.getsource(server._consider_payment)
-    assert "normally adjusted when the insurer" in helper
+    # Said once, against the bill it is about, rather than twice in one message.
+    owed = inspect.getsource(server._owed_now)
+    assert "settled with them rather than kept by the" in owed
+    assert helper.count("insurer") <= 1, "the settlement point is repeated"
 
     # And the immediate demand is named separately from the eventual estimate,
     # with the advance accounting for the gap between them.
