@@ -286,3 +286,23 @@ def test_the_avatar_never_falls_back_to_a_stock_person_icon():
     page = _page()
     assert "function initials(" in page
     assert 'S.who?.picture' in page
+
+
+def test_a_link_holder_is_not_told_they_are_not_signed_in():
+    """They are reading the record on the page that link just opened. A signed
+    link is a credential; the menu saying otherwise contradicts the screen."""
+    page = _page()
+    assert "if(!S.token && !S.linkToken) return" in page
+    assert "Opened from a link" in page
+    # And it says the one thing a link cannot do, which is why the share card
+    # asks them to sign in.
+    assert "share with a clinician" in page
+
+
+def test_the_account_menu_sits_above_the_nav():
+    """The bar creates a stacking context, so a menu inside it could never rise
+    above the nav while both sat at the same z-index and the nav came later."""
+    page = _page()
+    bar = page[page.index(".bar{position:sticky"):]
+    bar = bar[:bar.index("}")]
+    assert "z-index:50" in bar

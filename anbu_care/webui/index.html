@@ -42,7 +42,7 @@ body, input, button, pre, code{font-feature-settings:"zero" 0, "ss01" 0;
                                font-variant-numeric:normal}
 
 /* ---- app bar ---------------------------------------------------------- */
-.bar{position:sticky;top:0;z-index:30;background:var(--card);
+.bar{position:sticky;top:0;z-index:50;background:var(--card);
      border-bottom:1px solid var(--line);padding:12px var(--pad)}
 .bar-in{max-width:760px;margin:0 auto;display:flex;align-items:center;
         justify-content:space-between;gap:12px}
@@ -1213,25 +1213,48 @@ function renderAccount(){
   const slot = document.getElementById("acct");
   if(!slot) return;
   const signedIn = !!S.token;
+  const credentialed = signedIn || !!S.linkToken;
   const name = S.who?.name || (signedIn ? "Signed in" : "");
   const picture = S.who?.picture;
 
   const face = picture
     ? `<img src="${esc(picture)}" alt="">`
-    : signedIn ? esc(initials(name)) : "◔";
+    : signedIn ? esc(initials(name)) : S.linkToken ? "◱" : "◔";
 
-  slot.innerHTML = `<button class="avatar ${signedIn?"signed":""}" id="avatarbtn"
+  slot.innerHTML = `<button class="avatar ${credentialed?"signed":""}" id="avatarbtn"
       onclick="toggleAccount(event)" aria-haspopup="true"
       aria-expanded="${ACCOUNT_OPEN?"true":"false"}"
-      title="${signedIn?esc(name):"Not signed in"}">${face}</button>
+      title="${signedIn?esc(name):S.linkToken?"Opened from a link":"Not signed in"}"
+      >${face}</button>
     ${ACCOUNT_OPEN?accountMenu():""}`;
 }
 
 function accountMenu(){
-  if(!S.token) return `<div class="menu" id="acctmenu">
+  if(!S.token && !S.linkToken) return `<div class="menu" id="acctmenu">
     <h4>Not signed in</h4>
     <p class="mute" style="margin-top:6px">The clinical record needs a credential.
       Open the Record tab to sign in.</p>
+  </div>`;
+
+  // Opened from a link rather than a session. The holder is credentialed for
+  // exactly this case and nothing else, which is worth saying plainly: it is
+  // why the sharing controls ask them to sign in first.
+  if(!S.token) return `<div class="menu" id="acctmenu">
+    <h4>Opened from a link</h4>
+    <p class="mute" style="margin-top:6px">The link sent to this family opened this
+      case. It is a credential, and it is scoped to this case alone.</p>
+    <div class="grp">
+      <h5>This session</h5>
+      <div class="line"><span>Can open</span><span>${
+        S.record?.profile?.name?esc(S.record.profile.name)+"'s record":"this case"}</span></div>
+      <div class="line"><span>Cannot</span><span>share with a clinician</span></div>
+      <p class="mute" style="margin-top:8px">Sharing creates a new link for someone
+        else to hold, so it needs a signed-in family session.</p>
+    </div>
+    <div class="grp">
+      <button class="act" onclick="copyCase()">Copy case id</button>
+      <button class="act" onclick="closeAccount();signIn()">Sign in as the family</button>
+    </div>
   </div>`;
 
   const contact = signedInContact();
