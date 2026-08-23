@@ -374,7 +374,20 @@ def test_no_view_function_is_declared_twice():
 # =========================================================================
 
 
-def test_a_signed_link_opens_the_health_record_it_was_minted_for(client, seeded):
+@pytest.fixture
+def link_secret(monkeypatch):
+    """A signing secret the tests own.
+
+    `make_link_token` returns None without one, and a None token fails these
+    tests in ways that look like the auth logic broke rather than like the
+    environment is empty. CI has no .env, which is exactly the environment
+    these tests should be assuming.
+    """
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-boundary-secret")
+
+
+def test_a_signed_link_opens_the_health_record_it_was_minted_for(client, seeded,
+                                                                link_secret):
     """The message says "what was read from it is here". The link must arrive.
 
     A family member who followed the link they were sent was shown a credential
@@ -392,7 +405,7 @@ def test_a_signed_link_opens_the_health_record_it_was_minted_for(client, seeded)
     assert "profile" in response.json()
 
 
-def test_a_link_minted_for_one_parent_cannot_read_another(client, seeded):
+def test_a_link_minted_for_one_parent_cannot_read_another(client, seeded, link_secret):
     """Scope is the whole reason this is a credential rather than a URL."""
     from anbu_care.webauth import make_link_token
 
@@ -405,7 +418,7 @@ def test_a_link_minted_for_one_parent_cannot_read_another(client, seeded):
     assert client.get(f"/api/parents/{other}?t={token}&case={case_id}").status_code == 401
 
 
-def test_an_expired_link_reads_nothing(client, seeded):
+def test_an_expired_link_reads_nothing(client, seeded, link_secret):
     from anbu_care.webauth import make_link_token
 
     parent_id, case_id = seeded
@@ -414,7 +427,7 @@ def test_an_expired_link_reads_nothing(client, seeded):
                       ).status_code == 401
 
 
-def test_a_tampered_link_reads_nothing(client, seeded):
+def test_a_tampered_link_reads_nothing(client, seeded, link_secret):
     from anbu_care.webauth import make_link_token
 
     parent_id, case_id = seeded
