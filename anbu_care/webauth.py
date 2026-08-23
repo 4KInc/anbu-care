@@ -106,7 +106,119 @@ def link_token_grants(token: str, *, parent_id: str = "", case_id: str = "",
     return hmac.compare_digest(expected, presented)
 
 
-def require_family_session(authorization: str | None = Header(default=None)) -> str:
+# ---- a real person, not a shared string ----------------------------------
+#
+# The demo token proves server-side enforcement, which is what it exists for.
+# It does not prove IDENTITY: everyone who has read the README holds it. That
+# is a fair thing to point at in a system whose central claim is that clinical
+# detail is refused over WhatsApp *because* it lives behind a credential.
+#
+# So a Google account is accepted as a second credential, and the two halves
+# are kept apart on purpose:
+#
+#   AUTHENTICATION  Google says this is a real, verified account. The ID token
+#                   is verified against Google's keys server-side. A JWT read
+#                   in the browser proves nothing — anyone can mint one.
+#   AUTHORISATION   That account must already be a family contact on the parent
+#                   being read. Being a real person is not permission to read
+#                   somebody's mother's lab results.
+#
+# Default deny. An account nobody put on the record gets 403, not a record.
+GOOGLE_CLIENT_ID_ENV = "ANBU_GOOGLE_CLIENT_ID"
+
+UNAUTHORISED_DETAIL = (
+    "That Google account is signed in, but it is not on this parent's list of "
+    "family contacts, so it cannot read their record. Being a verified account "
+    "is not the same as being someone this family added."
+)
+
+
+def google_client_id() -> str | None:
+    value = os.getenv(GOOGLE_CLIENT_ID_ENV)
+    return value.strip() or None if value else None
+
+
+def verify_google_identity(token: str) -> dict | None:
+    """Google's claims for this ID token, or None if it is not one.
+
+    Verified against Google's published keys, with the audience pinned to our
+    own client id — a token minted for a different application is a valid
+    Google token and still not a credential for this one.
+    """
+    client_id = google_client_id()
+    if not client_id or token.count(".") != 2:
+        return None
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token as google_id_token
+
+        claims = google_id_token.verify_oauth2_token(
+            token, google_requests.Request(), client_id
+        )
+    except Exception:  # noqa: BLE001 - an unverifiable token is simply not one
+        return None
+
+    # An unverified address is a string somebody typed, and this one decides
+    # whose medical record opens.
+    if not claims.get("email") or not claims.get("email_verified"):
+        return None
+    return claims
+
+
+def _parent_for(request: Request) -> str | None:
+    """Which parent this request is asking about, from the path it is on."""
+    parent_id = request.path_params.get("parent_id")
+    if parent_id:
+        return str(parent_id)
+    case_id = request.path_params.get("case_id") or request.query_params.get("case", "")
+    if case_id:
+        from anbu_care import service
+
+        case = service.load_case(str(case_id))
+        return case.parent_id if case else None
+    return None
+
+
+def _is_family_contact(parent_id: str, email: str) -> bool:
+    from anbu_care import service
+
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return False
+    wanted = email.strip().lower()
+    # An empty address must never match a contact who has none. Without this,
+    # any account presenting a blank email would authenticate as every contact
+    # who does not sign in — the emptiest possible credential opening the most
+    # records. `verify_google_identity` already refuses a claim with no email;
+    # this is the same refusal at the layer that actually decides, because the
+    # bypass only needs one of the two to be relaxed later.
+    if not wanted:
+        return False
+    return any((c.email or "").strip().lower() == wanted
+               for c in profile.family_contacts)
+
+
+def _google_session(request: Request, presented: str) -> str | None:
+    """A verified Google account that is on this parent's contacts, or 401/403.
+
+    Returns None when the token is not a Google one at all, so the caller can
+    fall through to the other credentials rather than treating every bad
+    bearer as an identity failure.
+    """
+    claims = verify_google_identity(presented)
+    if claims is None:
+        return None
+
+    parent_id = _parent_for(request)
+    if parent_id is None or not _is_family_contact(parent_id, claims["email"]):
+        # 403, not 401: signing in again will not help, and saying "log in"
+        # to someone already logged in sends them round a loop.
+        raise HTTPException(status_code=403, detail=UNAUTHORISED_DETAIL)
+    return f"google:{claims['sub']}"
+
+
+def require_family_session(request: Request,
+                           authorization: str | None = Header(default=None)) -> str:
     """Reject anything without a valid family bearer token.
 
     Constant-time compare — the token is not a secret here, but a credential
@@ -116,9 +228,14 @@ def require_family_session(authorization: str | None = Header(default=None)) -> 
         raise HTTPException(status_code=401, detail=UNAUTHENTICATED_DETAIL)
 
     presented = authorization.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(presented, DEMO_TOKEN):
-        raise HTTPException(status_code=401, detail=UNAUTHENTICATED_DETAIL)
-    return presented
+    if hmac.compare_digest(presented, DEMO_TOKEN):
+        return presented
+
+    session = _google_session(request, presented)
+    if session is not None:
+        return session
+
+    raise HTTPException(status_code=401, detail=UNAUTHENTICATED_DETAIL)
 
 
 def require_case_access(request: Request,
@@ -138,6 +255,9 @@ def require_case_access(request: Request,
         presented = authorization.split(" ", 1)[1].strip()
         if hmac.compare_digest(presented, DEMO_TOKEN):
             return presented
+        session = _google_session(request, presented)
+        if session is not None:
+            return session
 
     token = request.query_params.get("t", "")
     if token:

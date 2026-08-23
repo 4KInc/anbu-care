@@ -122,6 +122,7 @@ def record_family_contact(
     timezone_name: str,
     is_primary: bool,
     consent_purposes: list[str],
+    email: str = "",
 ) -> dict[str, Any]:
     """Register a family member and their purpose-specific consent.
 
@@ -138,6 +139,9 @@ def record_family_contact(
         is_primary: Whether this is the primary decision-maker.
         consent_purposes: Purposes consented to, from:
             "admission_alerts", "status_updates", "billing_updates", "claim_updates".
+        email: Google account address this contact signs in with, or "" if they
+            do not sign in. Messages go to the WhatsApp number either way;
+            this is only what a dashboard session is matched against.
 
     Returns:
         The stored contact with consent timestamps.
@@ -150,6 +154,7 @@ def record_family_contact(
         name=name,
         relationship=relationship,
         whatsapp_e164=whatsapp_e164,
+        email=email.strip().lower(),
         timezone=timezone_name,
         is_primary=is_primary,
         consents={purpose: now for purpose in consent_purposes},

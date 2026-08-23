@@ -98,6 +98,11 @@ class FamilyContact(BaseModel):
     name: str
     relationship: str
     whatsapp_e164: str
+    # The address a Google sign-in is matched against. WhatsApp identifies
+    # people by number and Google by email, so linking the two has to be
+    # recorded rather than guessed. Empty means this contact cannot sign in —
+    # they still receive messages, they just have no dashboard identity.
+    email: str = ""
     timezone: str = "UTC"
     is_primary: bool = False
     # Display only: "family" or "care_circle". Nothing reads this to decide

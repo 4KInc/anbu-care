@@ -9,6 +9,7 @@ family or insurer can call without going through an agent.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import urllib.parse
@@ -16,7 +17,14 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
-from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+)
 from fastapi.responses import FileResponse, HTMLResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
@@ -107,6 +115,50 @@ def dashboard() -> FileResponse:
     """
     return FileResponse(WEBUI, media_type="text/html",
                         headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/auth-config")
+def auth_config() -> dict[str, Any]:
+    """What sign-in methods this deployment offers.
+
+    The Google client id is public by design — it identifies the application
+    to Google and is embedded in every page that offers the button. What is
+    secret is nothing: the security is that the ID TOKEN is verified server
+    side against Google's keys, with this id pinned as the audience.
+    """
+    from anbu_care.webauth import google_client_id
+
+    return {
+        "google_client_id": google_client_id(),
+        "demo_sign_in": True,
+        "note": ("A Google account must already be a family contact on the "
+                 "parent being read. Signing in is not permission."),
+    }
+
+
+@app.get("/api/whoami")
+def whoami(request: Request,
+           authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Who the presented credential says you are. Never 401s.
+
+    A sign-in that succeeds but shows nothing is indistinguishable from one
+    that failed, so the dashboard asks this and puts a name in the header.
+    """
+    from anbu_care.webauth import DEMO_TOKEN, verify_google_identity
+
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return {"signed_in": False}
+
+    presented = authorization.split(" ", 1)[1].strip()
+    if hmac.compare_digest(presented, DEMO_TOKEN):
+        return {"signed_in": True, "method": "demo", "name": "the family (demo)"}
+
+    claims = verify_google_identity(presented)
+    if claims is None:
+        return {"signed_in": False}
+    return {"signed_in": True, "method": "google",
+            "name": claims.get("name") or claims.get("email"),
+            "email": claims.get("email"), "picture": claims.get("picture")}
 
 
 @app.get("/api/healthz")
