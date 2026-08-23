@@ -1212,9 +1212,14 @@ function vMoney(p){
 function vUnconsidered(){
   const p = S.pay, b = S.bills;
   if(!p || !b || !b.bills || !S.token) return "";
+  // Only a refusal that still stands counts as decided. One superseded by a
+  // mandate being granted since is filed, not settled, so its bill comes back
+  // here and asks to be checked rather than sitting under a closed refusal
+  // with no way to act on it.
   const decided = new Set([
     ...(p.payments || []).map(x => x.bill_id),
-    ...(p.escalations || []).map(x => x.bill_id),
+    ...(p.escalations || []).filter(x => x.open || !x.superseded_by_mandate)
+       .map(x => x.bill_id),
   ]);
   const waiting = b.bills.filter(x => (x.balance_due_inr || 0) > 0
                                       && !decided.has(x.bill_id));

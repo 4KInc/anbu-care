@@ -331,6 +331,14 @@ def escalations(case_id: str) -> list[dict]:
     """
     receipts = service.get_chain(case_id).receipts
 
+    # "Nobody authorised this" stops being true the moment somebody does. The
+    # refusal was correct when it was made and stays on the chain, but it must
+    # not keep leading the page with a reason that now contradicts the mandate
+    # printed directly beneath it. The bill is not paid by this — it goes back
+    # to waiting for a decision, which is a thing the family is asked to make
+    # rather than one made for them while they were not looking.
+    mandate_now_exists = mandates.live_for_case(case_id) is not None
+
     last_escalated: dict[str, object] = {}
     last_resolved: dict[str, int] = {}
 
@@ -353,7 +361,12 @@ def escalations(case_id: str) -> list[dict]:
             "reason": payload.get("reason"),
             "guards_passed": payload.get("guards_passed") or [],
             "at": receipt.created_at.isoformat(),
-            # Resolved when something paid this bill AFTER it was refused.
-            "open": last_resolved.get(bill_id, 0) <= receipt.seq,
+            # Resolved when something paid this bill AFTER it was refused, or
+            # when the thing it was waiting for has since happened.
+            "open": (last_resolved.get(bill_id, 0) <= receipt.seq
+                     and not (payload.get("failed_check") == "mandate_present"
+                              and mandate_now_exists)),
+            "superseded_by_mandate": (payload.get("failed_check") == "mandate_present"
+                                      and mandate_now_exists),
         })
     return sorted(out, key=lambda e: e["at"])

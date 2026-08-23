@@ -320,3 +320,95 @@ def test_a_second_person_is_still_a_second_contact(monkeypatch):
         )
 
     assert len(service.load_profile(pid).family_contacts) == 2
+
+
+# ---- a refusal must not outlive its own reason ----------------------------
+
+
+def test_granting_a_mandate_retires_the_refusal_that_asked_for_one():
+    """"Nobody authorised this" stops being true the moment somebody does.
+
+    The refusal was right when it was made and stays on the chain. What it must
+    not do is keep leading the Claim tab with a reason that contradicts the
+    mandate printed directly beneath it.
+    """
+    from anbu_care import service
+    from anbu_care.payments import consider_bill, escalations, grant
+    from anbu_care.schemas import ParentProfile
+
+    pid = service.new_id("parent")
+    service.save_profile(ParentProfile(parent_id=pid, name="A", age=71,
+                                       city="Thoothukudi", lat=8.7, lon=78.1,
+                                       family_contacts=[]))
+    case = service.open_case(pid)
+
+    consider_bill(case_id=case.case_id, parent_id=pid, bill_id="bill-1",
+                  amount_inr=38_450, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    before = escalations(case.case_id)
+    assert before[0]["failing_check"] == "mandate_present"
+    assert before[0]["open"] is True
+
+    grant(parent_id=pid, case_id=case.case_id, payee_vpa="sacredheart@okhdfcbank",
+          payee_label="Sacred Heart Hospital", per_bill_cap_inr=50_000,
+          total_cap_inr=150_000, hours=48, granted_by="Heartlin Machado")
+
+    after = escalations(case.case_id)
+    assert after[0]["open"] is False, "the stale refusal still leads the page"
+    assert after[0]["superseded_by_mandate"] is True
+    # Still on the record. Retiring a refusal is not deleting it.
+    assert after[0]["failing_check"] == "mandate_present"
+
+
+def test_granting_a_mandate_does_not_quietly_pay_the_bill_it_unblocks():
+    """Two automatic payments inside six hours is the burst check firing.
+
+    If granting a mandate paid the outstanding bill on the spot, the next bill
+    photographed that afternoon would escalate as a burst — so the family would
+    have armed automatic payment and immediately lost it.
+    """
+    from anbu_care import service
+    from anbu_care.payments import consider_bill, grant, money_view
+    from anbu_care.schemas import ParentProfile
+
+    pid = service.new_id("parent")
+    service.save_profile(ParentProfile(parent_id=pid, name="A", age=71,
+                                       city="Thoothukudi", lat=8.7, lon=78.1,
+                                       family_contacts=[]))
+    case = service.open_case(pid)
+    consider_bill(case_id=case.case_id, parent_id=pid, bill_id="bill-1",
+                  amount_inr=38_450, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    grant(parent_id=pid, case_id=case.case_id, payee_vpa="sacredheart@okhdfcbank",
+          payee_label="Sacred Heart Hospital", per_bill_cap_inr=50_000,
+          total_cap_inr=150_000, hours=48, granted_by="Heartlin Machado")
+
+    view = money_view(case.case_id)
+    assert view["payment_count"] == 0, "granting a mandate moved money by itself"
+    assert view["mandate"]["remaining_inr"] == 150_000
+
+
+def test_a_refusal_for_any_other_reason_still_stands_after_a_mandate():
+    """Only the refusal that asked for a mandate is answered by one."""
+    from anbu_care import service
+    from anbu_care.payments import consider_bill, escalations, grant
+    from anbu_care.schemas import ParentProfile
+
+    pid = service.new_id("parent")
+    service.save_profile(ParentProfile(parent_id=pid, name="A", age=71,
+                                       city="Thoothukudi", lat=8.7, lon=78.1,
+                                       family_contacts=[]))
+    case = service.open_case(pid)
+    grant(parent_id=pid, case_id=case.case_id, payee_vpa="sacredheart@okhdfcbank",
+          payee_label="Sacred Heart Hospital", per_bill_cap_inr=50_000,
+          total_cap_inr=150_000, hours=48, granted_by="Heartlin Machado")
+
+    consider_bill(case_id=case.case_id, parent_id=pid, bill_id="bill-big",
+                  amount_inr=62_000, extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    over_cap = next(e for e in escalations(case.case_id) if e["bill_id"] == "bill-big")
+    assert over_cap["failing_check"] == "per_bill_cap"
+    assert over_cap["open"] is True, "an over-cap refusal was retired by a mandate"
