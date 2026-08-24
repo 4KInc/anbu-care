@@ -62,6 +62,7 @@ _WHAT = {
     "voice.placed": "A call was placed",
     "voice.not_placed": "A call was not placed",
     "clinician.note": "A clinician left a note",
+    "diagnostic.referral": "Options were surfaced for a clinician-ordered test",
     "emergency.access": "The emergency summary was opened",
     "mandate.granted": "A family member authorised automatic payment",
     "mandate.revoked": "Automatic payment was stopped",
@@ -175,6 +176,15 @@ def _detail(receipt: Receipt) -> str:
 
         case "clinician.note":
             return str(p.get("captured") or "note recorded")
+
+        case "diagnostic.referral":
+            count = p.get("option_count") or 0
+            stated = str(p.get("mobility_as_stated") or "unknown")
+            mobility = ("the clinician did not say whether she can travel"
+                        if stated == "unknown" else
+                        f"the clinician recorded her as {stated.replace('_', '-')}")
+            return (f"{count} option(s) found, {p.get('source_label', '')} "
+                    f"Nothing was booked, and {mobility}")
 
         case "emergency.access":
             return str(p.get("scope") or "summary read")

@@ -37,6 +37,7 @@ from anbu_care import service
 from anbu_care.care_circle import notify as care_notify
 from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
+from anbu_care.diagnostics import places as diagnostics_places
 from anbu_care.kb.hospitals import KB_META, load_hospitals
 from anbu_care.money import group, inr
 from anbu_care.provenance.signing import load_signer
@@ -1285,6 +1286,12 @@ class NoteConfirmRequest(BaseModel):
     # note is still recorded — as typed, which is what it would be.
     ticket: str = ""
     recorded_by: str = ""
+    # A test the clinician is ordering, in their own words. Empty for an
+    # ordinary note, and the note path is unchanged when it is.
+    orders_test: str = ""
+    # Only what the clinician stated: ambulatory, non_ambulatory, or unknown.
+    # Anything else is recorded as unknown rather than guessed at.
+    mobility: str = "unknown"
 
 
 @app.post("/handoff/{token}/note/draft")
@@ -1325,9 +1332,137 @@ def handoff_note_confirm(token: str, body: NoteConfirmRequest) -> dict[str, Any]
     try:
         grant = access.resolve(token)
         return notes.confirm(grant, body.text, ticket=body.ticket,
-                             recorded_by=body.recorded_by)
+                             recorded_by=body.recorded_by,
+                             # Optional, and empty for an ordinary note. The
+                             # clinician orders the test; nothing here does.
+                             orders_test=body.orders_test,
+                             mobility=body.mobility)
     except access.HandoffDenied as denied:
         raise HTTPException(status_code=403, detail=str(denied)) from None
+
+
+@app.get("/api/cases/{case_id}/diagnostics")
+def case_diagnostics(case_id: str,
+                     _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """Clinician-ordered tests on this case, and what was surfaced for them.
+
+    Credentialed, because the test a doctor ordered is clinical detail about
+    her. The chain says a referral happened; only this says what for.
+    """
+    orders = service.list_diagnostic_orders(case_id)
+    return {
+        "case_id": case_id,
+        "orders": [o.model_dump(mode="json") for o in orders],
+        "source": diagnostics_places.source(),
+        "source_label": diagnostics_places.source_label(),
+    }
+
+
+@app.post("/api/cases/{case_id}/diagnostics/{order_id}/options")
+def diagnostic_options(case_id: str, order_id: str,
+                       _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """What the son does: find where this test can actually be done.
+
+    Credentialed at family level because it causes a real outbound search and
+    writes to the chain. The ORDER is not created here — it must already exist,
+    recorded by a clinician. A referral with no order behind it is refused
+    rather than invented, which is the whole first wall of this feature.
+    """
+    from anbu_care.diagnostics import ReferralRefused, group_by_mobility, options_for, record
+
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    order = service.load_diagnostic_order(case_id, order_id)
+    if order is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(f"no clinician-ordered test {order_id} on this case. Anbu "
+                    f"Care does not order tests, so there is nothing to search for."))
+
+    profile = service.load_profile(case.parent_id)
+    hospital = _hospital_for_case(case)
+    if hospital is None:
+        raise HTTPException(
+            status_code=409,
+            detail="no hospital on this case to search near")
+
+    insurer = getattr(getattr(profile, "policy", None), "insurer", None)
+    try:
+        surfaced = options_for(test_label=order.test_label, lat=hospital.lat,
+                               lon=hospital.lon, insurer=insurer,
+                               # Anchors the search. A location bias is a bias:
+                               # without the city, one live search returned a
+                               # single lab 2,205 km away.
+                               city=hospital.city)
+    except ReferralRefused as refused:
+        raise HTTPException(status_code=502, detail=str(refused)) from None
+
+    grouped = group_by_mobility(surfaced["options"], order.mobility)
+    receipt_id = record(case_id=case_id, order_id=order_id,
+                        test_label=order.test_label, surfaced=surfaced,
+                        grouped=grouped)
+
+    return {
+        "case_id": case_id,
+        "order_id": order_id,
+        "test_label": order.test_label,
+        "near": {"hospital": hospital.name, "lat": hospital.lat, "lon": hospital.lon},
+        **surfaced,
+        **grouped,
+        "receipt_id": receipt_id,
+    }
+
+
+@app.post("/api/cases/{case_id}/diagnostics/{order_id}/notify")
+def notify_diagnostic_options(case_id: str, order_id: str,
+                              _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Tell the family a test was ordered and options exist.
+
+    Logistics only, through the existing gate, on the existing outbound path.
+    The test is NOT named: run against the real classifier, "ECG", "troponin I"
+    and "lipid profile" are all refused as clinical detail, and they are right
+    to be. The name lives behind the credential, one tap away.
+
+    Consent is read live inside `send_family_update`, as for every other
+    message; nothing here caches an agreement.
+    """
+    case = service.load_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    order = service.load_diagnostic_order(case_id, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"no ordered test {order_id}")
+
+    profile = service.load_profile(case.parent_id)
+    contacts = profile.family_contacts if profile else []
+    contact = next((c for c in contacts if c.is_primary), None) or next(iter(contacts), None)
+    if contact is None:
+        raise HTTPException(status_code=409, detail="no family contact to tell")
+
+    # Counted from the chain rather than re-searched: this endpoint reports
+    # what was surfaced, and must not quietly run a second live search whose
+    # result nobody recorded.
+    surfaced = next((r for r in reversed(service.get_chain(case_id).receipts)
+                     if r.kind == "diagnostic.referral"
+                     and r.payload.get("order_id") == order_id), None)
+    if surfaced is None:
+        raise HTTPException(
+            status_code=409,
+            detail="no options have been surfaced for this order yet")
+
+    first = profile.name.split()[0] if profile and profile.name else "your parent"
+    return whatsapp_tools.send_family_update(
+        case_id=case_id, parent_id=case.parent_id, to_e164=contact.whatsapp_e164,
+        template_name="diagnostic_options_ready",
+        template_params={
+            "clinician": order.ordered_by or "The treating team",
+            "parent_name": first,
+            "option_count": str(surfaced.payload.get("option_count") or 0),
+        },
+        message_class="logistics",
+        purpose_override=consent.STATUS_UPDATES,
+    )
 
 
 @app.post("/api/cases/{case_id}/notify-claim")
@@ -1432,6 +1567,24 @@ def notify_care_circle(
         "skipped_no_consent": sum(1 for r in results if not r.consented),
         "results": [r.model_dump(mode="json") for r in results],
     }
+
+
+def _hospital_for_case(case: Any):
+    """The hospital this case was routed to, as a KB entry with coordinates.
+
+    The search happens near where she actually is. Falling back to the city
+    centre would put the distances on every option quietly wrong, so a case
+    with no routing decision yet gets no search rather than an approximate one.
+    """
+    from anbu_care.kb.hospitals import get_hospital
+
+    for receipt in reversed(service.get_chain(case.case_id).receipts):
+        if receipt.kind != "triage.decision":
+            continue
+        hospital_id = receipt.payload.get("recommended_hospital_id")
+        if hospital_id:
+            return get_hospital(str(hospital_id))
+    return None
 
 
 def _hospital_from(triage: Any) -> str:

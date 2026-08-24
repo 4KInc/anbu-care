@@ -148,8 +148,13 @@ def draft_from_voice(grant: HandoffGrant, audio: bytes,
                  engine=heard.engine, detail=heard.detail)
 
 
+ORDER_MOBILITY = {"ambulatory", "non_ambulatory", "unknown"}
+MAX_TEST_CHARS = 120
+
+
 def confirm(grant: HandoffGrant, text: str, ticket: str = "",
-            recorded_by: str = "", now: int | None = None) -> dict:
+            recorded_by: str = "", now: int | None = None,
+            orders_test: str = "", mobility: str = "unknown") -> dict:
     """Write the note. This is the only function here that touches the record.
 
     `ticket` decides how the capture is described, not whether the note is
@@ -174,6 +179,21 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
         f"typed by {who}"
     )
 
+    # The note itself is unchanged by any of this. An order is recorded ALONGSIDE
+    # it, not instead of it, and a note with no order behaves exactly as it did
+    # before this existed.
+    #
+    # It has to be structured because the note is not stored: the chain gets a
+    # hash of the words and nothing keeps the words themselves, so an order
+    # written only as prose could never be read back and acted on.
+    ordered = (orders_test or "").strip()[:MAX_TEST_CHARS]
+    stated_mobility = (mobility or "unknown").strip().lower()
+    if stated_mobility not in ORDER_MOBILITY:
+        # An unrecognised value is not a reason to guess. Whether she can
+        # travel is a fact about a person in a room, and "unknown" is the only
+        # honest thing to write when nobody said.
+        stated_mobility = "unknown"
+
     receipt = service.append_receipt(
         case_id=grant.case_id,
         kind="clinician.note",
@@ -193,10 +213,31 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
             ),
         },
     )
+    order_id = ""
+    if ordered:
+        from anbu_care.schemas import DiagnosticOrder
+
+        case = service.load_case(grant.case_id)
+        order = DiagnosticOrder(
+            order_id=service.new_id("dxorder"),
+            case_id=grant.case_id,
+            parent_id=case.parent_id if case else "",
+            test_label=ordered,
+            mobility=stated_mobility,
+            ordered_by=who,
+            via_voice=via_voice,
+            note_receipt_id=receipt.receipt_id,
+        )
+        service.save_diagnostic_order(order)
+        order_id = order.order_id
+
     return {
         "status": "recorded",
         "receipt_id": receipt.receipt_id,
         "captured": capture,
         "via_voice": via_voice,
         "text_sha256": text_sha256(text),
+        # Empty unless the clinician actually ordered something.
+        "order_id": order_id,
+        "mobility_as_stated": stated_mobility if ordered else "",
     }

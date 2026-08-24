@@ -172,6 +172,23 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "params": ["parent_name", "bill_no"],
     },
 
+    # The test is deliberately NOT named. Run through the real classifier,
+    # "ECG", "troponin I", "lipid profile" and "HbA1c" all trip "names a lab or
+    # diagnostic result" and the message is refused — correctly, because that
+    # is clinical detail and WhatsApp is not where it goes. So the message says
+    # a test was ordered and points at the record, where the name sits behind
+    # the credential. Loosening the classifier to let test names through would
+    # be trading the guarantee for a nicer sentence.
+    "diagnostic_options_ready": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: {clinician} has ordered a test for {parent_name}. "
+                "Anbu Care found {option_count} nearby places it could be done "
+                "and has not booked any of them.\n"
+                "The test, the options and how far each one is: {dashboard_url}",
+        "view": "record",
+        "params": ["clinician", "parent_name", "option_count"],
+    },
+
     "document_recorded_withheld": {
         # The fallback when even the safe summary is refused. Carries a kind and
         # a link and nothing else, so a family is told something arrived rather

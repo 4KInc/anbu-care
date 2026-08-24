@@ -26,6 +26,7 @@ from anbu_care.schemas import (
     ClaimPacket,
     ClaimStage,
     ClaimSubmission,
+    DiagnosticOrder,
     ParentProfile,
     ParsedDocument,
     PaymentMandate,
@@ -106,6 +107,28 @@ def list_payments(case_id: str, store: Store | None = None) -> list[PaymentRecor
     rows = store.query_prefix(f"CASE#{case_id}", "PAYMENT#")
     return sorted((PaymentRecord.model_validate(_clean(r)) for r in rows),
                   key=lambda p: p.initiated_at)
+
+
+def save_diagnostic_order(order: DiagnosticOrder, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{order.case_id}", f"DXORDER#{order.order_id}",
+              order.model_dump(mode="json"))
+
+
+def list_diagnostic_orders(case_id: str,
+                           store: Store | None = None) -> list[DiagnosticOrder]:
+    """Oldest first. A case can accumulate several orders over a stay."""
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "DXORDER#")
+    return sorted((DiagnosticOrder.model_validate(_clean(r)) for r in rows),
+                  key=lambda o: o.recorded_at)
+
+
+def load_diagnostic_order(case_id: str, order_id: str,
+                          store: Store | None = None) -> DiagnosticOrder | None:
+    store = store or get_store()
+    row = (store or get_store()).get(f"CASE#{case_id}", f"DXORDER#{order_id}")
+    return DiagnosticOrder.model_validate(_clean(row)) if row else None
 
 
 def find_payments_by_settlement_ref(reference: str,

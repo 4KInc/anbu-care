@@ -793,6 +793,37 @@ class PaymentMandate(BaseModel):
         return self.revoked_at is None
 
 
+class DiagnosticOrder(BaseModel):
+    """A test a clinician ordered. Anbu Care never originates one.
+
+    The clinician-note path records that a note was left and hashes its words;
+    it does not keep them, deliberately. So an order recorded only as prose is
+    unreadable afterwards and cannot become a referral. This is the structured
+    half, written by the same confirmed clinician action, and it exists so the
+    order can be acted on without the note ever storing clinical prose.
+
+    `mobility` is UNKNOWN unless the clinician stated it. It is not inferred,
+    not defaulted to ambulatory because most people are, and not derived from
+    anything in the record — whether she can travel is a fact about a person in
+    a room, and this system is not in the room.
+    """
+
+    order_id: str
+    case_id: str
+    parent_id: str
+    # As the clinician wrote it. Not normalised, not mapped to a code: rewriting
+    # it into something that searches better would be this system deciding what
+    # was ordered.
+    test_label: str
+    mobility: str = "unknown"
+    ordered_by: str = ""
+    via_voice: bool = False
+    # The clinician.note receipt this was recorded alongside, so the order can
+    # be traced back to the attributed action that created it.
+    note_receipt_id: str = ""
+    recorded_at: datetime = Field(default_factory=utcnow)
+
+
 class PaymentRecord(BaseModel):
     """A payment this system prepared. Never proof that money moved.
 

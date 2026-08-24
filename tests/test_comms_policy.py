@@ -147,6 +147,8 @@ def test_every_template_renders_and_passes_its_own_gate():
         "expires_minutes": "60",
         "line_count": "16",
         "bill_no": "IP/2026/04471-I3",
+        "clinician": "Dr A. Anand",
+        "option_count": "6",
         "this_bill": "3,70,720",
         "adjustment_line": "That is INR 3,82,720 of charges, with a discount of INR 12,000.\n",
         "payment_line": "\nThe hospital wants INR 2,70,720 of it now.\n",
@@ -280,6 +282,8 @@ def test_a_rendered_template_still_passes_the_gate():
         "expires_minutes": "60",
         "line_count": "16",
         "bill_no": "IP/2026/04471-I3",
+        "clinician": "Dr A. Anand",
+        "option_count": "6",
         "this_bill": "3,70,720",
         "adjustment_line": "That is INR 3,82,720 of charges, with a discount of INR 12,000.\n",
         "payment_line": "\nThe hospital wants INR 2,70,720 of it now.\n",
@@ -415,7 +419,8 @@ def test_a_message_opens_on_the_tab_it_is_about():
                 "bill_already_recorded_retake",
                 "payment_auto_initiated", "payment_escalated"}
     ON_RECORD = {"document_recorded", "document_recorded_withheld",
-                 "document_unreadable", "document_already_recorded"}
+                 "document_unreadable", "document_already_recorded",
+                 "diagnostic_options_ready"}
     for name, spec in TEMPLATES.items():
         if name in ON_CLAIM:
             assert spec.get("view") == "claim", f"{name} should open the claim"

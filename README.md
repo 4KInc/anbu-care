@@ -176,6 +176,27 @@ This matters more than any feature list, so it comes first.
   hospital printed rather than on the image bytes. Before that it was two
   bills, twice the money owed, and a second payment eligible to go out.
 
+- **Diagnostic referral — what a present son does when a test is ordered.** The
+  doctor says she needs a repeat troponin. A son in Nashville would open his
+  phone, find the nearest labs, check what he honestly could about coverage,
+  and send the list. Anbu Care does that: a clinician records the order through
+  the existing confirmed-note path, and a **live Google Places search** near
+  the admitting hospital returns real Thoothukudi centres, ranked by the same
+  transparent scoring hospital routing uses.
+
+  Three walls, one test each. **The order comes from the clinician** — nothing
+  here originates one, and a referral with no order behind it is refused.
+  **No coverage promise:** network status is read from the same seeded KB
+  routing uses, in that module's own words, "is listed as empanelled with X",
+  never "is covered" — there is no coverage field in the model and a test
+  asserts the word never appears. **No mobility verdict:** if the clinician did
+  not say whether she can travel, both paths are shown and the message says the
+  people with her decide. **Nothing is booked** — no centre has been contacted
+  and no receipt may say one was.
+
+  The `diagnostic.referral` receipt carries counts, place ids and the source
+  label, never the test name, so `/verify` stays public and leaks nothing.
+
 - **Sign in with Google, with identity kept apart from permission.** The ID
   token is verified server-side against Google's published keys with the client
   id pinned as the audience — a token minted for another application is a valid
@@ -253,6 +274,13 @@ This matters more than any feature list, so it comes first.
   carries no such step, which is why the payout rail is the one with a route to
   being real, and why the blocker is merchant KYC rather than code.
 
+- **Diagnostic centre coverage.** The *centres* are real and live — Google
+  Places, queried at the moment of the referral. What is **not** live is
+  whether any of them is in a family's insurance network: the KB holds five
+  hospitals, so for almost every centre the honest answer is "Anbu Care has no
+  network information for this centre", and that is what it says. Nothing is
+  connected to any lab, in either direction.
+
 **Real, but narrower than it looks:**
 
 - **Wellbeing check-ins are self-reported, never a measured vital.** The
@@ -324,7 +352,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 824 tests, no GCP or model access needed
+make test             # 846 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -473,6 +501,7 @@ anbu_care/
   comms/                WhatsApp message policy (deterministic) + outbound translation
   recovery/             the fortnight after discharge: window, cadence, stop conditions
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
+  diagnostics/          live Places search + ranking for a clinician-ordered test
   payments/             the mandate, the eight guards, the settlement rails
   intake.py             photographs kept until they have actually been read
   docvision/            the other four document kinds: classify, extract, apply
@@ -491,7 +520,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  824 tests, no GCP or model access needed
+tests/                  846 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -525,6 +554,9 @@ Beyond ADK's own agent API:
 | `GET /api/cases/{id}/trace` | The decision sequence — one step per receipt, nothing synthesised |
 | `POST /api/cases/{id}/handoff-link` | Mint an emergency-access link for a treating clinician |
 | `POST /api/cases/{id}/handoff-link/revoke` | Kill every outstanding link for the case |
+| `GET /api/cases/{id}/diagnostics` | Clinician-ordered tests on the case. **Credentialed** — the test a doctor ordered is clinical detail |
+| `POST /api/cases/{id}/diagnostics/{order_id}/options` | Live Places search near the hospital. Refuses if no clinician ordered anything |
+| `POST /api/cases/{id}/diagnostics/{order_id}/notify` | Tell the family, logistics only, without naming the test |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
 | `POST /api/cases/{id}/payment-mandate` | Authorise automatic payment: destination, per-bill cap, total cap, window |
 | `DELETE /api/cases/{id}/payment-mandate` | Revoke it. Every further bill needs approval |
