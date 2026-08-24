@@ -94,7 +94,11 @@ This matters more than any feature list, so it comes first.
   recipient whose language preference is Tamil are rendered from the recorded
   English by Gemini, which stays the source of truth, and carry the line
   "translated from the recorded <bill / check-in question / status update>".
-  Per-recipient, so the mother reads Tamil while her son keeps English. A
+  Per-recipient, so the mother reads Tamil while her son keeps English — and a
+  preference may name both, `en+ta`, which sends the English record with the
+  Tamil beneath it for a reader who has both. The preference lives on the
+  person, not the role: a daughter in Thoothukudi is a family contact too, and
+  a message twice as long is not a kindness to her. A
   translation with no source record is **refused** — there is no code path that
   produces Tamil for text nobody wrote down first. The gate rules on the
   English *before* anything is rendered, because `CLINICAL_PATTERNS` cannot read
@@ -129,6 +133,14 @@ This matters more than any feature list, so it comes first.
   produce an itemised covered / not-covered / you-pay split with a running total
   across the stay. The photograph is kept privately so every number stays
   checkable against the paper it came from.
+
+  Reading takes longer than the webhook window, so the reply is acknowledged
+  first and the read runs after it. That cost durability once: a deploy
+  replaced the instance nine seconds into a read and the family got "reading it
+  now" and then silence, with nothing in Firestore to show it had arrived. The
+  photograph is now written down **before** the acknowledgement and the row
+  stays open until a message has actually been sent about it, so the next
+  instance to start finishes what the last one dropped.
 - **Document capture, four kinds beyond bills.** The same WhatsApp thread takes a
   discharge summary, a lab report, a prescription or a policy schedule. One
   Gemini call classifies and extracts together — two calls would let the second
@@ -141,6 +153,29 @@ This matters more than any feature list, so it comes first.
   no sum insured does not zero the cover; a discharge summary **merges**
   allergies and never removes one, because a shorter list is not a retraction
   of something someone has carried for years.
+- **Interim bill payment, bounded by a mandate the family grants.** A hospital
+  wants money on day two, before any insurer has decided anything. The family
+  authorises a destination, a per-bill cap, a total cap and a window; after that
+  a photographed bill is paid without waking anyone, or it is refused and it
+  says which check stopped it. Eight deterministic guards run in order —
+  `mandate_live`, `within_window`, `case_scope`, `not_duplicate`,
+  `per_bill_cap`, `total_cap`, `payee_from_mandate`, `no_anomaly` — and the
+  eighth is a set of named signals rather than a judgement: an amount spike
+  against the running mean, a payee or vendor disagreeing with the mandate,
+  spend velocity, sitting just under a cap, or arriving in the last tenth of
+  the window.
+
+  **A bill can never set where money goes.** The destination comes from the
+  mandate, always. A UPI ID printed on a bill is read as *evidence* — a bill
+  claiming a different one is refused, never followed. That guard was inert
+  until bills started carrying an address to check, which is why the synthetic
+  bills now print one.
+
+  **A photograph is not an identity.** The same bill photographed twice — a
+  retake after a blurry one — is one debt, matched on the bill number the
+  hospital printed rather than on the image bytes. Before that it was two
+  bills, twice the money owed, and a second payment eligible to go out.
+
 - **Sign in with Google, with identity kept apart from permission.** The ID
   token is verified server-side against Google's published keys with the client
   id pinned as the audience — a token minted for another application is a valid
@@ -201,6 +236,23 @@ This matters more than any feature list, so it comes first.
   Whatever the transport, **clinical detail never traverses WhatsApp** — that is
   the classifier's job, and it runs before the transport is reachable at all.
 
+- **Settlement.** The deciding is autonomous; the money is not. Three rails,
+  and the receipt records which one carried each payment, because "settled" on
+  one is a different claim from "settled" on another.
+
+  | `ANBU_PAYMENT_MODE` | What actually happens |
+  |---|---|
+  | `razorpay` | A real Razorpay API call in **test mode**. Real payment link, real webhook, test money. A person opens the link — a Payment Link is a *collection* instrument, so a lane ending in one ends with somebody clicking. |
+  | `razorpayx` | A real RazorpayX **payout** — money pushed to a beneficiary, nobody present. Needs a provisioned RazorpayX account; the Payouts endpoint 404s without one. Falls back and says so when unconfigured. |
+  | `payout` | The payout shape with no provider behind it. Settles without a human and labels itself simulated on every surface. |
+
+  **No mode moves real money.** Autonomous debit needs UPI Autopay or an NPCI
+  e-mandate, and NPCI caps AFA-free mandate debits at ₹15,000 — the raised
+  ₹1,00,000 tier is restricted to merchant categories hospital billing is not
+  in, so a ₹31,650 interim bill would prompt for a UPI PIN every time. A payout
+  carries no such step, which is why the payout rail is the one with a route to
+  being real, and why the blocker is merchant KYC rather than code.
+
 **Real, but narrower than it looks:**
 
 - **Wellbeing check-ins are self-reported, never a measured vital.** The
@@ -239,6 +291,22 @@ This matters more than any feature list, so it comes first.
   is a different thing from nothing being owed. On a reimbursement claim the
   family pays first and is repaid later, so even a correct estimate is not
   money they hold.
+- **"Autonomous payment" is autonomous deciding.** Nothing here moves money by
+  itself in any mode, and the surfaces say which rail carried each payment
+  rather than leaving "settled" to be read as more than it is. The interesting
+  claim is the refusal: an over-cap bill, a bill from another hospital, a bill
+  naming a different UPI ID, and a second photograph of a bill already paid all
+  stop without a human, and each names the check that stopped it.
+- **Initiated is not paid.** A payment leaves the enforcer unconfirmed and stays
+  that way until a settlement confirmation arrives, written by a different
+  actor — `payment_rail`, never `payment_enforcer`. The money view counts the
+  two separately, and a rail that reported its own success would be the failure
+  this lane is built to avoid.
+- **A destination leaves the store by exactly one door.** Every response
+  carries `payee_ref`, a hash prefix that proves which destination without
+  being one. One named, authenticated endpoint serves the real address with a
+  UPI QR, because nobody can pay an account they have not been given — and the
+  page renders it only there, read-only, on request.
 - **An extracted amount is a reading, not a fact.** A model that reads ₹96,000
   where the paper says ₹9,600 produces a number that looks exactly as
   authoritative as a correct one. So the lines are checked against the bill's
@@ -256,7 +324,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 763 tests, no GCP or model access needed
+make test             # 824 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -405,6 +473,8 @@ anbu_care/
   comms/                WhatsApp message policy (deterministic) + outbound translation
   recovery/             the fortnight after discharge: window, cadence, stop conditions
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
+  payments/             the mandate, the eight guards, the settlement rails
+  intake.py             photographs kept until they have actually been read
   docvision/            the other four document kinds: classify, extract, apply
   brief/                the arrival brief, composed from receipts and the record
   webauth.py            credentials: demo token, signed link, Google identity
@@ -419,7 +489,9 @@ scripts/
   make_documents.py     synthetic discharge summary, lab report, prescription, policy
   link_google_account.py  link a Google address to a family contact
   backfill_document_details.py  re-read stored photographs into `details`
-tests/                  763 tests, no GCP or model access needed
+  retake_bill.py        the same bill photographed a second time, for the dedupe
+  collapse_demo_family.py  fold accumulated demo families back to the live one
+tests/                  824 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -454,6 +526,14 @@ Beyond ADK's own agent API:
 | `POST /api/cases/{id}/handoff-link` | Mint an emergency-access link for a treating clinician |
 | `POST /api/cases/{id}/handoff-link/revoke` | Kill every outstanding link for the case |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
+| `POST /api/cases/{id}/payment-mandate` | Authorise automatic payment: destination, per-bill cap, total cap, window |
+| `DELETE /api/cases/{id}/payment-mandate` | Revoke it. Every further bill needs approval |
+| `GET /api/cases/{id}/payments` | What is paid, what is merely initiated, what authority remains, and every refusal with the check that caused it |
+| `POST /api/cases/{id}/bills/{bill_id}/consider` | Put a bill already on file to the guards |
+| `POST /api/cases/{id}/payments/approve` | A human approving what the enforcer refused. Authorises an amount, never a destination |
+| `POST /api/cases/{id}/payments/{payment_id}/confirm` | Record that a settlement confirmation arrived |
+| `GET /api/cases/{id}/payments/{payment_id}/upi` | The UPI intent and QR for one payment. **The only response that carries a raw destination** |
+| `POST /api/payments/razorpay` | Provider webhook — collections and payouts. HMAC-verified, deliberately session-less |
 | `GET /api/cases/{id}/bills/{bill_id}/image` | Short-lived signed URL for the source photograph |
 | `GET /api/parents/{id}/documents/{doc_id}/image` | The same, for a photographed document |
 | `GET /api/auth-config` | Which sign-in methods this deployment offers |
