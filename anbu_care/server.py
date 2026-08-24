@@ -1314,12 +1314,23 @@ async def handoff_note_draft(token: str, request: Request) -> dict[str, Any]:
     except access.HandoffDenied as denied:
         raise HTTPException(status_code=403, detail=str(denied)) from None
 
+    # What the dictation appears to ORDER, offered for the clinician to confirm
+    # or correct. It is a proposal and nothing else: it goes into a field they
+    # can edit, and only what they submit is recorded. A misheard test written
+    # down unchecked sends her for the wrong scan with a receipt saying a
+    # clinician ordered it.
+    from anbu_care.diagnostics import dictation
+
+    proposed = dictation.propose_tests(draft.text)
+
     return {
         "status": "draft",
         "written": False,
         "text": draft.text,
         "ticket": draft.ticket,
         "engine": draft.engine,
+        "proposed_tests": proposed.tests,
+        "proposed_detail": proposed.detail,
         "next": "check the words, correct anything wrong, then POST .../note/confirm",
         "warning": "Nothing has been recorded yet. An unconfirmed transcript is discarded.",
     }
@@ -1752,6 +1763,9 @@ main{max-width:640px;margin:0 auto}
 .fb{width:100%;margin-top:14px;font:inherit;font-weight:600;padding:12px;
     border:0;border-radius:8px;background:#12212e;color:#fff}
 .fb:disabled{opacity:.55}
+.fs{width:100%;margin-top:8px;font:inherit;font-size:14px;padding:9px;
+    border:1px solid #cbd5e0;border-radius:8px;background:#fff;color:#12212e}
+.fs:disabled{opacity:.55}
 .allergy h2{color:#b3261e;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
 .allergy .v{font-size:30px;font-weight:800;line-height:1.15;color:#8c1d18}
 .allergy .none{font-size:17px;font-weight:700;color:#8c1d18;line-height:1.45}
@@ -1811,6 +1825,9 @@ def _order_form_html(token: str) -> str:
         f"<label class=fl for=dxtest>Test</label>"
         f"<input id=dxtest class=fi placeholder='e.g. Troponin I (repeat)' "
         f"autocomplete=off>"
+        f"<button id=dxmic class=fs type=button>"
+        f"<span aria-hidden=true>\u25CF</span> Speak it instead</button>"
+        f"<p id=dxheard class=foot></p>"
         f"<label class=fl for=dxwho>Your name</label>"
         f"<input id=dxwho class=fi placeholder='e.g. Dr A. Anand' autocomplete=off>"
         f"<label class=fl for=dxmob>Can she travel to a centre?</label>"
@@ -1825,6 +1842,36 @@ def _order_form_html(token: str) -> str:
         f"<p id=dxout class=foot></p></div>"
         f"<script>(function(){{"
         f"var b=document.getElementById('dxgo'),o=document.getElementById('dxout');"
+        f"var mic=document.getElementById('dxmic'),heard=document.getElementById('dxheard');"
+        f"var rec=null,chunks=[];"
+        f"if(!navigator.mediaDevices||!window.MediaRecorder){{mic.style.display='none';}}"
+        f"mic.addEventListener('click',function(){{"
+        f"if(rec&&rec.state==='recording'){{rec.stop();return;}}"
+        f"navigator.mediaDevices.getUserMedia({{audio:true}}).then(function(stream){{"
+        f"chunks=[];rec=new MediaRecorder(stream);"
+        f"rec.ondataavailable=function(e){{if(e.data.size)chunks.push(e.data);}};"
+        f"rec.onstop=function(){{"
+        f"stream.getTracks().forEach(function(t){{t.stop();}});"
+        f"mic.textContent='Reading it\u2026';mic.disabled=true;"
+        f"var blob=new Blob(chunks,{{type:rec.mimeType||'audio/webm'}});"
+        f"fetch('/handoff/{token}/note/draft',{{method:'POST',"
+        f"headers:{{'content-type':blob.type}},body:blob}})"
+        f".then(function(r){{return r.json();}}).then(function(d){{"
+        f"mic.disabled=false;mic.innerHTML='<span aria-hidden=true>\u25CF</span> Speak it instead';"
+        f"if(d.detail){{heard.textContent=d.detail;return;}}"
+        f"var t=(d.proposed_tests||[])[0]||'';"
+        f"if(t){{document.getElementById('dxtest').value=t;}}"
+        f"heard.textContent='Heard: \u201c'+(d.text||'')+'\u201d. '"
+        f"+(t?('Check the test above is right before you record it.'"
+        f"+((d.proposed_tests||[]).length>1?' You mentioned more than one: '"
+        f"+d.proposed_tests.join(', ')+'. Record them one at a time.':''))"
+        f":'Anbu Care could not tell which test that was, so type it above.');"
+        f"}}).catch(function(){{mic.disabled=false;"
+        f"heard.textContent='That recording did not reach Anbu Care. Nothing was recorded.';}});}};"
+        f"rec.start();mic.innerHTML='<span aria-hidden=true>\u25A0</span> Stop and read it back';"
+        f"heard.textContent='Listening. Say what you are ordering, then tap stop.';"
+        f"}}).catch(function(){{heard.textContent="
+        f"'Anbu Care could not use the microphone. Type the test above instead.';}});}});"
         f"b.addEventListener('click',function(){{"
         f"var t=document.getElementById('dxtest').value.trim();"
         f"if(!t){{o.textContent='Name the test first.';return;}}"

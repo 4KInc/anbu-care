@@ -194,6 +194,15 @@ This matters more than any feature list, so it comes first.
   people with her decide. **Nothing is booked** — no centre has been contacted
   and no receipt may say one was.
 
+  The clinician can **speak the order** rather than type it. The dictation is
+  transcribed by Gemini and read for which test is being ordered, and that
+  reading is a **proposal**: it lands in the field, editable, and only what the
+  clinician submits is recorded. Same rule the note path already held, and for
+  a sharper reason here — a misheard test written down unchecked sends her for
+  the wrong scan, with a receipt saying a clinician ordered it. An unclear
+  dictation proposes nothing and says so; two tests in one sentence are
+  reported as two rather than silently reduced to the first.
+
   The `diagnostic.referral` receipt carries counts, place ids and the source
   label, never the test name, so `/verify` stays public and leaks nothing.
 
@@ -352,7 +361,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 846 tests, no GCP or model access needed
+make test             # 863 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -501,7 +510,7 @@ anbu_care/
   comms/                WhatsApp message policy (deterministic) + outbound translation
   recovery/             the fortnight after discharge: window, cadence, stop conditions
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
-  diagnostics/          live Places search + ranking for a clinician-ordered test
+  diagnostics/          live Places search, ranking, and reading an order from dictation
   payments/             the mandate, the eight guards, the settlement rails
   intake.py             photographs kept until they have actually been read
   docvision/            the other four document kinds: classify, extract, apply
@@ -520,7 +529,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  846 tests, no GCP or model access needed
+tests/                  863 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 

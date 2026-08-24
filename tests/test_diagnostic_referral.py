@@ -686,3 +686,136 @@ def test_no_em_dashes_in_anything_a_family_reads():
                  ref._offers_test(_centre("medical_clinic"))[1],
                  ref._offers_test(_centre(""))[1]):
         assert "—" not in note, f"a composed note carries an em dash: {note[:60]}"
+
+
+# =========================================================================
+# DICTATION: GEMINI PROPOSES, THE CLINICIAN ORDERS
+# =========================================================================
+
+
+def _hears(monkeypatch, payload):
+    from anbu_care.diagnostics import dictation
+
+    monkeypatch.setenv("ANBU_DICTATION_MODE", "gemini")
+    monkeypatch.setattr(dictation, "_call_model", lambda t: json.dumps(payload))
+
+
+def test_a_dictated_order_is_read_as_the_clinician_said_it(monkeypatch):
+    """"Repeat troponin" stays "repeat troponin".
+
+    Expanding it into a formal name is a second decision nobody asked for, and
+    the search wants the clinician's words anyway.
+    """
+    from anbu_care.diagnostics import dictation
+
+    _hears(monkeypatch, {"tests": ["repeat troponin"], "unclear": False})
+    p = dictation.propose_tests("She'll need a repeat troponin in the morning.")
+
+    assert p.ok is True
+    assert p.first == "repeat troponin"
+
+
+def test_more_than_one_dictated_test_is_not_silently_reduced(monkeypatch):
+    """Picking one for them is exactly the quiet choice this must not make."""
+    from anbu_care.diagnostics import dictation
+
+    _hears(monkeypatch, {"tests": ["repeat troponin", "echo"], "unclear": False})
+    p = dictation.propose_tests("Repeat troponin, and an echo before discharge.")
+
+    assert p.tests == ["repeat troponin", "echo"]
+
+
+def test_an_unclear_dictation_proposes_nothing(monkeypatch):
+    """A confident wrong answer costs her a day and a bill. Empty costs typing."""
+    from anbu_care.diagnostics import dictation
+
+    _hears(monkeypatch, {"tests": [], "unclear": True})
+    p = dictation.propose_tests("Mumble mumble.")
+
+    assert p.ok is False
+    assert p.tests == []
+    assert "not clear" in p.detail
+
+
+def test_a_note_that_orders_nothing_proposes_nothing(monkeypatch):
+    from anbu_care.diagnostics import dictation
+
+    _hears(monkeypatch, {"tests": [], "unclear": False})
+    p = dictation.propose_tests("She slept well and is comfortable.")
+
+    assert p.ok is True
+    assert p.tests == []
+
+
+def test_a_failed_reading_proposes_nothing_rather_than_guessing(monkeypatch):
+    from anbu_care.diagnostics import dictation
+
+    monkeypatch.setenv("ANBU_DICTATION_MODE", "gemini")
+    monkeypatch.setattr(dictation, "_call_model",
+                        lambda t: (_ for _ in ()).throw(TimeoutError()))
+    p = dictation.propose_tests("Repeat troponin please.")
+
+    assert p.ok is False
+    assert p.tests == []
+
+
+def test_the_draft_endpoint_writes_nothing_and_records_no_order(case, monkeypatch):
+    """The whole wall. A proposal is not an order.
+
+    Nothing here may reach the record: no receipt, no DiagnosticOrder, nothing.
+    Only what the clinician submits from the field counts.
+    """
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server
+    from anbu_care.comms import transcribe
+    from anbu_care.diagnostics import dictation
+    from anbu_care.handoff import access
+
+    _parent_id, case_id = case
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-dictation-secret")
+    monkeypatch.setenv("ANBU_DICTATION_MODE", "gemini")
+    monkeypatch.setattr(transcribe, "transcribe_dictation",
+                        lambda audio, mime: transcribe.Transcript(
+                            ok=True, text="Repeat troponin in the morning.",
+                            engine="stub", detail="stubbed"))
+    monkeypatch.setattr(dictation, "_call_model",
+                        lambda t: json.dumps({"tests": ["repeat troponin"],
+                                              "unclear": False}))
+
+    before = len(service.get_chain(case_id).receipts)
+    token = access.mint(case_id, allow_notes=True)
+    with TestClient(server.app) as client:
+        r = client.post(f"/handoff/{token}/note/draft", content=b"x" * 5000,
+                        headers={"content-type": "audio/webm"})
+
+    body = r.json()
+    assert body["written"] is False
+    assert body["proposed_tests"] == ["repeat troponin"]
+    assert "Nothing has been recorded" in body["warning"]
+
+    assert service.list_diagnostic_orders(case_id) == [], "a draft created an order"
+    assert len(service.get_chain(case_id).receipts) == before, "a draft wrote a receipt"
+
+
+def test_the_page_puts_the_proposal_in_a_field_the_clinician_can_edit():
+    """It fills the input. It does not submit."""
+    from anbu_care.server import _order_form_html
+
+    form = _order_form_html("tok")
+    assert "note/draft" in form, "no way to send a recording"
+    assert "getElementById('dxtest').value=t" in form, "the proposal is not editable"
+    # The recorder must not call confirm. Only the Record button does.
+    recorder = form[form.index("mic.addEventListener"):form.index("b.addEventListener")] \
+        if "b.addEventListener" in form and \
+           form.index("mic.addEventListener") < form.index("b.addEventListener") \
+        else form[form.index("mic.addEventListener"):]
+    assert "note/confirm" not in recorder, "speaking an order recorded it"
+
+
+def test_the_page_says_plainly_when_it_could_not_tell():
+    from anbu_care.server import _order_form_html
+
+    form = _order_form_html("tok")
+    assert "could not tell which test that was" in form
+    assert "Check the test above is right" in form

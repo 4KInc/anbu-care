@@ -30,6 +30,21 @@ def no_payment_provider_calls(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_model_calls_from_dictation(monkeypatch):
+    """The same trap, one feature later.
+
+    Reading an ordered test out of a dictation is a Gemini call, and the draft
+    endpoint runs it. The suite went from 10 seconds to 34 the moment it was
+    wired, which is a real network call the tests never asked for.
+
+    A test that wants the extraction stubs `_call_model`, which is the one seam
+    it goes through.
+    """
+    monkeypatch.setenv("ANBU_DICTATION_MODE", "off")
+    monkeypatch.setenv("ANBU_DIAGNOSTICS_MODE", "seeded")
+
+
+@pytest.fixture(autouse=True)
 def fresh_store():
     """Every test gets its own store — receipt sequences must not leak between tests."""
     set_store(MemoryStore())
