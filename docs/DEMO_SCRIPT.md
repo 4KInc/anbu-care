@@ -231,21 +231,45 @@ mandate for `sacredheart@hdfcbank` against a bill printing
 the bill you meant to clear, on camera. This is the single most likely way
 this beat fails.
 
+**Grant it STANDING, on the parent, once.** Not per case. A mandate scoped to
+one admission means the son grants authority at 3am for a case that has just
+opened — which is the son operating the system, and the demo would be showing
+the thing the pitch says it removes. Granted on the parent, every case that
+opens afterwards adopts it with nobody awake.
+
+It matters for the recording specifically: **the voice note in Beat 2 opens its
+own case.** A per-case mandate granted beforehand attaches to the wrong one, so
+the bill in Beat 6 refuses for want of authority and the payment beat dies.
+
 ```bash
 # the destination, exactly as make_bill_images.py prints it on the paper
 VPA=sacredheart@okhdfcbank
 
-# one case per outcome, each with the same mandate
+curl -sX POST $URL/api/parents/$PARENT/payment-mandate -H "Authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d "{\"payee_vpa\":\"$VPA\",
+    \"payee_label\":\"Sacred Heart Hospital\",\"per_bill_cap_inr\":50000,
+    \"total_cap_inr\":400000,\"hours\":720,\"granted_by\":\"Heartlin Machado\"}" | jq
+```
+
+Every case opened while it is live picks it up and writes a
+`mandate.standing_applied` receipt saying **nobody authorised anything for this
+admission** — which is a better trace beat than a grant, because it is the
+system showing its own authority rather than a human granting one on camera.
+
+- [ ] **They share the total cap.** Two admissions do not get 4,00,000 each.
+      That is deliberate, and it is why the refusal and the auto-clear still
+      need separate parents rather than separate cases under one grant — 2,70,720
+      plus 38,450 against one shared 4,00,000 is the burst signal, correctly.
+
+```bash
+# one PARENT per outcome, each with its own standing grant
 for i in 1 2; do
   P=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
-  C=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
-      -d "{\"parent_id\":\"$P\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"caregiver\"}" \
-      | jq -r .case_id)
-  curl -sX POST $URL/api/cases/$C/payment-mandate -H "Authorization: Bearer $TOKEN" \
+  curl -sX POST $URL/api/parents/$P/payment-mandate -H "Authorization: Bearer $TOKEN" \
     -H 'content-type: application/json' -d "{\"payee_vpa\":\"$VPA\",
       \"payee_label\":\"Sacred Heart Hospital\",\"per_bill_cap_inr\":50000,
-      \"total_cap_inr\":400000,\"hours\":48}" >/dev/null
-  echo "case $i: $C"
+      \"total_cap_inr\":400000,\"hours\":720}" >/dev/null
+  echo "parent $i: $P"
 done
 ```
 
