@@ -83,7 +83,13 @@ This matters more than any feature list, so it comes first.
   say "we heard", never "she said". Multilingual and verified from a real
   handset in Tamil script, transliterated Tamil, Hindi and code-mixed English.
 - **Escalation and care-circle notification.** A recognised red flag opens a
-  case, runs triage, alerts the family, and can ring a care-circle contact.
+  case, runs triage, alerts the family, and can ring a care-circle contact. It
+  also **hands the treating team a link without anybody being asked**: a
+  write-scoped emergency-access link is minted at escalation and sent to the
+  people who are physically with her, so the neighbour who reaches the hospital
+  has something to show a doctor. Before this the link only existed if the son
+  minted one from the dashboard, which meant the person the whole system stands
+  in for had to wake up and copy a URL. The son is told; he is not the courier.
 - **Per-purpose consent, read live.** Seven purposes across four directions —
   what a family member may be SENT, what they may SEND IN, what may be SHOWN to
   a third party, and what may be sent TO THE PARENT herself — deliberately
@@ -376,7 +382,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 871 tests, no GCP or model access needed
+make test             # 887 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -544,7 +550,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  871 tests, no GCP or model access needed
+tests/                  887 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 

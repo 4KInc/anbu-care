@@ -364,14 +364,40 @@ def _contact(parent_id, number, purposes, name="Karthik", primary=True):
     )
 
 
-def test_the_link_is_sent_over_whatsapp_to_the_family(client):
+def test_the_link_goes_to_whoever_is_with_her_by_default(client):
+    """The care circle, not the son.
+
+    Sending to the family decision-maker first made him the courier: awake at
+    2am, copying a URL, forwarding it to a hospital eleven time zones away.
+    That is the job this system exists to do instead of him, and the neighbour
+    who is actually in the room is the one who can show a doctor anything.
+    """
+    from anbu_care.webauth import DEMO_TOKEN
+
+    parent_id = _parent()
+    _contact(parent_id, "+919000000101", ["outbound_notify"],
+             name="Meena", primary=False)
+    case_id = _case(parent_id)
+
+    body = client.post(f"/api/cases/{case_id}/handoff-link/send",
+                       headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
+
+    assert body["purpose_required"] == consent_purposes.OUTBOUND_NOTIFY
+    assert body["recipients"], "nobody in the room was messaged"
+    assert body["url"].startswith("/handoff/") or "/handoff/" in body["url"]
+    token = body["url"].rsplit("/handoff/", 1)[1]
+    assert client.get(f"/handoff/{token}").status_code == 200
+
+
+def test_the_link_can_still_be_sent_to_the_family_explicitly(client):
+    """He is the decision-maker of last resort, not the default courier."""
     from anbu_care.webauth import DEMO_TOKEN
 
     parent_id = _parent()
     _contact(parent_id, "+14155550142", ["admission_alerts"])
     case_id = _case(parent_id)
 
-    body = client.post(f"/api/cases/{case_id}/handoff-link/send",
+    body = client.post(f"/api/cases/{case_id}/handoff-link/send?to_care_circle=false",
                        headers={"Authorization": f"Bearer {DEMO_TOKEN}"}).json()
 
     assert body["purpose_required"] == consent_purposes.ADMISSION_ALERTS
@@ -450,3 +476,108 @@ def test_a_permitted_send_is_not_reported_as_a_delivered_one(client):
         assert isinstance(r["delivered"], bool)
     assert body["status"] in {"sent", "not_delivered"}
     assert "never a finding" in body["note"]
+
+
+# =========================================================================
+# THE SON IS ASLEEP, AND THAT IS THE POINT
+# =========================================================================
+
+
+def test_an_escalation_hands_the_treating_team_a_link_with_nobody_asked(monkeypatch):
+    """The core claim, as a test.
+
+    Anbu Care exists to do what a present son would do while the son is asleep
+    eleven time zones away. Until this, a handoff link only existed if HE
+    minted one from the dashboard — so the neighbour reached the hospital with
+    nothing to show the treating team, and the person the system stands in for
+    had to wake up and copy a URL.
+    """
+    from anbu_care.wellbeing import handler
+
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-escalation-secret")
+
+    parent_id = _parent()
+    onboarding_tools.record_emergency_disclosure_consent(parent_id)
+    _contact(parent_id, "+919000000101", ["outbound_notify"],
+             name="Meena", primary=False)
+    case_id = _case(parent_id)
+
+    sent = []
+    from anbu_care.tools import whatsapp_tools
+
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "ok"})
+
+    handler._hand_the_treating_team_a_link(case_id, parent_id)
+
+    assert sent, "nobody in the room was given a link"
+    handoff = [s for s in sent if s["template_name"] == "clinician_handoff_link"]
+    assert handoff, "the message carried no handoff link"
+    assert handoff[0]["to_e164"] == "+919000000101", "it went to the son, not the room"
+    assert "/handoff/" in handoff[0]["template_params"]["handoff_url"]
+
+
+def test_the_link_it_hands_over_can_record_what_was_ordered(monkeypatch):
+    """Read-only would send everyone back to the son.
+
+    A treating team that can see her allergies but cannot record what they
+    ordered is a team that has to phone the family, which is the failure this
+    removes. What makes it safe is unchanged: an hour, receipted on open,
+    attributed, append-only, revocable in one act.
+    """
+    from anbu_care.handoff import access
+    from anbu_care.wellbeing import handler
+
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-escalation-secret")
+
+    parent_id = _parent()
+    onboarding_tools.record_emergency_disclosure_consent(parent_id)
+    _contact(parent_id, "+919000000101", ["outbound_notify"],
+             name="Meena", primary=False)
+    case_id = _case(parent_id)
+
+    sent = []
+    from anbu_care.tools import whatsapp_tools
+
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "ok"})
+
+    handler._hand_the_treating_team_a_link(case_id, parent_id)
+
+    url = sent[0]["template_params"]["handoff_url"]
+    grant = access.resolve(url.rsplit("/handoff/", 1)[1])
+    assert grant.may_write_note is True, "the treating team cannot record an order"
+
+
+def test_no_consent_means_no_link_and_no_crash(monkeypatch):
+    """A refusal, not a fault. An emergency alert must not fail because a link
+    could not be minted."""
+    from anbu_care.wellbeing import handler
+
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-escalation-secret")
+
+    parent_id = _parent(consented=False)   # she has not agreed to disclosure
+    _contact(parent_id, "+919000000101", ["outbound_notify"],
+             name="Meena", primary=False)
+    case_id = _case(parent_id)
+
+    sent = []
+    from anbu_care.tools import whatsapp_tools
+
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "ok"})
+
+    handler._hand_the_treating_team_a_link(case_id, parent_id)
+    assert sent == [], "a link was shared without the parent's consent"
+
+
+def test_the_escalation_path_calls_it(monkeypatch):
+    """Wired in, not merely available."""
+    import inspect
+
+    from anbu_care.wellbeing import handler
+
+    source = inspect.getsource(handler)
+    escalate = source[source.index("circle_alerted, circle_failed = _tell_the_care_circle"):]
+    escalate = escalate[:escalate.index("alerted = _unique")]
+    assert "_hand_the_treating_team_a_link" in escalate

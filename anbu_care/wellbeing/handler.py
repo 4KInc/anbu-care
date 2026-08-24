@@ -146,6 +146,8 @@ def handle(entry: WellbeingEntry, parent_id: str,
     circle_alerted, circle_failed = _tell_the_care_circle(
         case_id, parent_id, verdict, skip_numbers=family_numbers,
     )
+    # And the thing the neighbour will actually need when she gets there.
+    _hand_the_treating_team_a_link(case_id, parent_id, skip_numbers=family_numbers)
     # One person is one name, however many lists they appear on.
     alerted = _unique(family_alerted + circle_alerted)
     not_alerted = [n for n in _unique(family_failed + circle_failed) if n not in alerted]
@@ -485,6 +487,73 @@ def _recovery_day(parent_id: str) -> int | None:
     except Exception:
         logger.exception("could not read the recovery day; the alert goes without it")
         return None
+
+
+def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
+                                  skip_numbers: set[str] | None = None) -> None:
+    """Put an emergency-access link in the hands of whoever is with her.
+
+    Anbu Care exists to do what a present son would do while the son is asleep
+    eleven time zones away, so a workflow that needs him is a workflow that has
+    already failed. Until now a handoff link only existed if HE minted one from
+    the dashboard: the neighbour reached the hospital with nothing to show the
+    treating team, and the person the whole system is standing in for had to
+    wake up and copy a URL.
+
+    So it is minted here, when she is escalated, and sent to the people who are
+    physically there. The son is told separately, as somebody who should know,
+    not as the courier.
+
+    WRITE-SCOPED, deliberately. A treating team that can read her allergies but
+    cannot record what they ordered sends everyone back to the son, which is
+    the failure this exists to remove. Everything that makes that safe is
+    already true: the link dies in an hour, every open is receipted, notes are
+    attributed and append-only, and the family can revoke it in one act.
+
+    Never raises. This runs inside an escalation, and an emergency alert that
+    failed because a link could not be minted would be a worse outcome than an
+    admission with no link.
+    """
+    from anbu_care.care_circle import notify as care_notify
+    from anbu_care.handoff import access
+
+    try:
+        profile = service.load_profile(parent_id)
+        if profile is None:
+            return
+        contacts = [c for c in care_notify.care_circle(parent_id)
+                    if not skip_numbers or c.whatsapp_e164 not in skip_numbers]
+        if not contacts:
+            return
+
+        token = access.mint(case_id, allow_notes=True)
+    except Exception:
+        # Includes the parent not having consented to emergency clinical
+        # sharing, which is a refusal and not a fault.
+        logger.info("no handoff link was shared for %s", case_id, exc_info=True)
+        return
+
+    import os
+
+    from anbu_care.tools import whatsapp_tools
+
+    base = os.getenv("ANBU_PUBLIC_BASE_URL", "").rstrip("/")
+    params = {
+        "parent_name": profile.name.split()[0] if profile.name else "your parent",
+        "handoff_url": f"{base}/handoff/{token}" if base else f"/handoff/{token}",
+        "expires_minutes": str(access.HANDOFF_TTL_SECONDS // 60),
+    }
+    for contact in contacts:
+        try:
+            whatsapp_tools.send_family_update(
+                case_id=case_id, parent_id=parent_id,
+                to_e164=contact.whatsapp_e164,
+                template_name="clinician_handoff_link", template_params=params,
+                message_class="logistics",
+                purpose_override=consent.OUTBOUND_NOTIFY,
+            )
+        except Exception:
+            logger.exception("could not share the handoff link with the care circle")
 
 
 def _tell_the_care_circle(

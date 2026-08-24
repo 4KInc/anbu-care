@@ -1182,7 +1182,7 @@ def mint_handoff_link(
 
 @app.post("/api/cases/{case_id}/handoff-link/send")
 def send_handoff_link(
-    case_id: str, to_care_circle: bool = False,
+    case_id: str, to_care_circle: bool = True,
     _session: str = Depends(require_family_session),
 ) -> dict[str, Any]:
     """Mint a handoff link and send it over WhatsApp.
@@ -1228,6 +1228,10 @@ def send_handoff_link(
         "expires_minutes": str(access.HANDOFF_TTL_SECONDS // 60),
     }
 
+    # The care circle by DEFAULT, because they are the ones in the room. Sending
+    # to the family decision-maker first made him the courier: he had to be
+    # awake, copy a URL and forward it to a hospital eleven time zones away,
+    # which is precisely the job this system exists to do instead of him.
     recipients = (circle.care_circle(case.parent_id) if to_care_circle
                   else [c for c in profile.family_contacts if c.is_primary]
                   or profile.family_contacts)
