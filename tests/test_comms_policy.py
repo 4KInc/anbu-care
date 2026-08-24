@@ -420,7 +420,7 @@ def test_a_message_opens_on_the_tab_it_is_about():
                 "payment_auto_initiated", "payment_escalated"}
     ON_RECORD = {"document_recorded", "document_recorded_withheld",
                  "document_unreadable", "document_already_recorded",
-                 "diagnostic_options_ready"}
+                 "diagnostic_options_ready", "diagnostic_options_none"}
     for name, spec in TEMPLATES.items():
         if name in ON_CLAIM:
             assert spec.get("view") == "claim", f"{name} should open the claim"

@@ -249,6 +249,7 @@ def _send(
 SOURCE_REF = {
     "bill_recorded": "bill",
     "diagnostic_options_ready": "record",
+    "diagnostic_options_none": "record",
     "bill_already_recorded": "bill",
     "bill_already_recorded_retake": "bill",
     "bill_unreadable": "bill",

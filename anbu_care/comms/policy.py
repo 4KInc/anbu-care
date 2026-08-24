@@ -189,6 +189,19 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "params": ["clinician", "parent_name", "option_count"],
     },
 
+    # A search that found nothing is still told. The family knowing a test was
+    # ordered and that Anbu Care came up empty is worth far more than silence
+    # they cannot tell apart from nothing having happened.
+    "diagnostic_options_none": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: {clinician} has ordered a test for {parent_name}. "
+                "Anbu Care could not find anywhere nearby that it could be done "
+                "and has not booked anything, so this one needs a phone call.\n"
+                "The test is on her record: {dashboard_url}",
+        "view": "record",
+        "params": ["clinician", "parent_name"],
+    },
+
     "document_recorded_withheld": {
         # The fallback when even the safe summary is refused. Carries a kind and
         # a link and nothing else, so a family is told something arrived rather

@@ -86,6 +86,12 @@ def case(monkeypatch):
             whatsapp_e164="+16692167706", is_primary=True,
             consent_purposes=["status_updates"])],
     ))
+    # Her own agreement that a treating team may read her record. Without it a
+    # handoff link cannot be minted at all, which is correct and is its own
+    # test elsewhere.
+    from anbu_care.tools import onboarding_tools
+
+    onboarding_tools.record_emergency_disclosure_consent(pid)
     return pid, service.open_case(pid).case_id
 
 
@@ -140,8 +146,8 @@ def test_options_are_refused_without_an_order(case, live_places):
     with TestClient(app) as client:
         r = client.post(f"/api/cases/{case_id}/diagnostics/dxorder-nope/options",
                         headers={"Authorization": "Bearer anbu-demo-family-token"})
-    assert r.status_code in (401, 403, 404)
-    if r.status_code == 404:
+    assert r.status_code in (401, 403, 409)
+    if r.status_code == 409:
         assert "does not order tests" in r.json()["detail"]
 
 
@@ -559,3 +565,82 @@ def test_the_record_shows_what_was_surfaced_not_a_fresh_search(case, live_places
     stored = service.load_diagnostic_order(case_id, "dxorder-x")
     assert [o["place_id"] for o in stored.options] == \
            [o["place_id"] for o in surfaced["options"]]
+
+
+# =========================================================================
+# THE AGENT DOES IT, NOT THE FAMILY
+# =========================================================================
+
+
+def test_recording_an_order_surfaces_and_tells_without_being_asked(case, monkeypatch):
+    """The point of the whole feature.
+
+    A present son does not wait to be asked to look up where the test can be
+    done. Splitting this into endpoints somebody had to invoke meant the family
+    was doing the work on the agent's behalf, which is the opposite of what
+    this is for — the bill lane has always read, priced, decided and told from
+    one photograph, and this now matches it.
+    """
+    from anbu_care import server
+
+    _parent_id, case_id = case
+    ran = []
+    monkeypatch.setattr(server, "_surface_options",
+                        lambda c, o: ran.append(("surface", c, o)) or {"options": [1, 2]})
+    monkeypatch.setattr(server, "_tell_about_order",
+                        lambda c, o, option_count: ran.append(("tell", option_count)))
+
+    server._refer_and_tell(case_id, "dxorder-1")
+
+    assert [r[0] for r in ran] == ["surface", "tell"]
+    assert ran[1][1] == 2, "the family was not told how many options there were"
+
+
+def test_a_failed_search_still_tells_the_family(case, monkeypatch):
+    """Silence is indistinguishable from nothing having happened."""
+    from anbu_care import server
+
+    _parent_id, case_id = case
+    told = []
+    monkeypatch.setattr(server, "_surface_options",
+                        lambda c, o: (_ for _ in ()).throw(RuntimeError("places down")))
+    monkeypatch.setattr(server, "_tell_about_order",
+                        lambda c, o, option_count: told.append(option_count))
+
+    server._refer_and_tell(case_id, "dxorder-1")
+
+    assert told == [None], "a failed search told nobody"
+
+
+def test_the_empty_result_message_asks_for_a_phone_call():
+    from anbu_care.comms.policy import TEMPLATES
+    from anbu_care.schemas import MessageClass
+
+    spec = TEMPLATES["diagnostic_options_none"]
+    assert spec["message_class"] is MessageClass.LOGISTICS
+    assert "could not find anywhere nearby" in spec["body"]
+    assert "has not booked anything" in spec["body"]
+    assert "{test" not in spec["body"], "the empty message names the test"
+
+
+def test_an_ordinary_note_starts_no_referral(case, monkeypatch):
+    """Only an order triggers it. A note about how she slept does not."""
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server
+
+    started = []
+    monkeypatch.setattr(server, "_refer_and_tell",
+                        lambda c, o: started.append(o))
+
+    _parent_id, case_id = case
+    from anbu_care.handoff import access
+
+    token = access.mint(case_id, allow_notes=True)
+    with TestClient(server.app) as client:
+        r = client.post(f"/handoff/{token}/note/confirm",
+                        json={"text": "Slept well overnight.",
+                              "recorded_by": "Dr A. Anand"})
+    assert r.status_code == 200
+    assert r.json()["order_id"] == ""
+    assert started == [], "a note with no order started a referral"

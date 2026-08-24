@@ -1326,20 +1326,86 @@ async def handoff_note_draft(token: str, request: Request) -> dict[str, Any]:
 
 
 @app.post("/handoff/{token}/note/confirm")
-def handoff_note_confirm(token: str, body: NoteConfirmRequest) -> dict[str, Any]:
-    """Record a confirmed note. The only write a handoff link can perform."""
+def handoff_note_confirm(token: str, body: NoteConfirmRequest,
+                         background: BackgroundTasks) -> dict[str, Any]:
+    """Record a confirmed note. The only write a handoff link can perform.
+
+    When the note carries an ORDER, the referral runs on its own from here.
+    That is the entire point of the feature: a present son does not wait to be
+    asked to look up where the test can be done, and neither does this. Same
+    shape as a photographed bill, which reads, prices, decides and tells the
+    family without anyone pressing anything in between.
+
+    In the background, because the clinician is standing at a bedside holding a
+    phone. A live Places search plus an outbound message is several seconds,
+    and the form must come back before then.
+    """
     from anbu_care.handoff import access, notes
 
     try:
         grant = access.resolve(token)
-        return notes.confirm(grant, body.text, ticket=body.ticket,
-                             recorded_by=body.recorded_by,
-                             # Optional, and empty for an ordinary note. The
-                             # clinician orders the test; nothing here does.
-                             orders_test=body.orders_test,
-                             mobility=body.mobility)
+        result = notes.confirm(grant, body.text, ticket=body.ticket,
+                               recorded_by=body.recorded_by,
+                               # Optional, and empty for an ordinary note. The
+                               # clinician orders the test; nothing here does.
+                               orders_test=body.orders_test,
+                               mobility=body.mobility)
     except access.HandoffDenied as denied:
         raise HTTPException(status_code=403, detail=str(denied)) from None
+
+    if result.get("order_id"):
+        background.add_task(_refer_and_tell, grant.case_id, result["order_id"])
+        result["next"] = ("Anbu Care is looking up where this can be done and "
+                          "will tell the family. Nothing is being booked.")
+    return result
+
+
+def _refer_and_tell(case_id: str, order_id: str) -> None:
+    """Find the options and tell the family. Never raises.
+
+    Runs after the clinician's form has already returned, so an exception here
+    reaches no caller — which means every outcome has to end somewhere a person
+    will see it. A failed search is still told, because the family knowing that
+    a test was ordered and Anbu Care could not find anywhere is worth far more
+    than silence they cannot distinguish from nothing having happened.
+    """
+    try:
+        surfaced = _surface_options(case_id, order_id)
+    except Exception:  # a failure is an outcome, not a crash
+        logger.exception("could not surface diagnostic options")
+        _tell_about_order(case_id, order_id, option_count=None)
+        return
+    _tell_about_order(case_id, order_id,
+                      option_count=len(surfaced.get("options", [])))
+
+
+def _tell_about_order(case_id: str, order_id: str, option_count: int | None) -> None:
+    """One message, logistics class, and it never names the test."""
+    case = service.load_case(case_id)
+    order = service.load_diagnostic_order(case_id, order_id)
+    profile = service.load_profile(case.parent_id) if case else None
+    contacts = profile.family_contacts if profile else []
+    contact = next((c for c in contacts if c.is_primary), None) or next(iter(contacts), None)
+    if case is None or order is None or contact is None:
+        logger.warning("diagnostic order %s has nobody to tell", order_id)
+        return
+
+    first = profile.name.split()[0] if profile and profile.name else "your parent"
+    template = ("diagnostic_options_ready" if option_count
+                else "diagnostic_options_none")
+    params = {"clinician": order.ordered_by or "The treating team",
+              "parent_name": first}
+    if option_count:
+        params["option_count"] = str(option_count)
+
+    try:
+        whatsapp_tools.send_family_update(
+            case_id=case_id, parent_id=case.parent_id,
+            to_e164=contact.whatsapp_e164, template_name=template,
+            template_params=params, message_class="logistics",
+            purpose_override=consent.STATUS_UPDATES)
+    except Exception:  # the send has its own receipts
+        logger.exception("could not tell the family about an ordered test")
 
 
 @app.get("/api/cases/{case_id}/diagnostics")
@@ -1359,34 +1425,32 @@ def case_diagnostics(case_id: str,
     }
 
 
-@app.post("/api/cases/{case_id}/diagnostics/{order_id}/options")
-def diagnostic_options(case_id: str, order_id: str,
-                       _session: str = Depends(require_family_session)) -> dict[str, Any]:
-    """What the son does: find where this test can actually be done.
+class DiagnosticsUnavailable(Exception):
+    """No options could be surfaced, and the reason is safe to show."""
 
-    Credentialed at family level because it causes a real outbound search and
-    writes to the chain. The ORDER is not created here — it must already exist,
-    recorded by a clinician. A referral with no order behind it is refused
-    rather than invented, which is the whole first wall of this feature.
+
+def _surface_options(case_id: str, order_id: str) -> dict:
+    """Find where the ordered test can be done, record it, keep it.
+
+    ONE path, used by the agent when a clinician places an order and by the
+    endpoint when somebody asks again. Two implementations would eventually
+    disagree about what the family was shown.
     """
     from anbu_care.diagnostics import ReferralRefused, group_by_mobility, options_for, record
 
     case = service.load_case(case_id)
     if case is None:
-        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+        raise DiagnosticsUnavailable(f"no case {case_id}")
     order = service.load_diagnostic_order(case_id, order_id)
     if order is None:
-        raise HTTPException(
-            status_code=404,
-            detail=(f"no clinician-ordered test {order_id} on this case. Anbu "
-                    f"Care does not order tests, so there is nothing to search for."))
+        raise DiagnosticsUnavailable(
+            f"no clinician-ordered test {order_id} on this case. Anbu Care does "
+            f"not order tests, so there is nothing to search for.")
 
     profile = service.load_profile(case.parent_id)
     hospital = _hospital_for_case(case)
     if hospital is None:
-        raise HTTPException(
-            status_code=409,
-            detail="no hospital on this case to search near")
+        raise DiagnosticsUnavailable("no hospital on this case to search near")
 
     insurer = getattr(getattr(profile, "policy", None), "insurer", None)
     try:
@@ -1397,7 +1461,7 @@ def diagnostic_options(case_id: str, order_id: str,
                                # single lab 2,205 km away.
                                city=hospital.city)
     except ReferralRefused as refused:
-        raise HTTPException(status_code=502, detail=str(refused)) from None
+        raise DiagnosticsUnavailable(str(refused)) from None
 
     grouped = group_by_mobility(surfaced["options"], order.mobility)
     receipt_id = record(case_id=case_id, order_id=order_id,
@@ -1422,6 +1486,22 @@ def diagnostic_options(case_id: str, order_id: str,
         **grouped,
         "receipt_id": receipt_id,
     }
+
+
+@app.post("/api/cases/{case_id}/diagnostics/{order_id}/options")
+def diagnostic_options(case_id: str, order_id: str,
+                       _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Look the options up again, by hand.
+
+    Not the normal path. Recording the order runs this on its own — a family
+    should never have to ask the system to do the thing it exists to do. This
+    is here for a retry after a failed search, and for anybody who wants to see
+    the lookup happen.
+    """
+    try:
+        return _surface_options(case_id, order_id)
+    except DiagnosticsUnavailable as unavailable:
+        raise HTTPException(status_code=409, detail=str(unavailable)) from None
 
 
 @app.post("/api/cases/{case_id}/diagnostics/{order_id}/notify")
