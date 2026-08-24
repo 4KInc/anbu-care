@@ -283,6 +283,17 @@ input:focus{outline:0;border:2px solid var(--teal);padding:10px 11px}
   font-size:12px;font-weight:800;color:var(--ink-mute);
   font-variant-numeric:tabular-nums}
 .slot.on{background:var(--teal-bg);border-color:var(--teal);color:var(--teal-ink)}
+.dxlist{display:flex;flex-direction:column}
+.dxrow{display:flex;gap:14px;align-items:flex-start;padding:12px 0;
+       border-bottom:1px solid var(--line)}
+.dxrow:last-child{border-bottom:0;padding-bottom:0}
+.dxrow:first-child{padding-top:0}
+.dxnum{flex:0 0 62px;font-weight:800;font-size:20px;line-height:1.1;
+       color:var(--ink);text-align:right}
+.dxnum span{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;
+            text-transform:uppercase;color:var(--ink-soft);margin-top:2px}
+.dxbody{flex:1;min-width:0}
+.dxname{font-weight:600;font-size:15px;line-height:1.35;overflow-wrap:anywhere}
 .chip{font-size:12.5px;color:var(--ink-soft);background:var(--slate-bg);
   padding:3px 9px;border-radius:999px;white-space:nowrap}
 .chip.warn{background:var(--amber-bg);color:var(--amber)}
@@ -793,31 +804,55 @@ function vDiagnostics(){
   const orders=(S.dx&&S.dx.orders)||[];
   if(!orders.length) return "";
   return `<div class="sec">Tests a clinician ordered</div>
-  ${orders.slice().reverse().map(o=>{
-    const opts=o.options||[];
-    return `<div class="card">
-      <h2 class="mini">${esc(o.test_label)}</h2>
-      <p class="mute" style="margin:-8px 0 10px;font-size:13px">
-        Ordered by ${esc(o.ordered_by||"the treating team")} ·
-        ${esc(new Date(o.recorded_at).toLocaleString())}</p>
-      ${o.mobility_note?`<p style="margin:0 0 12px">${esc(o.mobility_note)}</p>`:""}
-      ${opts.length===0
-        ? `<p class="mute">${unknown("no options have been looked up yet")}</p>`
-        : `<div class="rows">${opts.map(x=>`
-            <div class="row stack">
-              <div class="k">${esc(x.name)}</div>
-              <div class="v">
-                <span class="num">${Number(x.distance_km).toFixed(1)} km</span>
-                from the hospital.<br>
-                <span class="mute">${esc(x.network_note||"")}</span><br>
-                <span class="mute">${esc(x.offers_test_note||"")}</span>
-              </div>
-            </div>`).join("")}</div>`}
-      ${opts.length?`<p class="mute" style="margin-top:12px">
-        ${esc(o.options_source_label||"")} Nothing here is booked: Anbu Care is
-        not connected to any of these centres and has not contacted them.</p>`:""}
-    </div>`;
-  }).join("")}`;
+  ${orders.slice().reverse().map(dxCard).join("")}`;
+}
+
+// One option, one line of substance. The caveats are identical on every
+// centre — "no network information", "whether it runs this test is not
+// something this search can tell" — so repeating them eight times buries the
+// only things that differ, which are the name and the distance. They are said
+// once, under the list, and each row carries a chip instead.
+function dxOption(x, i){
+  const known = x.in_network_listed;
+  const unknownNetwork = /no network information/i.test(x.network_note||"");
+  const isLab = !!x.offers_test;
+  return `<div class="dxrow">
+    <div class="dxnum num">${Number(x.distance_km).toFixed(1)}<span>km</span></div>
+    <div class="dxbody">
+      <div class="dxname">${esc(x.name)}</div>
+      <div class="pills" style="margin-top:6px">
+        ${i===0?`<span class="pill p-teal">nearest</span>`:""}
+        ${isLab?`<span class="pill p-violet">diagnostic centre</span>`
+               :`<span class="pill p-slate">medical facility</span>`}
+        ${known?`<span class="pill p-teal">listed in network</span>`
+               :unknownNetwork?`<span class="pill p-slate">network not known</span>`
+               :`<span class="pill p-amber">not listed in network</span>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function dxCard(o){
+  const opts=o.options||[];
+  const when=new Date(o.recorded_at);
+  return `<div class="card">
+    <h2 class="mini">${esc(o.test_label)}</h2>
+    <p class="mute" style="margin:-8px 0 12px;font-size:13px">
+      Ordered by ${esc(o.ordered_by||"the treating team")} ·
+      ${esc(when.toLocaleDateString())} ${esc(when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}))}</p>
+    ${o.mobility_note?`<div class="strip note">${esc(o.mobility_note)}</div>`:""}
+    ${opts.length===0
+      ? `<p class="mute">${unknown("no options have been looked up yet")}</p>`
+      : `<div class="dxlist">${opts.map(dxOption).join("")}</div>
+         <p class="mute" style="margin-top:14px;font-size:13px">
+           Distances are from the hospital. Anbu Care has no network information
+           for these centres, so confirm coverage with your insurer before you
+           go, and ring ahead to check they run this test.</p>
+         <p class="mute" style="font-size:13px">
+           ${esc(o.options_source_label||"")}
+           Nothing here is booked: Anbu Care is not connected to any of these
+           centres and has not contacted them.</p>`}
+  </div>`;
 }
 
 function vRecord(){

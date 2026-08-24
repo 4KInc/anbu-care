@@ -52,8 +52,8 @@ UNKNOWN = "unknown"
 
 MOBILITY_UNSTATED = (
     "The clinician did not say whether she can travel to a centre, so both are "
-    "shown. Which of these fits depends on whether she can travel, and the "
-    "people with her decide that — Anbu Care does not."
+    "shown. Which of these fits depends on whether she can travel. The people "
+    "with her decide that, not Anbu Care."
 )
 MOBILITY_NON_AMBULATORY = (
     "The clinician recorded that she cannot travel to a centre. Home collection "
@@ -63,7 +63,7 @@ MOBILITY_NON_AMBULATORY = (
 
 NOT_ARRANGED = (
     "Nothing here is booked. Anbu Care is not connected to any of these "
-    "centres and has not contacted them — these are places the test could be "
+    "centres and has not contacted them. These are places the test could be "
     "done, for somebody to ring."
 )
 
@@ -216,7 +216,7 @@ def group_by_mobility(options: list[dict], mobility: str) -> dict:
         "home_collection": home,
         "home_collection_note": (
             "No centre in this list is known to offer home collection. That is "
-            "an absence of information, not a confirmed no — ring and ask."
+            "an absence of information, not a confirmed no. Ring and ask."
             if not home else
             "These are listed as offering home collection."),
     }

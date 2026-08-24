@@ -242,7 +242,7 @@ def test_anbu_care_sets_no_ambulatory_verdict(case, live_places):
 
     grouped = referral.group_by_mobility([], order.mobility)
     assert grouped["mobility_as_stated"] == "unknown"
-    assert "Anbu Care does not" in grouped["mobility_note"]
+    assert "not Anbu Care" in grouped["mobility_note"]
 
 
 def test_an_unrecognised_mobility_value_is_not_guessed_at(case):
@@ -649,3 +649,40 @@ def test_an_ordinary_note_starts_no_referral(case, monkeypatch):
     assert r.status_code == 200
     assert r.json()["order_id"] == ""
     assert started == [], "a note with no order started a referral"
+
+
+def _centre(primary_type):
+    return places_api.Centre(place_id="p", name="Nowhere Lab", address="x",
+                             lat=8.8, lon=78.1, primary_type=primary_type)
+
+
+def test_no_em_dashes_in_anything_a_family_reads():
+    """A standing rule on this project, broken twice in this feature alone.
+
+    Docstrings and comments are for us. Every string that renders on a surface
+    a family sees is not, and an em dash has been quietly reappearing in them.
+    """
+    from anbu_care.comms.policy import TEMPLATES
+    from anbu_care.diagnostics import referral as ref
+
+    for name in ("MOBILITY_UNSTATED", "MOBILITY_NON_AMBULATORY", "NOT_ARRANGED",
+                 "CONFIRM_WITH_INSURER"):
+        assert "—" not in getattr(ref, name), f"{name} carries an em dash"
+
+    for key in ("diagnostic_options_ready", "diagnostic_options_none"):
+        assert "—" not in TEMPLATES[key]["body"], f"{key} carries an em dash"
+
+    # And every note the module actually composes, checked as output rather
+    # than scraped from source: a regex over the file matches docstrings too,
+    # which are ours to write however we like.
+    for mobility in ("unknown", "ambulatory", "non_ambulatory"):
+        grouped = ref.group_by_mobility([], mobility)
+        assert "—" not in grouped["mobility_note"]
+        assert "—" not in grouped["home_collection_note"]
+
+    for note in (ref._network_note("Nowhere Lab", "Star Health")[1],
+                 ref._network_note("Nowhere Lab", None)[1],
+                 ref._offers_test(_centre("medical_lab"))[1],
+                 ref._offers_test(_centre("medical_clinic"))[1],
+                 ref._offers_test(_centre(""))[1]):
+        assert "—" not in note, f"a composed note carries an em dash: {note[:60]}"
