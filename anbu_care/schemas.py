@@ -550,6 +550,10 @@ class ExtractedBill(BaseModel):
     is_interim: bool | None = None
     currency: str = "INR"
     vendor: str | None = None
+    # What the hospital calls this bill. Two photographs of one bill are two
+    # images and one debt, and this is the only thing on the paper that says
+    # so.
+    bill_no: str | None = None
     # The UPI ID printed on the paper. Kept because the enforcer treats it as
     # EVIDENCE that a bill is not what it should be, never as somewhere to send
     # money. A bill is the one input that can never choose a destination.

@@ -48,6 +48,32 @@ class BillRejected(Exception):
         self.already_recorded = already_recorded
 
 
+def _normalised_no(value: str | None) -> str:
+    """A printed bill number, reduced to what a second reading would agree on.
+
+    Case and separators are exactly what OCR varies on between two photographs
+    of the same paper: IP/2026/04471-I3 and ip 2026 04471 i3 are one number.
+    Anything shorter than four characters is discarded rather than matched on;
+    "1" as a bill number would collapse unrelated bills into one.
+    """
+    if not value:
+        return ""
+    kept = "".join(c for c in str(value).lower() if c.isalnum())
+    return kept if len(kept) >= 4 else ""
+
+
+def _same_vendor(left: str | None, right: str | None) -> bool:
+    """Bill numbers are unique inside a hospital, not across them.
+
+    Unknown on either side counts as the same, because the alternative is
+    treating a bill whose vendor did not read as a new bill and paying it
+    twice. A false match here refuses a payment; a false miss makes one.
+    """
+    if not left or not right:
+        return True
+    return _normalised_no(left)[:12] == _normalised_no(right)[:12]
+
+
 def _reading_sha256(bill: ExtractedBill) -> str:
     """Hash of the extracted reading — the thing that must not silently change.
 
@@ -128,6 +154,32 @@ def ingest_bill_image(case_id: str, parent_id: str, image: bytes,
             "enter the amounts by hand."
         )
 
+    # A PHOTOGRAPH IS NOT AN IDENTITY. The image hash above catches the same
+    # file arriving twice, which is the retry case. It does not catch the
+    # ordinary human one: the first photo was blurry, so they took another. Two
+    # images, two hashes, one debt — and before this, two bills on the case,
+    # twice the money owed, and a second payment eligible to go out for a bill
+    # the hospital only issued once. The enforcer would not have stopped it
+    # either; `not_duplicate` matches on bill_id, and this would have a new one.
+    #
+    # So the bill's own number decides, matched within the same vendor because
+    # numbering is only unique inside the hospital that issues it. Bills that
+    # print no number fall back to the image hash alone, which is where this
+    # started.
+    printed_no = _normalised_no(reading.bill_no)
+    if printed_no:
+        twin = next((b for b in list_bills(case_id)
+                     if _normalised_no(b.bill_no) == printed_no
+                     and _same_vendor(b.vendor, reading.vendor)), None)
+        if twin is not None:
+            raise BillRejected(
+                f"that is bill {reading.bill_no} from {reading.vendor or 'the same '
+                'hospital'}, which is already on this case as {twin.bill_id}. It is "
+                f"a different photograph of the same bill, so it has not been "
+                f"added again and the amount is not counted twice.",
+                already_recorded=True,
+            )
+
     bill = ExtractedBill(
         bill_id=bill_id,
         case_id=case_id,
@@ -140,6 +192,7 @@ def ingest_bill_image(case_id: str, parent_id: str, image: bytes,
         balance_due_inr=reading.balance_due_inr,
         is_interim=reading.is_interim,
         vendor=reading.vendor,
+        bill_no=reading.bill_no,
         payee_vpa=reading.payee_vpa,
         bill_date=reading.bill_date,
         admitted_on=reading.admitted_on,

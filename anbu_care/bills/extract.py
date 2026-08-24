@@ -68,6 +68,8 @@ Return ONLY a JSON object, no prose and no code fence:
   "is_interim": <true if the bill says INTERIM / PROVISIONAL / PART BILL, false
                  if it says FINAL, null if it does not say>,
   "vendor": "<hospital or clinic name, or null>",
+  "bill_no": "<the bill or invoice number printed on it, exactly as printed,
+               e.g. IP/2026/04471-I3, or null>",
   "payee_vpa": "<the UPI ID printed on the bill, e.g. name@bank, or null. Copy
                  it EXACTLY. Do not invent one and do not guess at a bank if
                  the bill does not print one>",
@@ -120,6 +122,9 @@ class Extraction:
     discount_inr: int | None = None
     tax_inr: int | None = None
     vendor: str | None = None
+    # The bill's own identity, as the hospital printed it. A photograph is not
+    # an identity: the same bill shot twice is two images and one bill.
+    bill_no: str | None = None
     # The UPI ID as PRINTED. Read as evidence, never as a destination: the
     # enforcer compares it with the mandate and refuses a disagreement rather
     # than following it. See `payee_mismatch`.
@@ -293,6 +298,7 @@ def extract(image: bytes, mime_type: str = "image/jpeg") -> Extraction:
         is_interim=(bool(is_interim) if is_interim is not None else None),
         discount_inr=discount, tax_inr=tax,
         vendor=(str(parsed["vendor"]).strip() if parsed.get("vendor") else None),
+        bill_no=(str(parsed["bill_no"]).strip() if parsed.get("bill_no") else None),
         payee_vpa=(str(parsed["payee_vpa"]).strip()
                    if parsed.get("payee_vpa") else None),
         bill_date=(str(parsed["bill_date"]).strip() if parsed.get("bill_date") else None),

@@ -56,12 +56,17 @@ def case_id(parent_id) -> str:
     )["case_id"]
 
 
-def _reads(monkeypatch, lines, stated=None, unreadable=False, reason=None):
+def _reads(monkeypatch, lines=None, stated=None, unreadable=False, reason=None,
+           bill_no=None, total=None):
     """Pin what the model returns at the single seam, so the guards under test
     are the real parsing, arithmetic and refusal code rather than a mock."""
+    if lines is None:
+        lines = [{"label": "Ward charges", "item": "ward_room",
+                  "amount_inr": total or 10_000, "source_hint": "row 1"}]
     payload = {
-        "line_items": lines, "stated_total_inr": stated,
-        "vendor": "Sacred Heart Hospital", "bill_date": "2026-08-22",
+        "line_items": lines, "stated_total_inr": stated if stated is not None else total,
+        "vendor": "Sacred Heart Hospital", "bill_no": bill_no,
+        "bill_date": "2026-08-22",
         "unreadable": unreadable, "unreadable_reason": reason,
     }
     monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
@@ -1086,3 +1091,89 @@ def test_a_discount_larger_than_the_residual_does_not_owe_money_back(
     bills[0].discount_inr = 9_999_999
 
     assert coverage.estimate_for_case(case_id, bills).estimated_you_pay_inr == 0
+
+
+# =========================================================================
+# A PHOTOGRAPH IS NOT AN IDENTITY
+# =========================================================================
+
+
+def test_the_same_bill_photographed_twice_is_one_bill(case_id, parent_id, monkeypatch):
+    """The ordinary human case, which the image hash never covered.
+
+    The first photo was blurry, so they took another. Two images, two hashes,
+    one debt. Before this it was two bills on the case, twice the money owed,
+    and a second payment eligible to go out for a bill the hospital issued
+    once — the enforcer would not have caught it either, because
+    `not_duplicate` matches on bill_id and this would have a new one.
+    """
+    from anbu_care.bills import BillRejected, ingest_bill_image, list_bills
+
+    _reads(monkeypatch, bill_no="IP/2026/04471-I3", total=31_650)
+    first = ingest_bill_image(case_id, parent_id, b"photo-one" + b"x" * 2000,
+                              "image/jpeg")
+    assert first.bill_no == "IP/2026/04471-I3"
+
+    with pytest.raises(BillRejected) as rejected:
+        ingest_bill_image(case_id, parent_id, b"photo-two-retaken" + b"x" * 2000,
+                          "image/jpeg")
+
+    assert rejected.value.already_recorded is True
+    assert first.bill_id in str(rejected.value)
+    assert len(list_bills(case_id)) == 1, "one bill was counted twice"
+
+
+def test_ocr_wobble_on_the_number_does_not_make_a_second_bill(case_id, parent_id,
+                                                              monkeypatch):
+    """Case and separators are exactly what varies between two readings."""
+    from anbu_care.bills import BillRejected, ingest_bill_image, list_bills
+
+    _reads(monkeypatch, bill_no="IP/2026/04471-I3", total=31_650)
+    ingest_bill_image(case_id, parent_id, b"photo-one" + b"x" * 2000, "image/jpeg")
+
+    _reads(monkeypatch, bill_no="ip 2026 04471 i3", total=31_650)
+    with pytest.raises(BillRejected) as rejected:
+        ingest_bill_image(case_id, parent_id, b"photo-two" + b"x" * 2000, "image/jpeg")
+
+    assert rejected.value.already_recorded is True
+    assert len(list_bills(case_id)) == 1
+
+
+def test_a_genuinely_different_bill_is_still_recorded(case_id, parent_id, monkeypatch):
+    """Day three and day four are two bills. Refusing the second would be worse
+    than the bug this fixes."""
+    from anbu_care.bills import ingest_bill_image, list_bills
+
+    _reads(monkeypatch, bill_no="IP/2026/04471-I3", total=31_650)
+    ingest_bill_image(case_id, parent_id, b"photo-day3" + b"x" * 2000, "image/jpeg")
+
+    _reads(monkeypatch, bill_no="IP/2026/04471-I4", total=27_300)
+    ingest_bill_image(case_id, parent_id, b"photo-day4" + b"x" * 2000, "image/jpeg")
+
+    assert len(list_bills(case_id)) == 2
+
+
+def test_a_bill_with_no_printed_number_still_gets_through(case_id, parent_id,
+                                                          monkeypatch):
+    """Not every bill prints one. Those fall back to the image hash, which is
+    where this started, rather than being refused for lacking an identity."""
+    from anbu_care.bills import ingest_bill_image, list_bills
+
+    _reads(monkeypatch, bill_no=None, total=8_890)
+    ingest_bill_image(case_id, parent_id, b"photo-a" + b"x" * 2000, "image/jpeg")
+    _reads(monkeypatch, bill_no=None, total=4_100)
+    ingest_bill_image(case_id, parent_id, b"photo-b" + b"x" * 2000, "image/jpeg")
+
+    assert len(list_bills(case_id)) == 2
+
+
+def test_a_short_number_is_not_treated_as_an_identity(case_id, parent_id, monkeypatch):
+    """"1" as a bill number would collapse unrelated bills into one."""
+    from anbu_care.bills import ingest_bill_image, list_bills
+
+    _reads(monkeypatch, bill_no="1", total=9_000)
+    ingest_bill_image(case_id, parent_id, b"photo-a" + b"x" * 2000, "image/jpeg")
+    _reads(monkeypatch, bill_no="2", total=4_000)
+    ingest_bill_image(case_id, parent_id, b"photo-b" + b"x" * 2000, "image/jpeg")
+
+    assert len(list_bills(case_id)) == 2
