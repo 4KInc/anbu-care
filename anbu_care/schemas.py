@@ -823,6 +823,12 @@ class ClinicianNote(BaseModel):
     # against the hash that was written at the time.
     receipt_id: str = ""
     text_sha256: str = ""
+    # The note rendered into the family's language, where the clinician spoke
+    # another one. The DICTATION stays the record in `text`; this is derived
+    # from it and says so. A son reading "நெஞ்சு வலி குறைந்துவிட்டது" on his
+    # mother's record learns nothing, which is the same gap the test label had.
+    text_en: str = ""
+    text_en_note: str = ""
     # Set when the same note also ordered a test.
     order_id: str = ""
     recorded_at: datetime = Field(default_factory=utcnow)

@@ -1552,8 +1552,11 @@ def _surface_options(case_id: str, order_id: str) -> dict:
     if not order.test_label_en:
         from anbu_care.comms import translate
 
-        english = translate.render_into_english(order.test_label,
-                                                source_ref="clinician's order")
+        english = translate.render_into_english(
+            order.test_label, source_ref="clinician's order",
+            # Same reasoning as the note: the urgent eight-second budget
+            # exists to protect an alert, and this is not one.
+            timeout_seconds=translate.UNHURRIED_TIMEOUT_SECONDS)
         if english.translated:
             order.test_label_en = english.text
             order.test_label_en_note = english.detail

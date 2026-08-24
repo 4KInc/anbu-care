@@ -809,8 +809,15 @@ function vClinicianNotes(){
   return `<div class="sec">What the treating team said</div>
   ${notes.slice().reverse().map(n=>{
     const when=new Date(n.recorded_at);
+    // Where the clinician spoke another language, the English leads and their
+    // own words sit under it. The dictation is the record; the English is
+    // derived from it and is labelled that way.
+    const en = n.text_en;
     return `<div class="card">
-      <p style="margin:0 0 10px">${esc(n.text)}</p>
+      <p style="margin:0 0 ${en?"6":"10"}px">${esc(en || n.text)}</p>
+      ${en?`<p class="mute" style="margin:0 0 4px;font-size:14px">${esc(n.text)}</p>
+        <p class="mute" style="margin:0 0 10px;font-size:12.5px">
+          The clinician said this; the English above is translated from it.</p>`:""}
       <p class="mute" style="margin:0;font-size:13px">
         ${esc(n.recorded_by||"the treating team")} ·
         ${esc(when.toLocaleDateString())}

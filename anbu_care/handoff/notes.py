@@ -43,6 +43,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -55,6 +56,8 @@ from anbu_care.webauth import LINK_SECRET_ENV
 # between hearing the transcript and tapping confirm.
 DRAFT_TTL_SECONDS = 15 * 60
 _DRAFT_DOMAIN = "anbu.handoff.draft.v1"
+
+logger = logging.getLogger(__name__)
 
 MAX_NOTE_CHARS = 4000
 
@@ -240,6 +243,29 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
         receipt_id=receipt.receipt_id,
         text_sha256=text_sha256(text),
     )
+
+    # Rendered once, when it is written, rather than on every read: a model
+    # call on a page load would make a record that changed each time somebody
+    # opened it.
+    from anbu_care.comms import translate
+
+    if translate.needs_english(text):
+        try:
+            english = translate.render_into_english(
+                text, source_ref="clinician's note",
+                # NOT the default. That is eight seconds, tuned so a slow
+                # translation can never delay a 2am alert somebody is waiting
+                # on — right for that, wrong here. Nobody is held up by this:
+                # the clinician gets their confirmation either way and the
+                # family is told separately. On Cloud Run the eight-second
+                # budget failed on a cold start and the note sat in Tamil on
+                # the record of a son who reads English.
+                timeout_seconds=translate.UNHURRIED_TIMEOUT_SECONDS)
+            if english.translated:
+                note.text_en = english.text
+                note.text_en_note = english.detail
+        except Exception:  # noqa: BLE001 - the note matters more than its rendering
+            logger.warning("could not render a clinician note into English")
 
     order_id = ""
     if ordered:

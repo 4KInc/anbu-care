@@ -1303,3 +1303,105 @@ def test_a_family_handset_can_bind_itself_as_the_treating_team(case, signed, mon
 
     assert all("ANBU-" not in e.text for e in wb.list_entries(parent_id)), \
         "a binding code was recorded as a symptom report"
+
+
+def test_a_tamil_note_is_rendered_for_the_family(case, signed, monkeypatch):
+    """The same gap the test label had, one surface over.
+
+    A doctor in Thoothukudi dictates in Tamil and the son reads English. The
+    note sat on his mother's record in Tamil script, telling him nothing.
+    """
+    from anbu_care.comms import translate
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+
+    parent_id, case_id = case
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "gemini")
+    monkeypatch.setattr(translate, "_call_model",
+                        lambda p, t: "Chest pain has settled. Moving her to the ward.")
+
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    notes.confirm(grant, "நெஞ்சு வலி குறைந்துவிட்டது.", recorded_by="Dr Anand")
+
+    stored = service.list_clinician_notes(case_id)[0]
+    assert stored.text_en == "Chest pain has settled. Moving her to the ward."
+    # The dictation remains the record.
+    assert stored.text == "நெஞ்சு வலி குறைந்துவிட்டது."
+    assert "clinician's note" in stored.text_en_note
+
+
+def test_an_english_note_is_not_sent_to_the_model(case, signed, monkeypatch):
+    """Every call is another chance to alter a record that did not need it."""
+    from anbu_care.comms import translate
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+
+    parent_id, case_id = case
+    called = []
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "gemini")
+    monkeypatch.setattr(translate, "_call_model",
+                        lambda p, t: called.append(1) or "x")
+
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    notes.confirm(grant, "Chest pain has settled.", recorded_by="Dr Anand")
+
+    stored = service.list_clinician_notes(case_id)[0]
+    assert stored.text_en == ""
+    assert called == []
+
+
+def test_a_failed_rendering_never_loses_the_note(case, signed, monkeypatch):
+    """The note matters more than its translation."""
+    from anbu_care.comms import translate
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+
+    parent_id, case_id = case
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "gemini")
+    monkeypatch.setattr(translate, "render_into_english",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    notes.confirm(grant, "நெஞ்சு வலி குறைந்துவிட்டது.", recorded_by="Dr Anand")
+
+    stored = service.list_clinician_notes(case_id)
+    assert len(stored) == 1, "a failed translation lost the note"
+    assert stored[0].text == "நெஞ்சு வலி குறைந்துவிட்டது."
+    assert stored[0].text_en == ""
+
+
+def test_the_record_shows_both_the_english_and_what_was_said_in_a_note():
+    """The dictation does not disappear behind its translation."""
+    page = _client_page()
+    block = page[page.index("function vClinicianNotes("):]
+    block = block[:block.index("\nfunction ")]
+
+    assert "n.text_en" in block, "the English rendering is not shown"
+    assert "esc(n.text)" in block, "the clinician's own words vanish"
+    assert "translated from it" in block, "the translation is not labelled as one"
+
+
+def test_the_note_rendering_is_not_on_the_urgent_timeout(monkeypatch):
+    """Eight seconds exists so a slow translation cannot delay a 2am alert.
+
+    Nothing here is an alert. The clinician gets their confirmation either way
+    and the family is told separately — and on Cloud Run the urgent budget
+    failed on a cold start, leaving a Tamil note on the record of a son who
+    reads English, with the failure logged and nothing visibly wrong.
+    """
+    import inspect
+
+    from anbu_care import server
+    from anbu_care.handoff import notes
+
+    for source in (inspect.getsource(notes.confirm),
+                   inspect.getsource(server._surface_options)):
+        if "render_into_english" not in source:
+            continue
+        call = source[source.index("render_into_english"):]
+        call = call[:call.index(")")+1] if ")" in call else call
+        assert "UNHURRIED_TIMEOUT_SECONDS" in source, \
+            "a rendering is still on the urgent budget"

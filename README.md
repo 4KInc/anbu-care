@@ -154,6 +154,10 @@ This matters more than any feature list, so it comes first.
   WhatsApp message says an update exists and does not repeat it, because a
   status update is clinical detail and that is not where it goes.
 
+  And the family reads it in their own language. A Tamil note shows the English
+  above and the clinician's own words underneath, labelled as translated from
+  them, the same way a Tamil test label does.
+
 - **Clinician notes, typed or spoken.** A voice note is transcribed by Gemini
   and shown back for confirmation; **an unconfirmed transcript writes nothing**.
   The receipt carries the hash of the confirmed text, never the words.
@@ -405,7 +409,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 907 tests, no GCP or model access needed
+make test             # 913 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -573,7 +577,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  907 tests, no GCP or model access needed
+tests/                  913 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
