@@ -1834,7 +1834,15 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
         bill = ingest_bill_image(case_id, parent_id, image, mime_type)
     except BillRejected as rejected:
         if rejected.already_recorded:
-            already("bill_already_recorded", "")
+            # Say which duplicate it was. A retake told "it is the same
+            # photograph" reads as the system not having looked properly, and
+            # it is the case the bill number exists to catch.
+            if rejected.matched_on == "bill_number" and rejected.bill_no:
+                tell("bill_already_recorded_retake",
+                     {"parent_name": first_name, "bill_no": rejected.bill_no},
+                     "billing", consent.BILLING_UPDATES)
+            else:
+                already("bill_already_recorded", "")
         else:
             tell("bill_unreadable", {"reason": str(rejected)[:200]},
                  "logistics", consent.STATUS_UPDATES)

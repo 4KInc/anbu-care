@@ -37,15 +37,24 @@ from anbu_care.schemas import BillLineItem, ExtractedBill
 class BillRejected(Exception):
     """The bill was not taken in, and the reason is safe to show the sender.
 
-    `already_recorded` marks the one refusal that is not a failure: the same
-    photograph arriving twice. Telling someone their bill "could not be read"
-    when it was read, recognised, and deliberately not counted twice is a lie
-    about the one behaviour this lane exists for.
+    `already_recorded` marks the one refusal that is not a failure: a bill that
+    is already on file. Telling someone their bill "could not be read" when it
+    was read, recognised, and deliberately not counted twice is a lie about the
+    one behaviour this lane exists for.
+
+    `matched_on` says which kind it was, because the two are different events
+    to the person who sent it. "image" is the same file arriving twice, usually
+    a retry. "bill_number" is a SECOND PHOTOGRAPH of the same paper — a retake
+    after a blurry one — and telling that sender it was "the same photograph"
+    is false, and reads as the system not having looked properly.
     """
 
-    def __init__(self, message: str, *, already_recorded: bool = False) -> None:
+    def __init__(self, message: str, *, already_recorded: bool = False,
+                 matched_on: str = "image", bill_no: str = "") -> None:
         super().__init__(message)
         self.already_recorded = already_recorded
+        self.matched_on = matched_on
+        self.bill_no = bill_no
 
 
 def _normalised_no(value: str | None) -> str:
@@ -122,7 +131,7 @@ def ingest_bill_image(case_id: str, parent_id: str, image: bytes,
             f"that is the same photograph as bill {existing.bill_id}, which is "
             f"already on this case with {len(existing.line_items)} line item(s). "
             f"It has not been added again.",
-            already_recorded=True,
+            already_recorded=True, matched_on="image",
         )
 
     # The image goes to private storage FIRST. If the reading turns out wrong,
@@ -177,7 +186,8 @@ def ingest_bill_image(case_id: str, parent_id: str, image: bytes,
                 'hospital'}, which is already on this case as {twin.bill_id}. It is "
                 f"a different photograph of the same bill, so it has not been "
                 f"added again and the amount is not counted twice.",
-                already_recorded=True,
+                already_recorded=True, matched_on="bill_number",
+                bill_no=str(reading.bill_no or ""),
             )
 
     bill = ExtractedBill(

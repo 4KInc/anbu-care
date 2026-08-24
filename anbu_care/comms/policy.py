@@ -158,6 +158,20 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "params": ["parent_name"],
     },
 
+    # A DIFFERENT photograph of a bill already on file. Separate copy from the
+    # same-photograph case because they are different events to the sender: one
+    # is a retry, the other is somebody who retook a blurry photo and would
+    # reasonably wonder why the system thinks it is the same picture.
+    "bill_already_recorded_retake": {
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: that is bill {bill_no}, which is already on "
+                "{parent_name}'s record. It is a different photograph of the "
+                "same bill, so the amount has not been counted twice.\n"
+                "The itemised breakdown is here: {dashboard_url}",
+        "view": "claim",
+        "params": ["parent_name", "bill_no"],
+    },
+
     "document_recorded_withheld": {
         # The fallback when even the safe summary is refused. Carries a kind and
         # a link and nothing else, so a family is told something arrived rather

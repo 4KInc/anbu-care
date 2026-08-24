@@ -992,9 +992,18 @@ def test_one_photograph_produces_one_message():
     from anbu_care import server
 
     source = inspect.getsource(server._read_bill_and_report)
-    # Exactly one billing message on the bill path.
-    assert source.count('"billing", consent.BILLING_UPDATES') == 1
+    # Exactly one message describing a bill that was recorded, carrying the
+    # payment outcome inside it. The duplicate branches are alternatives to it
+    # and each returns, so a photograph still produces one message either way.
+    assert source.count('tell("bill_recorded"') == 1
     assert "payment_line = _consider_payment" in source
+
+    recorded_at = source.index('tell("bill_recorded"')
+    for branch in ('already("bill_already_recorded"',
+                   'tell("bill_already_recorded_retake"'):
+        assert source.index(branch) < recorded_at, f"{branch} is not an alternative"
+        after = source[source.index(branch):recorded_at]
+        assert "return" in after, f"{branch} falls through to a second message"
 
     # And the helper returns copy rather than sending its own message.
     helper = inspect.getsource(server._consider_payment)

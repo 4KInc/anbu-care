@@ -1177,3 +1177,37 @@ def test_a_short_number_is_not_treated_as_an_identity(case_id, parent_id, monkey
     ingest_bill_image(case_id, parent_id, b"photo-b" + b"x" * 2000, "image/jpeg")
 
     assert len(list_bills(case_id)) == 2
+
+
+def test_a_retake_is_not_reported_as_the_same_photograph(case_id, parent_id,
+                                                         monkeypatch):
+    """Two duplicates, two different events to the person who sent it.
+
+    Being told "it is the same photograph" after deliberately taking a second,
+    clearer one reads as the system not having looked properly — and it is
+    plainly false. The refusal was right; the sentence was not.
+    """
+    from anbu_care.bills import BillRejected, ingest_bill_image
+
+    _reads(monkeypatch, bill_no="IP/2026/04471-I3", total=31_650)
+    ingest_bill_image(case_id, parent_id, b"photo-one" + b"x" * 2000, "image/jpeg")
+
+    # The same file again: a retry.
+    with pytest.raises(BillRejected) as retry:
+        ingest_bill_image(case_id, parent_id, b"photo-one" + b"x" * 2000, "image/jpeg")
+    assert retry.value.matched_on == "image"
+
+    # A second photograph of the same paper: a retake.
+    with pytest.raises(BillRejected) as retake:
+        ingest_bill_image(case_id, parent_id, b"photo-two" + b"x" * 2000, "image/jpeg")
+    assert retake.value.matched_on == "bill_number"
+    assert retake.value.bill_no == "IP/2026/04471-I3"
+
+
+def test_the_retake_message_says_what_actually_happened():
+    from anbu_care.comms.policy import TEMPLATES
+
+    body = TEMPLATES["bill_already_recorded_retake"]["body"]
+    assert "different photograph of the same bill" in body
+    assert "same photograph as the one recorded earlier" not in body
+    assert "{bill_no}" in body, "the message does not name which bill"
