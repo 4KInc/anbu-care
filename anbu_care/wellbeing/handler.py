@@ -140,14 +140,26 @@ def handle(entry: WellbeingEntry, parent_id: str,
     # maker is woken at 2am and needs everything the system knows. A neighbour
     # or a listed doctor needs to be asked to go round, and is not entitled to
     # the rest.
-    family_alerted, family_failed, family_numbers = _tell_the_family(
+    family_alerted, family_failed, _family_numbers = _tell_the_family(
         case_id, parent_id, entry, verdict,
     )
+    # Skipped by CONTACT, not by handset. Two people can share a phone, and
+    # filtering by number meant a neighbour on the family's number was never
+    # told anything at all.
     circle_alerted, circle_failed = _tell_the_care_circle(
-        case_id, parent_id, verdict, skip_numbers=family_numbers,
+        case_id, parent_id, verdict, skip_numbers=None,
+        skip_names={n for n in family_alerted},
     )
     # And the thing the neighbour will actually need when she gets there.
-    _hand_the_treating_team_a_link(case_id, parent_id, skip_numbers=family_numbers)
+    #
+    # Skipped by PERSON, never by handset. The son already had the full alert
+    # and is not the one who can show a doctor anything, so a link is noise to
+    # him. Skipping by NUMBER instead silenced the neighbour the moment she
+    # shared his phone: she was filtered out as if she were him, and the whole
+    # care-circle path went quiet while the alert still went out, so nothing
+    # looked wrong anywhere.
+    _hand_the_treating_team_a_link(case_id, parent_id,
+                                   skip_names=set(family_alerted))
     # One person is one name, however many lists they appear on.
     alerted = _unique(family_alerted + circle_alerted)
     not_alerted = [n for n in _unique(family_failed + circle_failed) if n not in alerted]
@@ -490,7 +502,7 @@ def _recovery_day(parent_id: str) -> int | None:
 
 
 def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
-                                  skip_numbers: set[str] | None = None) -> None:
+                                  skip_names: set[str] | None = None) -> None:
     """Put an emergency-access link in the hands of whoever is with her.
 
     Anbu Care exists to do what a present son would do while the son is asleep
@@ -521,8 +533,9 @@ def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
         profile = service.load_profile(parent_id)
         if profile is None:
             return
+        skip = {n.strip().lower() for n in (skip_names or set())}
         contacts = [c for c in care_notify.care_circle(parent_id)
-                    if not skip_numbers or c.whatsapp_e164 not in skip_numbers]
+                    if c.name.strip().lower() not in skip]
         if not contacts:
             return
 
@@ -559,6 +572,7 @@ def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
 def _tell_the_care_circle(
     case_id: str, parent_id: str, verdict: esc.Escalation,
     skip_numbers: set[str] | None = None,
+    skip_names: set[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Notify consented contacts. Returns who was actually reached.
 
@@ -580,6 +594,7 @@ def _tell_the_care_circle(
             timestamp="just now",
             now=datetime.now(UTC),
             skip_numbers=skip_numbers,
+            skip_names=skip_names,
             cashless_status=(
                 f"An urgent message was received from {name}. Please call them now"
             ),

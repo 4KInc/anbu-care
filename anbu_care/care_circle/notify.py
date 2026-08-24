@@ -47,6 +47,7 @@ def notify(
     cashless_status: str,
     now: datetime | None = None,
     skip_numbers: set[str] | None = None,
+    skip_names: set[str] | None = None,
 ) -> list[NotificationResult]:
     """Notify each consented contact, and report each one separately.
 
@@ -64,12 +65,20 @@ def notify(
     results: list[NotificationResult] = []
 
     already = skip_numbers or set()
+    already_named = {n.strip().lower() for n in (skip_names or set())}
 
     for contact in profile.family_contacts:
         # Someone who has already had the full alert does not need the short
         # one as well. A person on both lists is one person, and telling them
         # twice about the same thing wastes the seconds that matter.
-        if contact.whatsapp_e164 in already:
+        #
+        # Matched on the NAME where the caller gives one, because a person is
+        # not a handset. Skipping by number silenced a neighbour who shared the
+        # family's phone: she was filtered out as if she were the son, and the
+        # care circle was never told anything.
+        if contact.name.strip().lower() in already_named:
+            continue
+        if already and contact.whatsapp_e164 in already:
             continue
         # Checked here so a contact without consent appears in the results as
         # explicitly not consented, rather than silently missing from them.

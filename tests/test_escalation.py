@@ -937,3 +937,57 @@ def test_the_model_reason_describes_what_was_said_not_what_it_might_be(model):
     assert "never a diagnosis" in prompt
     assert "Do NOT name a condition" in prompt
     assert "possible retinal detachment" in prompt      # given as the wrong answer
+
+
+def test_a_neighbour_sharing_the_family_handset_is_still_told(monkeypatch):
+    """The collision that silenced the whole care-circle path.
+
+    Skipping "already told" by NUMBER meant a neighbour on the son's phone was
+    filtered out as if she were him. The alert still went out, so nothing
+    looked wrong — and the treating-team link, the one thing the person in the
+    room actually needs, was never sent at all.
+    """
+    from anbu_care.comms import consent, transport
+    from anbu_care.tools import onboarding_tools
+    from anbu_care.wellbeing import handler
+    from anbu_care.wellbeing import store as wb
+
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-collision-secret")
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        transport, "send",
+        lambda to, body, mode=None, media_url=None: (
+            sent.append((to, body)),
+            transport.DeliveryResult(delivered=True, channel="spy", detail="ok"),
+        )[1],
+    )
+
+    pid = onboarding_tools.create_parent_profile(
+        name="Ashanthi", age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        chronic_conditions=[], allergies=[],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_emergency_disclosure_consent(pid)
+    onboarding_tools.record_family_contact(
+        parent_id=pid, name="Heartlin", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True,
+        consent_purposes=[consent.ADMISSION_ALERTS, consent.OUTBOUND_NOTIFY],
+    )
+    # The neighbour, on the SAME handset.
+    onboarding_tools.record_family_contact(
+        parent_id=pid, name="Meena", relationship="neighbour",
+        whatsapp_e164="+16692167706", timezone_name="Asia/Kolkata",
+        is_primary=False, role="care_circle",
+        consent_purposes=[consent.OUTBOUND_NOTIFY],
+    )
+
+    entry = wb.record(pid, "self-reported", "crushing chest pain, can't breathe")
+    handler.handle(entry, pid)
+
+    bodies = " ".join(b for _to, b in sent)
+    assert "/handoff/" in bodies, "the person in the room was never handed a link"
+    # And the son is not handed one: he had the full alert and cannot show a
+    # doctor anything from Nashville.
+    links = [b for _to, b in sent if "/handoff/" in b]
+    assert len(links) == 1, f"the link went out {len(links)} times"

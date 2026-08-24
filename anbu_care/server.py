@@ -1240,7 +1240,11 @@ def send_handoff_link(
         raise HTTPException(status_code=404, detail="no parent record on this case")
 
     try:
-        token = access.mint(case_id)
+        # Write-scoped, like the one an escalation hands over. A treating team
+        # that can read her allergies but cannot record what they ordered sends
+        # everyone back to the family, which is the friction this whole path
+        # exists to remove. An hour, receipted on open, attributed, append-only.
+        token = access.mint(case_id, allow_notes=True)
     except access.HandoffDenied as denied:
         raise HTTPException(status_code=409, detail=str(denied)) from None
 
