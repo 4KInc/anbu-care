@@ -1481,6 +1481,11 @@ def case_diagnostics(case_id: str,
     orders = service.list_diagnostic_orders(case_id)
     return {
         "case_id": case_id,
+        # What the treating team actually said. Credentialed, and the only
+        # place it can be read: the chain carries the hash, and the WhatsApp
+        # message deliberately carries neither.
+        "notes": [n.model_dump(mode="json")
+                  for n in service.list_clinician_notes(case_id)],
         "orders": [o.model_dump(mode="json") for o in orders],
         "source": diagnostics_places.source(),
         "source_label": diagnostics_places.source_label(),
@@ -2110,12 +2115,17 @@ def _bind_clinician(from_number: str, body: str) -> Response:
 
     profile = service.load_profile(bound.parent_id)
     first = profile.name.split()[0] if profile and profile.name else "the patient"
+    # The MODE, said plainly. With one handset a person can only be one thing
+    # at a time, and Anbu Care will not guess which — so it states what it now
+    # treats this number as, and how to change it back.
     return _twiml(
-        f"Anbu Care: connected for {first}. Send a voice note or a message "
-        f"saying what you are ordering, and Anbu Care will look up where it "
-        f"can be done and tell the family. It does not book anything.\n"
-        f"This connection is for this admission only and stops when the family "
-        f"ends it."
+        f"Anbu Care: connected for {first}. Send a voice note or a message with "
+        f"an update, or with a test you are ordering. Updates go on her record; "
+        f"an order is looked up nearby and the family told. Nothing is booked.\n\n"
+        f"While this handset is connected as the treating team, messages from it "
+        f"are recorded as clinical notes and NOT as her check-ins. Send STOP to "
+        f"hand it back.\n"
+        f"This is for this admission only, and the family can end it too."
     )
 
 
@@ -2130,6 +2140,18 @@ def _handle_clinician_message(bound: Any, fields: dict, background: BackgroundTa
     """
     media = inbound.media_from(fields)
     body = (fields.get("Body") or "").strip()
+
+    # STOP hands the handset back, before anything is read or recorded. Exact
+    # whole-message match, the same discipline the parent's STOP already
+    # follows: "stop the bleeding" is a clinical note and must stay one.
+    if body.strip().upper() == "STOP":
+        from anbu_care.handoff import channel as clinician_channel
+
+        clinician_channel.unbind(bound)
+        return _twiml(
+            "Anbu Care: this handset is no longer connected as the treating "
+            "team. Nothing further from it is recorded against that case."
+        )
 
     if media is None and not body:
         return Response(status_code=204)
@@ -2147,7 +2169,18 @@ def _handle_clinician_message(bound: Any, fields: dict, background: BackgroundTa
 
 def _read_clinician_order(case_id: str, e164: str, audio: bytes,
                           mime_type: str, typed: str) -> None:
-    """Transcribe if spoken, read the order, act on it, reply. Never raises."""
+    """Record what the clinician said, and act on it if it orders something.
+
+    A NOTE FIRST, an order second. This was the other way round and everything
+    that was not an order fell off the edge: a doctor saying "she is stable,
+    chest pain settled, moving her to the ward" was told Anbu Care could not
+    tell which test was being ordered, and the update was discarded. A status
+    update is the commonest thing a treating team says.
+
+    So every message becomes an attributed note, exactly as the bedside form
+    already produces, and a test rides along on that same note when one is
+    actually heard.
+    """
     from anbu_care.diagnostics import dictation
     from anbu_care.handoff import notes
 
@@ -2159,28 +2192,32 @@ def _read_clinician_order(case_id: str, e164: str, audio: bytes,
         if not heard.ok or not (heard.text or "").strip():
             _reply_to_clinician(
                 e164, "Anbu Care: that recording could not be made out. Send it "
-                      "again, or type the test.")
+                      "again, or type it.")
             return
         said = heard.text.strip()
 
     proposal = dictation.propose_tests(said)
-    if not proposal.tests:
-        _reply_to_clinician(
-            e164, f"Anbu Care: heard \u201c{said[:120]}\u201d, but could not tell "
-                  f"which test was being ordered. Send the test name and Anbu "
-                  f"Care will look it up.")
-        return
 
-    # Recorded as STATED. The handset proved it holds the family's grant; it
-    # did not prove who is holding it, and the receipt says so.
+    # Recorded as STATED. The handset proved it holds the family's grant; it did
+    # not prove who is holding it, and the receipt says so.
     case = service.load_case(case_id)
     grant = _grant_for(case_id, case)
-    recorded = notes.confirm(grant, f"Ordered: {proposal.first}",
+    recorded = notes.confirm(grant, said,
                              recorded_by="the treating team (unverified)",
-                             orders_test=proposal.first)
+                             orders_test=proposal.first,
+                             # We transcribed it ourselves and passed it
+                             # through untouched, so we know it was spoken.
+                             spoken=bool(audio))
     order_id = recorded.get("order_id")
+
     if not order_id:
-        _reply_to_clinician(e164, "Anbu Care: that could not be recorded.")
+        # An update, not an order. Kept, readable behind the credential, and
+        # the family told that one exists without it travelling over WhatsApp.
+        _reply_to_clinician(
+            e164, "Anbu Care: recorded on her record, and attributed to the "
+                  "treating team. The family has been told an update was left. "
+                  "Nothing was ordered.")
+        _tell_family_a_note_was_left(case_id)
         return
 
     try:
@@ -2195,8 +2232,35 @@ def _read_clinician_order(case_id: str, e164: str, audio: bytes,
         return
 
     _reply_to_clinician(e164, _clinician_options_reply(proposal, surfaced))
-    # The family is told too, on their own path, without the test named.
     _tell_about_order(case_id, order_id, option_count=len(surfaced["options"]))
+
+
+def _tell_family_a_note_was_left(case_id: str) -> None:
+    """One message, logistics, and it does NOT carry what the doctor said.
+
+    The gate would refuse the words and it is right to: a status update is
+    clinical detail about her, and WhatsApp is not where that goes. The family
+    is told an update exists and where to read it, which is one tap away and
+    behind the credential.
+    """
+    case = service.load_case(case_id)
+    profile = service.load_profile(case.parent_id) if case else None
+    contacts = profile.family_contacts if profile else []
+    contact = next((c for c in contacts if c.is_primary), None) or next(iter(contacts), None)
+    if case is None or contact is None:
+        return
+
+    first = profile.name.split()[0] if profile and profile.name else "your parent"
+    try:
+        whatsapp_tools.send_family_update(
+            case_id=case_id, parent_id=case.parent_id,
+            to_e164=contact.whatsapp_e164,
+            template_name="clinician_note_left",
+            template_params={"parent_name": first},
+            message_class="logistics",
+            purpose_override=consent.STATUS_UPDATES)
+    except Exception:  # the send has its own receipts
+        logger.exception("could not tell the family a note was left")
 
 
 def _clinician_options_reply(proposal: Any, surfaced: dict) -> str:

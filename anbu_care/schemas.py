@@ -797,6 +797,37 @@ class PaymentMandate(BaseModel):
         return self.revoked_at is None
 
 
+class ClinicianNote(BaseModel):
+    """What a treating clinician actually said, kept where it can be read.
+
+    The chain has always carried the HASH of a note and never the words, which
+    is right: `/verify` is public and "chest pain settled, moving her to the
+    ward" is not. But nothing kept the words anywhere else either, so a note
+    was write-only — the family could see that a clinician had left one and
+    could never read it. The receipt's own comment said reading it needs the
+    credential, describing an intention nobody had implemented.
+
+    So the text lives here, behind the case credential, exactly as bills,
+    documents and diagnostic orders already do. The chain is unchanged.
+    """
+
+    note_id: str
+    case_id: str
+    parent_id: str
+    text: str
+    # As stated by whoever held the link. Anbu Care cannot verify who that was
+    # and this field never claims otherwise.
+    recorded_by: str = ""
+    via_voice: bool = False
+    # The clinician.note receipt this belongs to, so the words can be checked
+    # against the hash that was written at the time.
+    receipt_id: str = ""
+    text_sha256: str = ""
+    # Set when the same note also ordered a test.
+    order_id: str = ""
+    recorded_at: datetime = Field(default_factory=utcnow)
+
+
 class DiagnosticOrder(BaseModel):
     """A test a clinician ordered. Anbu Care never originates one.
 

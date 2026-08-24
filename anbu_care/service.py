@@ -26,6 +26,7 @@ from anbu_care.schemas import (
     ClaimPacket,
     ClaimStage,
     ClaimSubmission,
+    ClinicianNote,
     DiagnosticOrder,
     ParentProfile,
     ParsedDocument,
@@ -107,6 +108,21 @@ def list_payments(case_id: str, store: Store | None = None) -> list[PaymentRecor
     rows = store.query_prefix(f"CASE#{case_id}", "PAYMENT#")
     return sorted((PaymentRecord.model_validate(_clean(r)) for r in rows),
                   key=lambda p: p.initiated_at)
+
+
+def save_clinician_note(note: ClinicianNote, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{note.case_id}", f"CLINNOTE#{note.note_id}",
+              note.model_dump(mode="json"))
+
+
+def list_clinician_notes(case_id: str,
+                         store: Store | None = None) -> list[ClinicianNote]:
+    """Oldest first. Credentialed: these are a clinician's words about her."""
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "CLINNOTE#")
+    return sorted((ClinicianNote.model_validate(_clean(r)) for r in rows),
+                  key=lambda n: n.recorded_at)
 
 
 def save_diagnostic_order(order: DiagnosticOrder, store: Store | None = None) -> None:

@@ -800,6 +800,29 @@ function copyHandoff(){
 // The WhatsApp message links here and does not name the test, because the
 // classifier refuses test names over WhatsApp as clinical detail. So this is
 // the only surface the name appears on, and it sits behind the credential.
+// What the treating team said. This is the only surface it appears on: the
+// chain keeps the hash, and the WhatsApp message says an update exists without
+// repeating it, because a status update is clinical detail about her.
+function vClinicianNotes(){
+  const notes=(S.dx&&S.dx.notes)||[];
+  if(!notes.length) return "";
+  return `<div class="sec">What the treating team said</div>
+  ${notes.slice().reverse().map(n=>{
+    const when=new Date(n.recorded_at);
+    return `<div class="card">
+      <p style="margin:0 0 10px">${esc(n.text)}</p>
+      <p class="mute" style="margin:0;font-size:13px">
+        ${esc(n.recorded_by||"the treating team")} ·
+        ${esc(when.toLocaleDateString())}
+        ${esc(when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}))}
+        ${n.via_voice?" · spoken":" · typed"}</p>
+      <p class="mute" style="margin:6px 0 0;font-size:12.5px">
+        Anbu Care cannot verify who left this and does not claim to. It did not
+        re-triage the case or change any coverage figure.</p>
+    </div>`;
+  }).join("")}`;
+}
+
 function vDiagnostics(){
   const orders=(S.dx&&S.dx.orders)||[];
   if(!orders.length) return "";
@@ -890,6 +913,7 @@ function vRecord(){
            </div></div>`
         : row("Medication", unknown("none recorded"))}
   </div>
+  ${vClinicianNotes()}
   ${vDiagnostics()}
   <div class="sec">Documents on file</div>
   ${docs.length===0?`<div class="card"><p>${unknown("no documents have been added yet")}</p></div>`:""}

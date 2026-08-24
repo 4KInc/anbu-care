@@ -154,7 +154,8 @@ MAX_TEST_CHARS = 120
 
 def confirm(grant: HandoffGrant, text: str, ticket: str = "",
             recorded_by: str = "", now: int | None = None,
-            orders_test: str = "", mobility: str = "unknown") -> dict:
+            orders_test: str = "", mobility: str = "unknown",
+            spoken: bool = False) -> dict:
     """Write the note. This is the only function here that touches the record.
 
     `ticket` decides how the capture is described, not whether the note is
@@ -169,7 +170,13 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
         raise HandoffDenied("an empty note is not a note; nothing was recorded")
     text = text[:MAX_NOTE_CHARS]
 
-    via_voice = _ticket_matches(grant.case_id, text, ticket, now=now)
+    # A ticket proves text came out of OUR transcriber unedited, which is what
+    # the bedside page needs: it sends back words a human may have corrected,
+    # and the server cannot tell. A caller that transcribed the audio itself
+    # and passed the result straight through already knows, and `spoken` is how
+    # it says so — an inbound voice note is genuinely spoken whether or not a
+    # ticket was ever minted for it.
+    via_voice = spoken or _ticket_matches(grant.case_id, text, ticket, now=now)
     who = (recorded_by or "").strip() or "the treating team (unverified)"
 
     capture = (
@@ -213,11 +220,31 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
             ),
         },
     )
+    # The WORDS, behind the case credential. The chain above is unchanged and
+    # still carries only the hash, because /verify is public and "chest pain
+    # settled, moving her to the ward" is not. What changed is that they are
+    # now kept somewhere at all: a note used to be write-only, so the family
+    # could see that a clinician had left one and could never read it, and the
+    # receipt's own comment described a credential-gated read that did not
+    # exist.
+    from anbu_care.schemas import ClinicianNote
+
+    case = service.load_case(grant.case_id)
+    note = ClinicianNote(
+        note_id=service.new_id("clinnote"),
+        case_id=grant.case_id,
+        parent_id=case.parent_id if case else "",
+        text=text,
+        recorded_by=who,
+        via_voice=via_voice,
+        receipt_id=receipt.receipt_id,
+        text_sha256=text_sha256(text),
+    )
+
     order_id = ""
     if ordered:
         from anbu_care.schemas import DiagnosticOrder
 
-        case = service.load_case(grant.case_id)
         order = DiagnosticOrder(
             order_id=service.new_id("dxorder"),
             case_id=grant.case_id,
@@ -230,6 +257,9 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
         )
         service.save_diagnostic_order(order)
         order_id = order.order_id
+        note.order_id = order_id
+
+    service.save_clinician_note(note)
 
     return {
         "status": "recorded",
@@ -238,6 +268,7 @@ def confirm(grant: HandoffGrant, text: str, ticket: str = "",
         "via_voice": via_voice,
         "text_sha256": text_sha256(text),
         # Empty unless the clinician actually ordered something.
+        "note_id": note.note_id,
         "order_id": order_id,
         "mobility_as_stated": stated_mobility if ordered else "",
     }

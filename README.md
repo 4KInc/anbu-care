@@ -141,6 +141,19 @@ This matters more than any feature list, so it comes first.
   Allergies first, every line traced to the stored field it came from, and no
   field anywhere an instruction could live in — this is the record, not the
   doctor.
+- **A clinician's update, not just their orders.** A treating team says "she is
+  stable, chest pain has settled" far more often than they order anything, and
+  that used to be answered with "could not tell which test was being ordered"
+  and thrown away. A clinician message is a **note first** and an order second,
+  and a test rides on the same note when one is actually heard.
+
+  The words are kept **behind the case credential** now. They never were: the
+  chain carried a hash and nothing kept the text, so a note was write-only and
+  the family could see one had been left without ever reading it. The chain is
+  unchanged and still carries only the hash, because `/verify` is public. The
+  WhatsApp message says an update exists and does not repeat it, because a
+  status update is clinical detail and that is not where it goes.
+
 - **Clinician notes, typed or spoken.** A voice note is transcribed by Gemini
   and shown back for confirmation; **an unconfirmed transcript writes nothing**.
   The receipt carries the hash of the confirmed text, never the words.
@@ -392,7 +405,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 889 tests, no GCP or model access needed
+make test             # 907 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -560,7 +573,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  889 tests, no GCP or model access needed
+tests/                  907 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 

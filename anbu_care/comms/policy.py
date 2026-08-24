@@ -179,6 +179,20 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # a test was ordered and points at the record, where the name sits behind
     # the credential. Loosening the classifier to let test names through would
     # be trading the guarantee for a nicer sentence.
+    # What the doctor SAID is not in here, deliberately. A status update is
+    # clinical detail about her and the gate would refuse it — correctly. The
+    # family is told an update exists and where to read it, one tap away and
+    # behind the credential.
+    "clinician_note_left": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: the treating team has left an update on "
+                "{parent_name}'s record. It is not repeated here because it is "
+                "clinical detail, and this is not where that goes.\n"
+                "You can read it: {dashboard_url}",
+        "view": "record",
+        "params": ["parent_name"],
+    },
+
     "diagnostic_options_ready": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: {clinician} has ordered a test for {parent_name}. "

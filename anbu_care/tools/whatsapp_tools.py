@@ -258,6 +258,7 @@ def _send(
 # guessing — every one of these points at something that was actually recorded.
 SOURCE_REF = {
     "bill_recorded": "bill",
+    "clinician_note_left": "record",
     "diagnostic_options_ready": "record",
     "diagnostic_options_none": "record",
     "bill_already_recorded": "bill",

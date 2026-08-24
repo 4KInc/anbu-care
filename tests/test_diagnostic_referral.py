@@ -1118,3 +1118,143 @@ def test_the_clinician_reply_still_goes_through_the_content_gate(case):
     assert "not verdict.allowed" in body
     assert "send_family_update" not in body, \
         "the doctor was turned into a family contact to receive this"
+
+
+# =========================================================================
+# A STATUS UPDATE IS THE COMMONEST THING A DOCTOR SAYS
+# =========================================================================
+
+
+def test_an_update_that_orders_nothing_is_still_recorded(case, monkeypatch):
+    """It used to be told "could not tell which test was being ordered" and
+    thrown away. A note first, an order second."""
+    from anbu_care import server
+    from anbu_care.comms import transcribe
+    from anbu_care.diagnostics import dictation
+
+    _parent_id, case_id = case
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-update-secret")
+    monkeypatch.setattr(transcribe, "transcribe_dictation",
+                        lambda audio, mime: transcribe.Transcript(
+                            ok=True, engine="stub", detail="stub",
+                            text="She is stable, chest pain has settled."))
+    monkeypatch.setattr(dictation, "_call_model",
+                        lambda t: json.dumps({"tests": [], "unclear": False}))
+    monkeypatch.setenv("ANBU_DICTATION_MODE", "gemini")
+
+    replies, told = [], []
+    monkeypatch.setattr(server, "_reply_to_clinician",
+                        lambda e164, body: replies.append(body))
+    monkeypatch.setattr(server, "_tell_family_a_note_was_left",
+                        lambda cid: told.append(cid))
+
+    server._read_clinician_order(case_id, "+919000012345", b"x" * 5000,
+                                 "audio/webm", "")
+
+    notes = service.list_clinician_notes(case_id)
+    assert len(notes) == 1, "the doctor's update was discarded"
+    assert notes[0].text == "She is stable, chest pain has settled."
+    assert notes[0].via_voice is True
+    assert notes[0].order_id == "", "an order was invented"
+    assert "recorded on her record" in replies[0]
+    assert "could not tell which test" not in replies[0]
+    assert told == [case_id], "the family was not told an update exists"
+
+
+def test_the_words_are_readable_behind_the_credential(case, signed):
+    """A note used to be write-only: the family could see one had been left and
+    could never read it, while the receipt claimed a credentialed read that did
+    not exist."""
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+
+    parent_id, case_id = case
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    notes.confirm(grant, "Chest pain settled overnight.", recorded_by="Dr Anand")
+
+    stored = service.list_clinician_notes(case_id)
+    assert stored[0].text == "Chest pain settled overnight."
+    assert stored[0].recorded_by == "Dr Anand"
+
+
+def test_the_words_never_reach_the_public_chain(case, signed):
+    """/verify is public and "chest pain settled" is not."""
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+
+    parent_id, case_id = case
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    notes.confirm(grant, "Chest pain settled overnight.", recorded_by="Dr Anand")
+
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "clinician.note")
+    blob = json.dumps(receipt.payload).lower()
+    assert "chest pain" not in blob
+    assert receipt.payload["text_sha256"]
+
+
+def test_the_family_message_does_not_repeat_what_was_said():
+    """The gate would refuse it, and it is right to."""
+    from anbu_care.comms.policy import TEMPLATES
+    from anbu_care.schemas import MessageClass
+
+    spec = TEMPLATES["clinician_note_left"]
+    assert spec["message_class"] is MessageClass.LOGISTICS
+    assert "{text" not in spec["body"] and "{note" not in spec["body"]
+    assert "not repeated here" in spec["body"]
+
+
+def test_an_update_and_an_order_ride_on_one_note(case, monkeypatch):
+    """The bedside form already does this. So does the handset."""
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+
+    parent_id, case_id = case
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-both-secret")
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    out = notes.confirm(grant, "Stable. Repeat troponin in the morning.",
+                        recorded_by="Dr Anand", orders_test="repeat troponin")
+
+    stored = service.list_clinician_notes(case_id)
+    assert len(stored) == 1, "two records for one thing the doctor said"
+    assert stored[0].order_id == out["order_id"]
+
+
+def test_stop_hands_the_handset_back(case, signed):
+    """One handset can only be one thing at a time, and the way back is a word."""
+    from anbu_care.handoff import channel
+
+    _parent_id, case_id = case
+    channel.bind(channel.mint_code(case_id), "+919000012345")
+    assert channel.for_number("+919000012345") is not None
+
+    channel.unbind(channel.for_number("+919000012345"))
+    assert channel.for_number("+919000012345") is None
+
+    kinds = [r.kind for r in service.get_chain(case_id).receipts]
+    assert "clinician.channel_ended" in kinds
+
+
+def test_stop_is_an_exact_match_not_a_word_in_a_note():
+    """"Stop the bleeding" is a clinical note and must stay one."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._handle_clinician_message)
+    assert 'body.strip().upper() == "STOP"' in source
+
+
+def test_the_binding_says_which_mode_the_handset_is_in():
+    """Anbu Care will not guess which hat a shared handset is wearing, so it
+    says which one it has put on."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._bind_clinician)
+    assert "NOT as her check-ins" in source
+    assert "Send STOP to" in source, "no way back is offered"

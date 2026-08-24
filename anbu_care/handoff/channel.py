@@ -223,6 +223,26 @@ def for_number(e164: str, now: int | None = None) -> ClinicianChannel | None:
     return None
 
 
+def unbind(channel: ClinicianChannel) -> None:
+    """Hand the handset back. One word, from the handset itself.
+
+    Revoking the family's links kills a binding too, but that needs the family
+    awake and signed in. A clinician finished with a case — or a person whose
+    one phone is also the son's — should be able to end it from the handset
+    that holds it, in a message.
+    """
+    get_store().delete(channel.pk, channel.sk)
+    service.append_receipt(
+        channel.case_id, kind="clinician.channel_ended", actor="handoff_link",
+        payload={
+            "channel_id": channel.channel_id,
+            "handset_ref": hashlib.sha256(channel.e164.encode()).hexdigest()[:16],
+            "note": ("The handset ended its own connection. Nothing further "
+                     "from it is recorded against this case."),
+        })
+    logger.info("clinician channel ended for %s", channel.case_id)
+
+
 def revoke_for_case(case_id: str) -> int:
     """Kill every binding on this case. Returns how many."""
     store = get_store()
