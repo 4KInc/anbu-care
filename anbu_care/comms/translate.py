@@ -202,6 +202,91 @@ class Rendering:
         }
 
 
+_TO_ENGLISH_PROMPT = """Translate the text below into English.
+
+You are translating something a clinician already dictated and confirmed. Your
+job is to say the same thing in English. It is not to interpret it, expand it,
+or turn it into a formal medical name.
+
+Rules, all of them absolute:
+
+- Translate ONLY what is there. Add nothing.
+- Do NOT expand an abbreviation, map anything to a code, or replace a spoken
+  phrase with the textbook term for it. "ரத்த பரிசோதனை" is "blood test", not
+  "complete blood count".
+- Keep every number, unit, date and proper name EXACTLY as written.
+- If it is already in English, return it completely unchanged.
+- Do NOT diagnose. Do NOT say why the test might have been ordered. Do NOT add
+  a note about what it is for.
+
+Output ONLY the English translation. No preamble, no notes, no quotation marks,
+and no restatement of the original afterwards.
+
+The text:
+{text}"""
+
+
+def needs_english(text: str) -> bool:
+    """Whether this is worth a model call at all.
+
+    A label already in Latin script is left alone: it costs a call to confirm
+    what is already readable, and every call is another chance to alter a
+    record that did not need altering.
+    """
+    return any(ord(c) > 0x24F for c in (text or ""))
+
+
+def render_into_english(source_text: str, *, source_ref: str,
+                        timeout_seconds: int = TRANSLATE_TIMEOUT_SECONDS) -> Rendering:
+    """The other direction: something recorded in Tamil, for a reader in English.
+
+    Everything above renders an English record into the reader's language. This
+    is the reverse, and it exists because the record is no longer always in
+    English: a clinician in Thoothukudi dictates in Tamil, and the son reading
+    the dashboard in Nashville sees a test name he cannot read.
+
+    Same wall, pointed the other way. The TAMIL is the record — it is what the
+    clinician said and confirmed — and the English is derived from it and
+    labelled as derived. A failure returns the original rather than a guess,
+    because an unreadable label a family can ask about beats a confident
+    English one that renames the test.
+    """
+    text = (source_text or "").strip()
+    if not text:
+        raise NoSourceRecord(
+            "there is no recorded text to translate. Translation renders a "
+            "record; it does not compose one.")
+    if not (source_ref or "").strip():
+        raise NoSourceRecord(
+            "a translation must name the record it came from. Nothing was named.")
+
+    if not needs_english(text):
+        return _passthrough(text, source_ref)
+
+    if _off():
+        return _passthrough(text, source_ref,
+                            detail="translation is switched off; the record was left as it is")
+
+    try:
+        rendered = _clean(_call_model(_TO_ENGLISH_PROMPT.format(text=text),
+                                      timeout_seconds))
+    except Exception as exc:  # noqa: BLE001 - failure is an outcome
+        logger.warning("could not render into English: %s", type(exc).__name__)
+        return _passthrough(text, source_ref,
+                            detail=f"this could not be rendered in English "
+                                   f"({type(exc).__name__}); it is shown as recorded")
+
+    if not rendered:
+        return _passthrough(text, source_ref,
+                            detail="this could not be rendered in English; it is "
+                                   "shown as recorded")
+
+    return Rendering(
+        text=rendered, language="en", translated=True,
+        source_text=text, source_ref=source_ref, source_sha256=_sha(text),
+        detail=f"rendered into English from the recorded {source_ref}")
+
+
 def _off() -> bool:
     return os.getenv("ANBU_TRANSLATE_MODE", "gemini").strip().lower() in {
         "off", "none", "false",

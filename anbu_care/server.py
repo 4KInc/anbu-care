@@ -1481,6 +1481,18 @@ def _surface_options(case_id: str, order_id: str) -> dict:
 
     # Kept against the order so the record renders what was actually surfaced
     # and receipted, rather than a fresh search nothing on the chain covers.
+    # Rendered once, here, rather than on every page load: it is a model call,
+    # and a label that changed each time somebody opened the record would not
+    # be a record.
+    if not order.test_label_en:
+        from anbu_care.comms import translate
+
+        english = translate.render_into_english(order.test_label,
+                                                source_ref="clinician's order")
+        if english.translated:
+            order.test_label_en = english.text
+            order.test_label_en_note = english.detail
+
     order.options = surfaced["options"]
     order.options_source = surfaced["source"]
     order.options_source_label = surfaced["source_label"]

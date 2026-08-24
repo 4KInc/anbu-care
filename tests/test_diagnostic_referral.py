@@ -12,6 +12,7 @@ These are the walls, one test each, plus the paths that must keep working.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -479,6 +480,11 @@ def test_nothing_local_is_refused_rather_than_widened(case, monkeypatch):
 # =========================================================================
 
 
+def _client_page():
+    """The dashboard as it is served."""
+    return pathlib.Path("anbu_care/webui/index.html").read_text()
+
+
 def _summary_stub():
     """The shape `_handoff_html` reads, with everything absent.
 
@@ -852,3 +858,76 @@ def test_a_tamil_label_reaches_the_search_unrewritten(case, live_places):
     referral.options_for(test_label="ரத்த பரிசோதனை", lat=HOSPITAL_LAT,
                          lon=HOSPITAL_LON, city="Thoothukudi")
     assert "ரத்த பரிசோதனை" in live_places[0]["textQuery"]
+
+
+# =========================================================================
+# A TAMIL ORDER, FOR A READER IN ENGLISH
+# =========================================================================
+
+
+def test_a_tamil_order_is_rendered_into_english_for_the_family(monkeypatch):
+    """The other direction. Outbound Tamil renders an English record for her;
+    this renders her doctor's Tamil for the son reading in Nashville."""
+    from anbu_care.comms import translate
+
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "gemini")
+    monkeypatch.setattr(translate, "_call_model", lambda p, t: "blood test")
+
+    r = translate.render_into_english("ரத்த பரிசோதனை", source_ref="clinician's order")
+    assert r.translated is True
+    assert r.text == "blood test"
+    # The dictated words remain the record.
+    assert r.source_text == "ரத்த பரிசோதனை"
+    assert "recorded clinician's order" in r.detail
+
+
+def test_an_english_order_costs_no_model_call(monkeypatch):
+    """A label already readable does not need confirming, and every call is
+    another chance to alter a record that did not need altering."""
+    from anbu_care.comms import translate
+
+    called = []
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "gemini")
+    monkeypatch.setattr(translate, "_call_model",
+                        lambda p, t: called.append(1) or "x")
+
+    r = translate.render_into_english("repeat troponin", source_ref="clinician's order")
+    assert r.translated is False
+    assert r.text == "repeat troponin"
+    assert called == [], "an English label was sent to the model"
+
+
+def test_a_failed_rendering_shows_the_dictation_rather_than_a_guess(monkeypatch):
+    """An unreadable label a family can ask about beats a confident English one
+    that renames the test."""
+    from anbu_care.comms import translate
+
+    monkeypatch.setenv("ANBU_TRANSLATE_MODE", "gemini")
+    monkeypatch.setattr(translate, "_call_model",
+                        lambda p, t: (_ for _ in ()).throw(TimeoutError()))
+
+    r = translate.render_into_english("ரத்த பரிசோதனை", source_ref="clinician's order")
+    assert r.translated is False
+    assert r.text == "ரத்த பரிசோதனை"
+    assert "shown as recorded" in r.detail
+
+
+def test_rendering_into_english_still_refuses_text_with_no_record():
+    """The wall the whole module stands on, in the new direction too."""
+    from anbu_care.comms import translate
+
+    with pytest.raises(translate.NoSourceRecord):
+        translate.render_into_english("", source_ref="clinician's order")
+    with pytest.raises(translate.NoSourceRecord):
+        translate.render_into_english("ரத்த பரிசோதனை", source_ref="")
+
+
+def test_the_record_shows_both_the_english_and_what_was_said():
+    """The dictation does not disappear behind its translation."""
+    page = _client_page()
+    card = page[page.index("function dxCard("):]
+    card = card[:card.index("\n}")]
+
+    assert "o.test_label_en" in card, "the English rendering is not shown"
+    assert "esc(o.test_label)" in card, "the dictated words vanish"
+    assert "translated from it" in card, "the translation is not labelled as one"

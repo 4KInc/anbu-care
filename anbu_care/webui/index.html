@@ -835,9 +835,18 @@ function dxOption(x, i){
 function dxCard(o){
   const opts=o.options||[];
   const when=new Date(o.recorded_at);
+  // Where the clinician dictated in another language, the English reading
+  // leads and the words they actually said sit under it. The dictation is the
+  // record; the English is derived from it and is labelled that way, which is
+  // the same rule outbound Tamil has always followed in the other direction.
+  const en = o.test_label_en;
   return `<div class="card">
-    <h2 class="mini">${esc(o.test_label)}</h2>
-    <p class="mute" style="margin:-8px 0 12px;font-size:13px">
+    <h2 class="mini">${esc(en || o.test_label)}</h2>
+    ${en?`<p class="mute" style="margin:-8px 0 4px;font-size:14px">
+      ${esc(o.test_label)}</p>
+      <p class="mute" style="margin:0 0 12px;font-size:12.5px">
+        The clinician dictated this; the English above is translated from it.</p>`:""}
+    <p class="mute" style="margin:${en?"0":"-8px"} 0 12px;font-size:13px">
       Ordered by ${esc(o.ordered_by||"the treating team")} ·
       ${esc(when.toLocaleDateString())} ${esc(when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}))}</p>
     ${o.mobility_note?`<div class="strip note">${esc(o.mobility_note)}</div>`:""}

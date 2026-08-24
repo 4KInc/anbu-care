@@ -826,6 +826,12 @@ class DiagnosticOrder(BaseModel):
     # the receipt attests to. Re-running the search when somebody opens the page
     # would show them a list that no receipt covers, and would spend a paid API
     # call on every render.
+    # The test label rendered into the family's language, where the clinician
+    # dictated in another one. The DICTATED words stay the record in
+    # `test_label`; this is derived from them and says so. A son in Nashville
+    # reading "ரத்த பரிசோதனை" on his mother's record learns nothing.
+    test_label_en: str = ""
+    test_label_en_note: str = ""
     options: list[dict] = Field(default_factory=list)
     options_source: str = ""
     options_source_label: str = ""

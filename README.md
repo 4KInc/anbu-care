@@ -211,6 +211,13 @@ This matters more than any feature list, so it comes first.
   never translated before the search, because translating them would be
   deciding what was ordered.
 
+  The family reads it in theirs. A Tamil order shows the English on top and the
+  clinician's own words underneath, labelled as translated from them, because a
+  son in Nashville seeing only "ரத்த பரிசோதனை" on his mother's record learns
+  nothing. Same wall as outbound Tamil, pointed the other way: the dictation is
+  the record, the English is derived from it, a failure shows the dictation
+  rather than a guess, and a label already in English costs no model call.
+
   The `diagnostic.referral` receipt carries counts, place ids and the source
   label, never the test name, so `/verify` stays public and leaks nothing.
 
@@ -369,7 +376,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 866 tests, no GCP or model access needed
+make test             # 871 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -537,7 +544,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  866 tests, no GCP or model access needed
+tests/                  871 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
