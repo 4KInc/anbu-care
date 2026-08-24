@@ -22,9 +22,19 @@ convincing once you have seen why it matters.
 - **Sign-in is real** (Beat 4). A Google account, verified server-side, and
   then a second and separate check that the account is on this family's
   contacts. The 403 is the beat, not the sign-in.
+- **The payment beat runs on a real provider** (Beat 7). On
+  `ANBU_PAYMENT_MODE=razorpay` the link on screen is a real Razorpay payment
+  link in test mode, with a real webhook flipping it to settled. The closing
+  narration changed to match; the old "settlement is simulated" line now
+  understates what is running, and there is a separate line for the payout
+  rail. Read pre-flight §6 before recording — it says which to say.
+- **Bills print a UPI ID, and the payee guard checks it.** Which means the
+  mandate in pre-flight §6 must name the same address the bill prints, exactly.
+  A near-miss escalates the bill you meant to clear, on camera.
 
 Rehearse Beat 6 hardest. It is the newest, it is the most visual, and it is the
-one with a state trap in it — see pre-flight §5.
+one with a state trap in it — see pre-flight §5. **Read §6 as carefully**: the
+payment beat has a trap of its own now, and it fails on the good half.
 
 ---
 
@@ -131,21 +141,29 @@ curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
 **Read this one twice.** The system refuses a photograph it has already seen,
 which is correct behaviour and will ruin a take if you meet it live.
 
-- [ ] **Regenerate the images, or seed a fresh family.** Dedup is by image hash
-      per parent for documents, per case for bills. If you rehearsed with these
-      exact files against this parent, they are already on the record.
+- [ ] **Regenerate the images.** This is the reliable reset, and since seeding
+      changed it is close to the only one. Documents dedupe per parent by image
+      hash; bills dedupe per case by image hash **and by the bill number
+      printed on them**, so a re-shot copy of a bill already sent is refused
+      too. New files clear both.
 
       ```bash
       uv run python scripts/make_bill_images.py --out /tmp/demo
       uv run python scripts/make_documents.py  --out /tmp/demo
-      curl -sX POST $URL/api/demo/seed      # a fresh parent, nothing on file
       ```
 
-- [ ] **A fresh seed binds your handset and your Google account** — but only if
+- [ ] **Seeding no longer mints a fresh parent.** It used to, and every re-seed
+      orphaned the last one — eighty-three profiles accumulated that way, and a
+      demo read its settings off whichever was seeded last. `POST
+      /api/demo/seed` now reuses the family the handset already belongs to, so
+      it is safe to call repeatedly and it will **not** give you an empty
+      record. For bills, open a **new case** instead — bill dedupe is scoped to
+      the case, so a fresh case is a clean slate even with the same files.
+
+- [ ] **A seed binds your handset and your Google account** — but only if
       `ANBU_DEMO_FAMILY_E164` and `ANBU_DEMO_FAMILY_EMAIL` were set at deploy
-      time. Unset, seeding binds a Twilio test number, your photographs land on
-      the *previous* parent, and the new case sits there empty looking broken.
-      Check before you roll:
+      time. Unset, seeding binds a Twilio test number and your photographs land
+      somewhere you are not looking. Check before you roll:
 
       ```bash
       gcloud run services describe anbu-care --project anbu-care-hack \
@@ -163,11 +181,23 @@ which is correct behaviour and will ruin a take if you meet it live.
 
 ### 6. The payment beat — two cases, not one
 
-The refusal and the auto-clear cannot share a case. A payment somebody approved
-no longer makes the next one look suspicious, but two bills on one stay put
-both outcomes in one money view and the beat stops being legible.
+The refusal and the auto-clear cannot share a case. Two bills on one stay put
+both outcomes in one money view and the beat stops being legible — and there is
+now a mechanical reason too: an approved 2,70,720 plus an automatic 38,450 is
+77% of a 4,00,000 authority inside six hours, and the burst signal stops
+anything past half. Correct behaviour, wrong moment.
+
+**The payee on the mandate must be the string the bill prints, character for
+character.** Bills carry a UPI ID now, and the payee guard compares them. A
+mandate for `sacredheart@hdfcbank` against a bill printing
+`sacredheart@okhdfcbank` escalates on `payee_mismatch` — a correct refusal, on
+the bill you meant to clear, on camera. This is the single most likely way
+this beat fails.
 
 ```bash
+# the destination, exactly as make_bill_images.py prints it on the paper
+VPA=sacredheart@okhdfcbank
+
 # one case per outcome, each with the same mandate
 for i in 1 2; do
   P=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
@@ -175,13 +205,17 @@ for i in 1 2; do
       -d "{\"parent_id\":\"$P\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"caregiver\"}" \
       | jq -r .case_id)
   curl -sX POST $URL/api/cases/$C/payment-mandate -H "Authorization: Bearer $TOKEN" \
-    -H 'content-type: application/json' -d '{"payee_vpa":"sacredheart@hdfcbank",
-      "payee_label":"Sacred Heart Hospital","per_bill_cap_inr":50000,
-      "total_cap_inr":400000,"hours":48}' >/dev/null
+    -H 'content-type: application/json' -d "{\"payee_vpa\":\"$VPA\",
+      \"payee_label\":\"Sacred Heart Hospital\",\"per_bill_cap_inr\":50000,
+      \"total_cap_inr\":400000,\"hours\":48}" >/dev/null
   echo "case $i: $C"
 done
 ```
 
+- [ ] **Confirm the rail before you record.** `ANBU_PAYMENT_MODE=razorpay` gives
+      a real Razorpay link in test mode, which is what the narration below
+      assumes. `payout` settles with nobody clicking and labels itself
+      simulated. They need different closing lines — say the one that matches.
 - [ ] **The handset is bound to the LAST parent seeded.** Only one case receives
       photographs. Do the refusal on that one, then re-seed and do the
       auto-clear, or the second bill lands on the first case.
@@ -189,10 +223,14 @@ done
 - [ ] **`bill_interim_day_two.png`** → 38,450 due, Sacred Heart, inside every
       limit → clears with no tap. Check it is under **45,000** as well as under
       the cap: 90% of the cap trips near-cap, which would escalate a bill you
-      meant to clear.
+      meant to clear. `day_three` (31,650) and `day_four` (27,300) are
+      interchangeable here and leave more headroom.
 - [ ] **Do not send `bill_general_ward.png` in this beat.** It is from Sundaram
       Arulrhaj and escalates on vendor mismatch, which is a correct refusal for
       a reason the narration is not set up for.
+- [ ] **Every bill is single-use.** Dedupe is on the bill number now, not only
+      the image, so a re-take of one already sent will not clear either. Cut a
+      fresh file with `make_bill_images.py` if you burn one on a bad take.
 - [ ] Approving needs a signed-in session, so **be ready to sign in on camera**.
       That is the beat, not an interruption.
 
@@ -292,7 +330,7 @@ the Gemini transcription and extraction is deterministic;
 | 1:50–2:25 | **The boundary, and who is allowed to look** ⭐ | Clinical detail refused, family still told. Then a real sign-in, and a 403. |
 | 2:25–3:05 | **She arrives, and you are not there** ⭐⭐ | Scan the QR. A nurse reads her allergies with no login. |
 | 3:05–3:50 | **Photograph the paperwork** ⭐⭐ | A bill becomes an itemised claim. A discharge summary fills in the unknowns. |
-| 3:50–4:35 | **It pays one, and refuses another** ⭐⭐ | The refusal first. Then it clears a bill alone, and nobody is woken. |
+| 3:50–4:35 | **It pays one, and refuses another** ⭐⭐ | The refusal first. Then it clears a bill alone, and nobody is woken. Optional +20s: the same bill photographed twice. |
 | 4:35–5:15 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
 | 5:15–5:50 | **The honest wall** | What it does not do, said out loud. |
 
@@ -312,8 +350,15 @@ auto-clear. Keep the refusal. A system that pays is ordinary; a system that
 refuses to, and says exactly which limit stopped it, is the one nobody else
 will have. **Do not cut** the paperwork beat, the handoff, or the trace.
 
-**If you have time to spare**, the 403 in Beat 4 is worth an extra ten seconds.
-It is the only moment in the demo where the system tells *you* no.
+**If you have time to spare**, in order of what buys the most:
+
+1. **The retake**, twenty seconds at the end of the payment beat. The same bill
+   photographed twice is the failure nobody watching will have anticipated, and
+   the money view staying still is the proof.
+2. **The 403 in Beat 4**, ten seconds. The only moment in the demo where the
+   system tells *you* no.
+3. **The UPI QR** on the payment card, ten seconds, if payments are landing
+   well and you want one more concrete Indian detail.
 
 ---
 
@@ -716,12 +761,54 @@ Then the two figures side by side.
 > paid until a settlement confirmation actually arrives — the same distinction
 > as a message sent versus a message delivered."
 
-**Say this once, plainly, while the numbers are on screen:**
+**Optional, ten seconds, only if the pacing allows.** Tap **Pay by UPI** on the
+payment card. A QR appears, with the hospital's UPI ID under it.
 
-> "Settlement is simulated. Real autonomous UPI debit needs a licensed payment
-> provider and NPCI mandate rails, and that is not in scope this week. The
-> mandate, the caps, the payee lock, the duplicate check and the anomaly rules
-> are real code and they are what just ran."
+> "This is the destination on the mandate, not one read off the bill. UPI is
+> what the country actually pays with, so there is a version of this that needs
+> no provider at all."
+
+**Say this once, plainly, while the numbers are on screen.** Use the line that
+matches the rail you configured in pre-flight §6:
+
+> **On `razorpay`:** "That is a real Razorpay payment link, in test mode. Real
+> API call, real webhook, test money. What is not automated is the last step:
+> a payment link exists to ask a person to pay, so somebody opens it."
+>
+> **On `payout`:** "Settlement is a simulated payout, and the screen says so.
+> Nobody clicked, because a payout pushes money rather than requesting it."
+
+Then, either way:
+
+> "No mode here moves real money. Debiting her account unattended needs UPI
+> Autopay, and NPCI caps a mandate debit without re-authentication at fifteen
+> thousand rupees — hospital billing is not in the raised category, so a
+> thirty-thousand-rupee bill would ask for a PIN every time. The route that
+> does work is a payout from a funded account, and that is merchant KYC, not
+> code.
+>
+> The mandate, the caps, the payee lock, the duplicate check and the anomaly
+> rules are real, and they are what just ran."
+
+**Optional extension, twenty seconds — the retake.** Strong if you have the
+room, because it is the failure nobody in the audience will have thought of.
+
+Photograph the bill you just cleared a second time, from a slightly different
+angle. Send `bill_interim_day_three_retaken.jpg`, or make one with
+`python scripts/retake_bill.py <bill>.png`.
+
+> "Different photograph. Different file, different hash. The hospital issued
+> one bill."
+
+The reply names the bill number and refuses it.
+
+> "It matched on the number the hospital printed, not on the bytes. If it had
+> matched on the image, this would be a second bill on the case, twice the
+> money owed, and a second payment eligible to go out — for a debt that exists
+> once. That is what a family does: the first photo was blurry, so they took
+> another."
+
+Point at the money view, unchanged.
 
 ---
 
