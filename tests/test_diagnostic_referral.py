@@ -952,3 +952,169 @@ def test_the_record_shows_both_the_english_and_what_was_said():
     assert "o.test_label_en" in card, "the English rendering is not shown"
     assert "esc(o.test_label)" in card, "the dictated words vanish"
     assert "translated from it" in card, "the translation is not labelled as one"
+
+
+# =========================================================================
+# THE CLINICIAN'S WHATSAPP CHANNEL
+# =========================================================================
+
+
+@pytest.fixture
+def signed(monkeypatch):
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-channel-secret")
+
+
+def test_a_bound_handset_needs_a_code_only_the_link_could_make(case, signed):
+    """The answer to "how does Anbu Care know that is the doctor".
+
+    Not by knowing them in advance, which is impossible for whoever is on
+    shift. Not by believing the message, because "Dr Kumar here" is a sentence
+    anybody can say. By capability: the family granted a link, and only a
+    holder of it can produce this.
+    """
+    from anbu_care.handoff import channel
+
+    _parent_id, case_id = case
+    code = channel.mint_code(case_id)
+    bound = channel.bind(code, "+919000012345")
+
+    assert bound.case_id == case_id
+    assert channel.for_number("+919000012345").channel_id == bound.channel_id
+
+
+def test_a_forged_code_binds_nothing(case, signed):
+    from anbu_care.handoff import channel
+    from anbu_care.handoff.access import HandoffDenied
+
+    _parent_id, case_id = case
+    code = channel.mint_code(case_id)
+    forged = code[:-4] + "AAAA"
+
+    with pytest.raises(HandoffDenied):
+        channel.bind(forged, "+919000012345")
+    assert channel.for_number("+919000012345") is None
+
+
+def test_an_expired_code_binds_nothing(case, signed):
+    from anbu_care.handoff import channel
+    from anbu_care.handoff.access import HandoffDenied
+
+    _parent_id, case_id = case
+    code = channel.mint_code(case_id, now=1_000)
+
+    with pytest.raises(HandoffDenied) as refused:
+        channel.bind(code, "+919000012345", now=1_000 + channel.CODE_TTL_SECONDS + 1)
+    assert "expired" in str(refused.value)
+
+
+def test_revoking_the_familys_links_revokes_the_handset(case, signed):
+    """One act, not two. A family stopping clinician access should not have to
+    remember that a phone was also connected."""
+    from anbu_care.handoff import channel
+
+    _parent_id, case_id = case
+    channel.bind(channel.mint_code(case_id), "+919000012345")
+    assert channel.for_number("+919000012345") is not None
+
+    stored = service.load_case(case_id)
+    stored.handoff_epoch += 1
+    service.update_case(stored)
+
+    assert channel.for_number("+919000012345") is None, \
+        "revoking the links left a handset able to place orders"
+
+
+def test_a_binding_is_scoped_to_one_case(case, signed):
+    """The link authorises one case. So does what it hands to WhatsApp."""
+    from anbu_care.handoff import channel
+
+    parent_id, case_id = case
+    other = service.open_case(parent_id).case_id
+    channel.bind(channel.mint_code(case_id), "+919000012345")
+
+    bound = channel.for_number("+919000012345")
+    assert bound.case_id == case_id and bound.case_id != other
+
+
+def test_the_number_is_not_on_the_public_chain(case, signed):
+    """/verify is public and a doctor's mobile is theirs."""
+    from anbu_care.handoff import channel
+
+    _parent_id, case_id = case
+    channel.bind(channel.mint_code(case_id), "+919000012345")
+
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "clinician.channel_bound")
+    blob = json.dumps(receipt.payload)
+    assert "919000012345" not in blob, "a handset number reached the public chain"
+    assert receipt.payload["handset_ref"]
+
+
+def test_a_bound_handset_never_claims_to_be_verified(case, signed):
+    """It proves somebody who held the grant controls that phone. Not who."""
+    from anbu_care.handoff import channel
+
+    _parent_id, case_id = case
+    channel.bind(channel.mint_code(case_id), "+919000012345")
+
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "clinician.channel_bound")
+    note = receipt.payload["note"]
+    assert "cannot verify who they are" in note
+    assert "never as verified" in note
+
+
+def test_an_unregistered_number_without_a_code_is_still_dropped(case, signed):
+    """The channel is a new door for holders of a grant, not for everybody."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server)
+    branch = source[source.index("An unregistered number carrying a binding code"):]
+    branch = branch[:branch.index("media = inbound.media_from")]
+    assert "looks_like_code(body)" in branch, "any unregistered message would bind"
+
+
+def test_a_clinician_order_is_acted_on_without_a_confirmation_round_trip(case, monkeypatch):
+    """No "reply YES". A present son does not ask the doctor to confirm before
+    going to look up labs; he goes, and says what he found.
+
+    Defensible only because correcting it is one message, and because this
+    books nothing and pays nothing. The payment lane confirms for the opposite
+    reason.
+    """
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._handle_clinician_message)
+    body = source.split('"""', 2)[2]          # past the docstring
+    assert "_read_clinician_order" in body, "the order is not acted on"
+    assert "background.add_task" in body, "the doctor waits for a search"
+    for asking in ("reply YES", "Reply YES", "await_confirm", "pending_confirm"):
+        assert asking not in body, f"a confirmation round trip: {asking}"
+
+    reply = inspect.getsource(server._clinician_options_reply)
+    assert "If that is not the test, send the right name" in reply, \
+        "there is no correction path"
+    assert "Nothing is booked" in reply
+
+
+def test_the_clinician_reply_still_goes_through_the_content_gate(case):
+    """The rule is about the words, not the reader.
+
+    A test name the classifier refuses to a son is refused to a doctor too.
+    Special-casing the recipient would move the guarantee into a place nobody
+    audits.
+    """
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._reply_to_clinician)
+    body = source.split('"""', 2)[2]          # past the docstring
+    assert "policy.gate_message" in body
+    assert "not verdict.allowed" in body
+    assert "send_family_update" not in body, \
+        "the doctor was turned into a family contact to receive this"

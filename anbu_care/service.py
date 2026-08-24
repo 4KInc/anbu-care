@@ -217,9 +217,19 @@ def update_case(case: Case, store: Store | None = None) -> None:
 # --------------------------------------------------------------------------
 
 
-def _number_key(number: str) -> str:
-    """Index on digits only, so whatsapp:+1669… and +1669… are one number."""
+def number_key(number: str) -> str:
+    """Index on digits only, so whatsapp:+1669… and +1669… are one number.
+
+    Public because the clinician channel binds handsets too and must agree with
+    this exactly. Two normalisers would eventually disagree about whether a
+    number was bound, which is the kind of bug that only shows up in the one
+    case it matters.
+    """
     return "".join(ch for ch in number if ch.isdigit())
+
+
+# Kept for the callers already using it.
+_number_key = number_key
 
 
 def register_whatsapp_number(number: str, parent_id: str, contact_name: str | None) -> None:

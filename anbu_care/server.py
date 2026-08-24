@@ -512,6 +512,24 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
     # A voice note arrives with an empty Body. Before this it fell straight
     # through to the "nothing to store" branch and was discarded silently,
     # which is the input a breathless seventy-one year old actually sends.
+    # A CLINICIAN'S HANDSET, before anything else.
+    #
+    # It is checked first because a bound doctor is not a caregiver reporting
+    # symptoms, and the wellbeing path would read "she needs a blood test" as
+    # somebody describing how she is. The number got here by holding a
+    # write-scoped link, which is the same grant the bedside page runs on.
+    from anbu_care.handoff import channel as clinician_channel
+
+    from_number = fields.get("From") or ""
+    bound = clinician_channel.for_number(service.number_key(from_number))
+    if bound is not None:
+        return _handle_clinician_message(bound, fields, background)
+
+    # An unregistered number carrying a binding code is a doctor connecting.
+    # Everything else from an unregistered number is still dropped.
+    if sender is None and clinician_channel.looks_like_code(body):
+        return _bind_clinician(from_number, body)
+
     media = inbound.media_from(fields) if sender is not None else None
     if sender is not None and media is not None:
         if media.kind == "image":
@@ -1851,7 +1869,8 @@ def _order_form_html(token: str) -> str:
         f"<p class=foot>Left as \u201cI am not saying\u201d, the family is shown "
         f"both and told the choice is theirs.</p>"
         f"<button id=dxgo class=fb type=button>Record the order</button>"
-        f"<p id=dxout class=foot></p></div>"
+        f"<p id=dxout class=foot></p>"
+        f"{_whatsapp_handshake_html(token)}</div>"
         f"<script>(function(){{"
         f"var b=document.getElementById('dxgo'),o=document.getElementById('dxout');"
         f"var mic=document.getElementById('dxmic'),heard=document.getElementById('dxheard');"
@@ -1900,6 +1919,45 @@ def _order_form_html(token: str) -> str:
         f"if(!d.order_id){{b.disabled=false;}}}})"
         f".catch(function(){{o.textContent='That did not reach Anbu Care. "
         f"Nothing was recorded.';b.disabled=false;}});}});}})();</script>"
+    )
+
+
+def _whatsapp_handshake_html(token: str) -> str:
+    """Carry this grant onto WhatsApp, so the doctor can just send voice notes.
+
+    The number is bound BY THE CAPABILITY. Whoever holds this link was given it
+    by the family; tapping through proves they also control that handset. Anbu
+    Care still cannot say who they are, and does not.
+
+    Nothing is typed. The link opens WhatsApp with the code already in the
+    compose box, so a doctor on a ward round taps twice and is connected.
+    """
+    from anbu_care.handoff import channel as clinician_channel
+    from anbu_care.handoff.access import HandoffDenied
+
+    sender = (os.getenv("TWILIO_WHATSAPP_FROM") or "").replace("whatsapp:", "").strip()
+    if not sender:
+        return ""
+
+    case_id = token.split(".")[0] if token else ""
+    try:
+        code = clinician_channel.mint_code(case_id)
+    except HandoffDenied:
+        return ""
+
+    from urllib.parse import quote
+
+    return (
+        f"<hr style='border:0;border-top:1px solid #dbe3ea;margin:18px 0'>"
+        f"<h2 style='font-size:15px;margin-bottom:6px'>Or order from WhatsApp</h2>"
+        f"<p class=foot>Connect this handset once, then just send a voice note "
+        f"saying what you are ordering. Anbu Care looks up where it can be done "
+        f"and tells the family. It books nothing.</p>"
+        f"<p class=foot>The connection is for this admission only, and the "
+        f"family can end it.</p>"
+        f"<a class=fs style='display:block;text-align:center;text-decoration:none' "
+        f"href='https://wa.me/{quote(sender.lstrip('+'))}?text={quote(code)}'>"
+        f"Connect this phone on WhatsApp</a>"
     )
 
 
@@ -1986,6 +2044,169 @@ def _qr_svg(path: str) -> str:
         svgclass=None, lineclass=None, xmldecl=False, svgns=True,
     )
     return buffer.getvalue().decode("utf-8")
+
+
+def _bind_clinician(from_number: str, body: str) -> Response:
+    """A handset connecting itself with a code only the link could have made.
+
+    The reply is deliberately thin on a failure. Expired, forged and revoked
+    all read the same, and none of them tell a stranger whether the case
+    exists or whose it is.
+    """
+    from anbu_care.handoff import channel as clinician_channel
+    from anbu_care.handoff.access import HandoffDenied
+
+    code = clinician_channel.extract_code(body)
+    try:
+        bound = clinician_channel.bind(code, from_number)
+    except HandoffDenied as denied:
+        logger.info("clinician channel binding refused: %s", denied)
+        return _twiml(f"Anbu Care: {denied}")
+
+    profile = service.load_profile(bound.parent_id)
+    first = profile.name.split()[0] if profile and profile.name else "the patient"
+    return _twiml(
+        f"Anbu Care: connected for {first}. Send a voice note or a message "
+        f"saying what you are ordering, and Anbu Care will look up where it "
+        f"can be done and tell the family. It does not book anything.\n"
+        f"This connection is for this admission only and stops when the family "
+        f"ends it."
+    )
+
+
+def _handle_clinician_message(bound: Any, fields: dict, background: BackgroundTasks) -> Response:
+    """An order from a connected handset. Acted on, not confirmed first.
+
+    No "reply YES to continue". A present son does not ask the doctor to
+    confirm before going to look up labs — he goes, and says what he found. The
+    cost of mishearing here is a list of centres that do not fit, corrected in
+    one message, and that does not earn a round trip. The payment lane confirms
+    because being wrong there moves money; this books nothing and pays nothing.
+    """
+    media = inbound.media_from(fields)
+    body = (fields.get("Body") or "").strip()
+
+    if media is None and not body:
+        return Response(status_code=204)
+
+    background.add_task(_read_clinician_order, bound.case_id, bound.e164,
+                        media.data if media else b"",
+                        media.mime_type if media else "",
+                        body)
+    return _twiml(
+        "Anbu Care: got it, reading it now. What was ordered and where it can "
+        "be done will follow in a moment. Nothing is recorded until it has "
+        "been read, and nothing is booked."
+    )
+
+
+def _read_clinician_order(case_id: str, e164: str, audio: bytes,
+                          mime_type: str, typed: str) -> None:
+    """Transcribe if spoken, read the order, act on it, reply. Never raises."""
+    from anbu_care.diagnostics import dictation
+    from anbu_care.handoff import notes
+
+    said = typed
+    if audio:
+        from anbu_care.comms import transcribe
+
+        heard = transcribe.transcribe_dictation(audio, mime_type)
+        if not heard.ok or not (heard.text or "").strip():
+            _reply_to_clinician(
+                e164, "Anbu Care: that recording could not be made out. Send it "
+                      "again, or type the test.")
+            return
+        said = heard.text.strip()
+
+    proposal = dictation.propose_tests(said)
+    if not proposal.tests:
+        _reply_to_clinician(
+            e164, f"Anbu Care: heard \u201c{said[:120]}\u201d, but could not tell "
+                  f"which test was being ordered. Send the test name and Anbu "
+                  f"Care will look it up.")
+        return
+
+    # Recorded as STATED. The handset proved it holds the family's grant; it
+    # did not prove who is holding it, and the receipt says so.
+    case = service.load_case(case_id)
+    grant = _grant_for(case_id, case)
+    recorded = notes.confirm(grant, f"Ordered: {proposal.first}",
+                             recorded_by="the treating team (unverified)",
+                             orders_test=proposal.first)
+    order_id = recorded.get("order_id")
+    if not order_id:
+        _reply_to_clinician(e164, "Anbu Care: that could not be recorded.")
+        return
+
+    try:
+        surfaced = _surface_options(case_id, order_id)
+    except Exception:  # a failed search is an outcome, not a crash
+        logger.exception("could not surface options for a clinician order")
+        _reply_to_clinician(
+            e164, f"Anbu Care: recorded \u201c{proposal.first}\u201d. Anbu Care "
+                  f"could not find anywhere nearby it could be done, so this one "
+                  f"needs a phone call.")
+        _tell_about_order(case_id, order_id, option_count=None)
+        return
+
+    _reply_to_clinician(e164, _clinician_options_reply(proposal, surfaced))
+    # The family is told too, on their own path, without the test named.
+    _tell_about_order(case_id, order_id, option_count=len(surfaced["options"]))
+
+
+def _clinician_options_reply(proposal: Any, surfaced: dict) -> str:
+    """What the doctor gets back: what was heard, and where it can be done.
+
+    The heard text is the correction mechanism, which is why it leads. Skipping
+    confirmation is only defensible because putting it right is one message.
+    """
+    lines = [f"Anbu Care: recorded \u201c{proposal.first}\u201d."]
+    if len(proposal.tests) > 1:
+        lines.append("You mentioned more than one: "
+                     + ", ".join(proposal.tests)
+                     + ". Only the first was recorded, send the next when ready.")
+    lines.append("")
+    for option in surfaced["options"][:5]:
+        lines.append(f"{option['distance_km']:.1f} km  {option['name']}")
+    lines.append("")
+    lines.append("Nothing is booked and no centre has been contacted. "
+                 "If that is not the test, send the right name.")
+    return "\n".join(lines)
+
+
+def _grant_for(case_id: str, case: Any) -> Any:
+    """A grant object for recording, built from the case rather than a token.
+
+    The authority was already checked when the handset was bound; this is the
+    shape `notes.confirm` expects, not a second grant of anything.
+    """
+    from anbu_care.handoff.access import HandoffGrant
+
+    return HandoffGrant(case_id=case_id, parent_id=case.parent_id if case else "",
+                        expires_at=2 ** 31, may_write_note=True)
+
+
+def _reply_to_clinician(e164: str, body: str) -> None:
+    """Out to a bound handset, through the same gate every message uses.
+
+    Not `send_family_update`: the doctor is not a family contact and must not
+    be turned into one to receive this. What does NOT change is the content
+    rule, which is about the words and not the reader — a test name the
+    classifier refuses to a son is refused to a doctor too.
+    """
+    from anbu_care.comms import policy, transport
+    from anbu_care.schemas import MessageClass
+
+    verdict = policy.gate_message(body, MessageClass.LOGISTICS)
+    if not verdict.allowed:
+        logger.info("clinician reply blocked by the gate: %s", verdict.reason)
+        body = ("Anbu Care: the options are on the record for this admission. "
+                "Open the link you were given to see them.")
+
+    try:
+        transport.send(e164, body)
+    except Exception:  # the transport records its own outcome
+        logger.exception("could not reply to a clinician handset")
 
 
 def _handle_bill_photo(sender: Any, media: Any, background: BackgroundTasks) -> Response:
