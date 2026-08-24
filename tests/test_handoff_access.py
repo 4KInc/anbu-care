@@ -629,3 +629,84 @@ def test_the_neighbour_can_be_told_and_nothing_else(monkeypatch):
     assert meena.is_primary is False
     assert meena.role == "care_circle"
     assert not meena.email, "the neighbour can sign in and read the record"
+
+
+def test_two_people_can_share_one_handset(monkeypatch):
+    """Ordinary, not exotic: a neighbour whose phone is the one in the house.
+
+    Two separate bugs met here and each hid the other. Contacts deduped on the
+    NUMBER, so seeding a neighbour onto the family's handset deleted the son.
+    And inbound matched the contact by the name the index happened to hold,
+    which is the last one registered — so even without the deletion, a
+    neighbour holding only outbound_notify decided that nobody could write in,
+    and every message from that handset was dropped with nothing looking wrong.
+    """
+    from anbu_care.care_circle import notify as circle
+    from anbu_care.comms import inbound
+
+    parent_id = _parent()
+    onboarding_tools.record_family_contact(
+        parent_id, name="Heartlin", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, consent_purposes=["admission_alerts",
+                                           "inbound_wellbeing", "outbound_notify"])
+    onboarding_tools.record_family_contact(
+        parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164="+16692167706", timezone_name="Asia/Kolkata",
+        is_primary=False, role="care_circle", consent_purposes=["outbound_notify"])
+
+    profile = service.load_profile(parent_id)
+    names = [c.name for c in profile.family_contacts]
+    assert names == ["Heartlin", "Meena"], "one of them was deleted"
+
+    # The son can still write in, even though the neighbour was indexed last.
+    sender = inbound.resolve_sender("+16692167706")
+    assert sender is not None, "every inbound message from that handset was dropped"
+    assert sender.source == "caregiver:Heartlin"
+
+    # And both are reachable as the care circle.
+    assert {m.name for m in circle.care_circle(parent_id)} == {"Heartlin", "Meena"}
+
+
+def test_re_recording_the_same_person_is_still_a_correction(monkeypatch):
+    """The bug that made dedupe match on the number in the first place: a
+    re-seeded family ended up with three identical sons."""
+    parent_id = _parent()
+    for _ in range(3):
+        onboarding_tools.record_family_contact(
+            parent_id, name="Heartlin", relationship="son",
+            whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+            is_primary=True, consent_purposes=["admission_alerts"])
+
+    profile = service.load_profile(parent_id)
+    assert len(profile.family_contacts) == 1
+
+
+def test_nobody_on_a_handset_consenting_still_refuses(monkeypatch):
+    """Sharing a number does not manufacture a right to write in."""
+    from anbu_care.comms import inbound
+
+    parent_id = _parent()
+    onboarding_tools.record_family_contact(
+        parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164="+16692167706", timezone_name="Asia/Kolkata",
+        is_primary=False, role="care_circle", consent_purposes=["outbound_notify"])
+
+    assert inbound.resolve_sender("+16692167706") is None
+
+
+def test_a_contact_who_changes_phones_is_still_one_contact(monkeypatch):
+    """Matching on the number made a new handset into a second person: the
+    stale row stayed listed, and stayed notified."""
+    parent_id = _parent()
+    for number in ("+919000000101", "+16692167706"):
+        onboarding_tools.record_family_contact(
+            parent_id, name="Meena", relationship="neighbour",
+            whatsapp_e164=number, timezone_name="Asia/Kolkata",
+            is_primary=False, role="care_circle",
+            consent_purposes=["outbound_notify"])
+
+    profile = service.load_profile(parent_id)
+    meenas = [c for c in profile.family_contacts if c.name == "Meena"]
+    assert len(meenas) == 1, "she changed phones and became two people"
+    assert meenas[0].whatsapp_e164 == "+16692167706", "the old number won"

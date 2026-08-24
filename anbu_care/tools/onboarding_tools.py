@@ -173,16 +173,34 @@ def record_family_contact(
         role=(role or "family").strip().lower(),
         consents={purpose: now for purpose in consent_purposes},
     )
-    # One entry per number. Recording the same person twice is a correction,
-    # not a second contact: appending gave a re-seeded family three identical
-    # sons, which is three copies of every care-circle message and three rows
-    # in the roster for one person. The number is the identity here, because
-    # that is what inbound resolves and what outbound sends to.
-    same_number = [i for i, existing in enumerate(profile.family_contacts)
-                   if existing.whatsapp_e164 == whatsapp_e164]
-    if same_number:
-        profile.family_contacts[same_number[0]] = contact
-        for index in reversed(same_number[1:]):
+    # One entry per PERSON on a number, not one entry per number.
+    #
+    # Recording the same person twice is a correction: appending gave a
+    # re-seeded family three identical sons, three copies of every care-circle
+    # message and three rows in the roster for one man.
+    #
+    # But two different people can share a handset, and that is ordinary rather
+    # than exotic — a son visiting, a neighbour whose phone is the one in the
+    # house. Matching on the number alone made the newer contact REPLACE the
+    # older one, so seeding a neighbour onto the family's number silently
+    # deleted the son and dropped every message he sent.
+    # Matched on the NAME, which is what identifies a person on one parent's
+    # record. Two rules failed here before this one:
+    #
+    #   by number:        seeding a neighbour onto the family handset DELETED
+    #                     the son, because they shared a phone.
+    #   by number + name: a contact who changed phones became two contacts,
+    #                     the stale one still listed and still notified.
+    #
+    # A person keeps their name and changes their number, so the name is the
+    # identity and everything else is the correction. Two different people with
+    # the same name on one parent is a collision worth accepting for a rule
+    # that is right the rest of the time.
+    same_person = [i for i, existing in enumerate(profile.family_contacts)
+                   if existing.name.strip().lower() == name.strip().lower()]
+    if same_person:
+        profile.family_contacts[same_person[0]] = contact
+        for index in reversed(same_person[1:]):
             del profile.family_contacts[index]
     else:
         profile.family_contacts.append(contact)

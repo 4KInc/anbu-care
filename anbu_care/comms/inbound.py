@@ -192,8 +192,25 @@ def resolve_sender(from_number: str) -> Sender | None:
     if contact_name is None:
         return Sender(parent_id=profile.parent_id, source=SELF_REPORTED)
 
-    contact = next((c for c in profile.family_contacts if c.name == contact_name), None)
-    if contact is None or WELLBEING_PURPOSE not in contact.consents:
-        # Registered once, but not consented now. Still nothing stored.
+    # MATCHED BY NUMBER, not by the name the index happens to hold.
+    #
+    # One handset can belong to more than one contact — a son and a neighbour
+    # sharing a phone is ordinary, and in a demo it is unavoidable. The index
+    # keeps only the last name registered for a number, so matching on it meant
+    # the newest contact silently decided whether anybody could write in: a
+    # neighbour holding only `outbound_notify` was registered after the son and
+    # every inbound message from that handset was dropped, with nothing broken
+    # anywhere it would be noticed.
+    #
+    # So the index gets us to the PARENT, and consent decides the rest. Among
+    # the contacts on that number, the one who may actually write in is the one
+    # this message is from.
+    key = service.number_key(from_number)
+    sharing = [c for c in profile.family_contacts
+               if service.number_key(c.whatsapp_e164) == key]
+    contact = next((c for c in sharing if WELLBEING_PURPOSE in c.consents), None)
+    if contact is None:
+        # Registered once, but nobody on this handset has consented to write
+        # in now. Still nothing stored.
         return None
     return Sender(parent_id=profile.parent_id, source=f"caregiver:{contact.name}")
