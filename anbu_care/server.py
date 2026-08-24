@@ -549,9 +549,18 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
     if bound is not None:
         return _handle_clinician_message(bound, fields, background)
 
-    # An unregistered number carrying a binding code is a doctor connecting.
-    # Everything else from an unregistered number is still dropped.
-    if sender is None and clinician_channel.looks_like_code(body):
+    # A BINDING CODE, from any handset. Checked before the sender is consulted
+    # at all, because holding a signed code is the thing that authorises this
+    # and being a stranger is not a requirement.
+    #
+    # It was gated on the sender being unregistered, which was wrong in the one
+    # case that matters most: a family member's own phone. Tapping "connect" on
+    # the son's handset filed "ANBU-case-..." as a wellbeing check-in — a
+    # symptom report, on his mother's record — and bound nothing.
+    #
+    # A registered contact is not disqualified from also being handed the link.
+    # Somebody has to be in the room, and sometimes it is them.
+    if clinician_channel.looks_like_code(body):
         return _bind_clinician(from_number, body)
 
     media = inbound.media_from(fields) if sender is not None else None

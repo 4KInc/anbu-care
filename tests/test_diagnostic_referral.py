@@ -1071,9 +1071,12 @@ def test_an_unregistered_number_without_a_code_is_still_dropped(case, signed):
     from anbu_care import server
 
     source = inspect.getsource(server)
-    branch = source[source.index("An unregistered number carrying a binding code"):]
+    branch = source[source.index("# A BINDING CODE, from any handset"):]
     branch = branch[:branch.index("media = inbound.media_from")]
-    assert "looks_like_code(body)" in branch, "any unregistered message would bind"
+    # A code is required. Without one, an unregistered number still falls
+    # through to resolve_sender, which refuses it.
+    assert "looks_like_code(body)" in branch, "any message would bind a handset"
+    assert "_bind_clinician" in branch
 
 
 def test_a_clinician_order_is_acted_on_without_a_confirmation_round_trip(case, monkeypatch):
@@ -1258,3 +1261,45 @@ def test_the_binding_says_which_mode_the_handset_is_in():
     source = inspect.getsource(server._bind_clinician)
     assert "NOT as her check-ins" in source
     assert "Send STOP to" in source, "no way back is offered"
+
+
+def test_a_family_handset_can_bind_itself_as_the_treating_team(case, signed, monkeypatch):
+    """The one case that matters most, and the one it got wrong.
+
+    Binding was gated on the sender being unregistered. On the son's own phone
+    — the phone somebody in the family actually has at the bedside — tapping
+    "connect" filed "ANBU-case-..." as a wellbeing check-in, a symptom report
+    on his mother's record, and bound nothing at all.
+
+    Holding a signed code is what authorises this. Being a stranger is not a
+    requirement, and somebody has to be in the room.
+    """
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server
+    from anbu_care.handoff import channel
+    from anbu_care.tools import onboarding_tools
+
+    parent_id, case_id = case
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, consent_purposes=["admission_alerts", "inbound_wellbeing"])
+
+    code = channel.mint_code(case_id)
+    monkeypatch.setattr(server.inbound, "verify_twilio_signature",
+                        lambda *a, **k: None)
+
+    with TestClient(server.app) as client:
+        r = client.post("/api/wellbeing/inbound",
+                        data={"From": "whatsapp:+16692167706", "Body": code})
+
+    assert r.status_code == 200
+    assert "connected for" in r.text, r.text[:200]
+    assert channel.for_number("+16692167706") is not None, "nothing was bound"
+
+    # And the code was NOT filed as something she said.
+    from anbu_care.wellbeing import store as wb
+
+    assert all("ANBU-" not in e.text for e in wb.list_entries(parent_id)), \
+        "a binding code was recorded as a symptom report"
