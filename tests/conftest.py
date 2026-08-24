@@ -122,3 +122,21 @@ def no_translation_calls(monkeypatch, request):
     if request.node.get_closest_marker("real_translation"):
         return
     monkeypatch.setenv("ANBU_TRANSLATE_MODE", "off")
+
+
+def followed(text: str) -> str:
+    """The message with every short alias replaced by what it points at.
+
+    Links sent over WhatsApp are aliased now, so asserting on a destination
+    means resolving one. Tests that used to look for "/app" in the body are
+    asking a real question - does the family get told where her words are -
+    and this keeps them asking it rather than being loosened to "some link".
+    """
+    import re
+
+    from anbu_care.comms import shortlinks
+
+    def swap(match):
+        return shortlinks.resolve(match.group(1)) or match.group(0)
+
+    return re.sub(r"https?://[^\s]*?/s/([a-z2-9]+)", swap, text or "")

@@ -215,6 +215,20 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # clinical detail about her and the gate would refuse it — correctly. The
     # family is told an update exists and where to read it, one tap away and
     # behind the credential.
+    "clinician_note_text": {
+        # Carries the words. The only template in CLINICAL_EXCEPTIONS, and the
+        # gate refuses everything else that reads like this one.
+        "message_class": MessageClass.STATUS,
+        "body": "Anbu Care: an update on {parent_name} from the treating team.\n\n"
+                "{note}\n\n"
+                "{provenance}\n"
+                "Anbu Care cannot verify who left this and does not claim to. It "
+                "did not re-triage the case or change any coverage figure.\n"
+                "The full record: {dashboard_url}",
+        "view": "record",
+        "params": ["parent_name", "note", "provenance"],
+    },
+
     "clinician_note_left": {
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: the treating team has left an update on "
@@ -465,6 +479,33 @@ def classify_message(body: str, declared: MessageClass | None = None) -> tuple[M
     return (declared or MessageClass.STATUS), []
 
 
+# The templates permitted to carry clinical detail to the family, and the only
+# ones. Everything else is blocked by the rule below whatever it declares.
+#
+# The rule exists because Meta's healthcare policy and DPDP both restrict health
+# data over WhatsApp, and blanket-sending a woman's diagnoses to a chat app is
+# how a care product becomes a data incident. This exception is narrow on
+# purpose and each part of it is load-bearing:
+#
+#   ONE DIRECTION   the treating team's own words, to the family. Not outward,
+#                   not to the care circle, not to anyone who merely holds a
+#                   link.
+#   HER OWN RECORD  the words are already about the reader's own parent, on a
+#                   case they hold a credential for. This is not disclosure to
+#                   a third party; it is the family reading their own file.
+#   CONSENTED       the recipient holds `status_updates`, which is what the
+#                   consent check upstream requires before this is reached.
+#   RECEIPTED       the exception lands on the chain, so a message carrying
+#                   clinical detail is never indistinguishable from one that
+#                   did not.
+#
+# Withholding it had a cost that was easy to miss: the family got "an update was
+# left, go and read it" at 4am, which is a notification about a notification.
+# The son eleven time zones away wanted the sentence, and the sentence is the
+# only part that tells him whether to get on a plane.
+CLINICAL_EXCEPTIONS = frozenset({"clinician_note_text"})
+
+
 def gate_message(
     body: str,
     declared: MessageClass | None = None,
@@ -475,6 +516,22 @@ def gate_message(
 ) -> GateResult:
     """Decide whether this message may leave the platform over WhatsApp."""
     actual, hits = classify_message(body, declared)
+
+    if actual is MessageClass.CLINICAL and template_name in CLINICAL_EXCEPTIONS:
+        return GateResult(
+            allowed=True,
+            message_class=actual,
+            reason=(
+                "Clinical detail, sent under a named exception: this is the "
+                "treating team's own update about the reader's own parent, on a "
+                "case they hold a credential for, to a contact who consented to "
+                "status updates. It "
+                + ", ".join(hits)
+                + ". Recorded as an exception rather than passed as ordinary."
+            ),
+            requires_template=True,
+            detected_clinical=hits,
+        )
 
     if actual is MessageClass.CLINICAL:
         return GateResult(

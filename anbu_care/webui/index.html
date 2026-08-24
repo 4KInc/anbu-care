@@ -502,7 +502,7 @@ function arrivedMidEpisode(doc){
 /* ===================== views ===================== */
 
 function vNow(){
-  if(!S.trail) return vOpen();
+  if(!S.trail) return vOpenOrWait();
   if(S.trail.__denied) return denied(S.trail.detail,"The case timeline");
   const t=last("triage.decision"), sig=last("intake.signal_received");
   const sev=t?t.payload.severity:null;
@@ -542,7 +542,7 @@ function vNow(){
 }
 
 function vBrief(){
-  if(!S.brief) return vOpen();
+  if(!S.brief) return vOpenOrWait();
   if(S.brief.__denied) return denied(S.brief.detail,"The arrival brief");
   const b=S.brief.brief;
   // Prose gets a stacked row; short facts keep the label/value pairing.
@@ -648,7 +648,7 @@ function vBrief(){
 }
 
 function vRouting(){
-  if(!S.trail) return vOpen();
+  if(!S.trail) return vOpenOrWait();
   if(S.trail.__denied) return denied(S.trail.detail,"The routing decision");
   const t=last("triage.decision");
   if(!t) return `${synthOnce()}<div class="card"><h2>Routing</h2><p>${unknown("triage has not run on this case")}</p></div>`;
@@ -900,8 +900,8 @@ function vRecord(){
   // uncredentialed visitor fell through to "open a case" and was never shown
   // the sign-in at all — the gate was unreachable from the one view that
   // exists behind it.
-  if(!S.token && !S.linkToken) return S.caseId ? gate() : vOpen();
-  if(!S.parentId) return vOpen();
+  if(!S.token && !S.linkToken) return S.caseId ? gate() : vOpenOrWait();
+  if(!S.parentId) return vOpenOrWait();
   if(S.record?.__denied) return denied(S.record.detail,"The health record");
   if(!S.record) return `<div class="card"><p class="mute">Reading the record…</p></div>`;
   const docs=S.record.documents||[], pr=S.record.profile||{};
@@ -1530,7 +1530,7 @@ async function approvePayment(billId, amount){
 }
 
 function vClaim(){
-  if(!S.trail) return vOpen();
+  if(!S.trail) return vOpenOrWait();
   if(S.trail.__denied) return denied(S.trail.detail,"The claim status");
   const adjs=kinds("claim.adjudicated"), sub=last("claim.submitted");
   const bills = vPayments() + vBills();
@@ -1614,6 +1614,20 @@ function vblock(v){
     <span class="pill ${v.verified?"p-teal":"p-red"}">${v.verified?"VERIFIED ✓":"TAMPER DETECTED"}</span>
     <span class="pill p-slate">${v.receipt_count} receipts</span></div>
     ${v.verified?"":`<p style="color:var(--red);font-size:13.5px">Broken at receipt ${v.broken_at_seq}: ${esc(v.reason)}</p>`}`;
+}
+
+function vOpenOrWait(){
+  // A case named in the URL is not an invitation to pick one.
+  //
+  // The first render() runs synchronously while load() is still in flight, so
+  // every view fell through to the picker and "Open a case" painted for a beat
+  // before the real content replaced it. Every link opened on the wrong screen.
+  //
+  // Bounded by S.booted rather than by the presence of data: if the first load
+  // finishes and there is still nothing, the picker is the honest answer and
+  // this must not spin for ever.
+  if(S.caseId && !S.booted) return `<div class="card"><p class="mute">Opening ${esc(S.caseId)}…</p></div>`;
+  return vOpen();
 }
 
 function vOpen(){
@@ -2017,6 +2031,7 @@ async function load(){
     S.careCircle=await api(`/api/parents/${S.parentId}/care-circle`,{auth:true});
     S.recovery=await api(`/api/parents/${S.parentId}/recovery`,{auth:true});
   }
+  S.booted = true;
   render();
 }
 function render(){

@@ -150,6 +150,8 @@ def test_every_template_renders_and_passes_its_own_gate():
         "clinician": "Dr A. Anand",
         "option_count": "6",
         "payee_label": "Sacred Heart Hospital",
+        "note": "Chest pain has settled. We are moving her to the ward.",
+        "provenance": "That is the English of what was spoken by the treating team.",
         "expected": "27,300",
         "received": "5,000",
         "this_bill": "3,70,720",
@@ -288,6 +290,8 @@ def test_a_rendered_template_still_passes_the_gate():
         "clinician": "Dr A. Anand",
         "option_count": "6",
         "payee_label": "Sacred Heart Hospital",
+        "note": "Chest pain has settled. We are moving her to the ward.",
+        "provenance": "That is the English of what was spoken by the treating team.",
         "expected": "27,300",
         "received": "5,000",
         "this_bill": "3,70,720",
@@ -432,7 +436,7 @@ def test_a_message_opens_on_the_tab_it_is_about():
     ON_RECORD = {"document_recorded", "document_recorded_withheld",
                  "document_unreadable", "document_already_recorded",
                  "diagnostic_options_ready", "diagnostic_options_none",
-                 "clinician_note_left"}
+                 "clinician_note_left", "clinician_note_text"}
     for name, spec in TEMPLATES.items():
         if name in ON_CLAIM:
             assert spec.get("view") == "claim", f"{name} should open the claim"

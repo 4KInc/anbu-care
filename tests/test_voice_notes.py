@@ -10,6 +10,7 @@ and weakness break speech recognition, and they are red flags themselves.
 from __future__ import annotations
 
 import pytest
+from conftest import followed
 
 from anbu_care import service
 from anbu_care.comms import consent, transcribe, transport
@@ -122,7 +123,7 @@ def test_the_family_is_told_to_listen_and_the_neighbour_is_not(household, sent):
     neighbour = next(b for to, b in sent if to == "+919000000101")
 
     assert "listen to the recording" in family.lower()
-    assert "/app" in family
+    assert "/app" in followed(family)
     assert "108" in family
 
     assert "listen" not in neighbour.lower()

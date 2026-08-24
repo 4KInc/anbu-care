@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from anbu_care import service
+from anbu_care.comms import shortlinks
 from anbu_care.comms.policy import TEMPLATES, consent_ok, gate_message, render_template
 from anbu_care.config import settings
 from anbu_care.schemas import MessageClass, OutboundMessage
@@ -242,6 +243,14 @@ def _send(
 
     rendering = _render_for_reader(body, language, template_name)
 
+    # AFTER rendering, never before. A translator handed a URL will happily
+    # rewrite the characters inside it, and a signature with one letter changed
+    # is a link that opens nothing. Shortening last means the alias is minted
+    # from the text that is actually going out.
+    rendering = rendering.__class__(
+        **{**rendering.__dict__,
+           "text": shortlinks.shorten_links_in(rendering.text)})
+
     attachment = _attach(case_id) if attach_claim_summary else None
     if attachment is None and attach_qr_of:
         attachment = _attach_qr(attach_qr_of)
@@ -258,6 +267,7 @@ def _send(
 # guessing — every one of these points at something that was actually recorded.
 SOURCE_REF = {
     "bill_recorded": "bill",
+    "clinician_note_text": "record",
     "payment_settled": "payment",
     "payment_failed": "payment",
     "payment_amount_mismatch": "payment",

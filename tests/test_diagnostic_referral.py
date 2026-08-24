@@ -1554,3 +1554,91 @@ def test_the_care_circle_does_not_get_the_familys_money_by_helping(case):
     meena = next(c for c in profile.family_contacts if c.name == "Meena")
     assert "billing_updates" not in meena.consents
     assert "claim_updates" not in meena.consents
+
+
+# =========================================================================
+# THE FAMILY GETS THE SENTENCE, NOT A NOTIFICATION ABOUT A NOTIFICATION
+# =========================================================================
+
+
+def test_the_family_is_sent_what_the_doctor_actually_said(case, monkeypatch):
+    """"An update was left, go and read it" at 4am is a notification about a
+    notification. The sentence is the only part that tells a son eleven time
+    zones away whether to get on a plane."""
+    from anbu_care import server
+    from anbu_care.handoff import notes
+    from anbu_care.handoff.access import HandoffGrant
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, consent_purposes=["status_updates", "outbound_notify"])
+
+    grant = HandoffGrant(case_id=case_id, parent_id=parent_id,
+                         expires_at=2 ** 31, may_write_note=True)
+    notes.confirm(grant, "நெஞ்சு வலி குறைந்துவிட்டது.",
+                  recorded_by="the treating team (unverified)", spoken=True)
+    stored = service.list_clinician_notes(case_id)[-1]
+    stored.text_en = "Chest pain has settled."
+    service.save_clinician_note(stored)
+
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    server._tell_family_a_note_was_left(case_id)
+
+    assert len(sent) == 1
+    assert sent[0]["template_name"] == "clinician_note_text"
+    assert sent[0]["template_params"]["note"] == "Chest pain has settled."
+    assert "English of what was spoken" in sent[0]["template_params"]["provenance"]
+
+
+def test_a_note_that_could_not_be_read_falls_back_to_the_bare_notice(case, monkeypatch):
+    """Telling the family nothing is worse than telling them less."""
+    from anbu_care import server
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, consent_purposes=["status_updates", "outbound_notify"])
+
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    server._tell_family_a_note_was_left(case_id)   # no note on this case
+
+    assert sent[0]["template_name"] == "clinician_note_left"
+
+
+def test_only_the_named_template_may_carry_clinical_detail(case):
+    """The exception is one template wide. Everything else that reads like it
+    is still refused, whatever it declares."""
+    from anbu_care.comms import policy
+    from anbu_care.schemas import MessageClass
+
+    words = "Her HbA1c is 8.4 and she has type 2 diabetes."
+    assert policy.classify_message(words)[0] is MessageClass.CLINICAL
+
+    allowed = policy.gate_message(words, template_name="clinician_note_text")
+    assert allowed.allowed is True
+    assert "named exception" in allowed.reason
+    assert allowed.detected_clinical, "the exception hid what it was carrying"
+
+    for other in ("bill_recorded", "status_update", "clinician_note_left", None):
+        blocked = policy.gate_message(words, template_name=other)
+        assert blocked.allowed is False, f"{other} carried clinical detail"
+
+
+def test_the_exception_is_named_on_the_receipt_not_passed_as_ordinary(case):
+    """A message carrying clinical detail must never be indistinguishable from
+    one that did not."""
+    from anbu_care.comms import policy
+
+    result = policy.gate_message("Her HbA1c is 8.4 and she has type 2 diabetes.",
+                                 template_name="clinician_note_text")
+    assert "Recorded as an exception" in result.reason
+    assert result.message_class.value == "clinical"

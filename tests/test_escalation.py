@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from conftest import followed
 
 from anbu_care.schemas import Severity
 from anbu_care.wellbeing import escalation as esc
@@ -202,7 +203,7 @@ def test_the_family_alert_answers_what_a_child_asks_first():
     assert "cashless" in body.lower()                     # is it covered
     assert "Call her now" in body                         # what do I do
     assert "108" in body                                  # and if I cannot
-    assert "/app" in body                                 # where is the rest
+    assert "/app" in followed(body)                       # where is the rest
 
 
 def test_the_family_alert_does_not_pretend_an_ambulance_is_coming():
@@ -524,7 +525,7 @@ def test_the_fallback_says_where_her_words_are(monkeypatch):
     body = sent[0][1]
     assert "not repeated here" in body
     assert "dashboard" in body
-    assert "/app" in body
+    assert "/app" in followed(body)
 
 
 def test_the_fallback_keeps_everything_that_was_never_the_problem(monkeypatch):
@@ -985,9 +986,9 @@ def test_a_neighbour_sharing_the_family_handset_is_still_told(monkeypatch):
     entry = wb.record(pid, "self-reported", "crushing chest pain, can't breathe")
     handler.handle(entry, pid)
 
-    bodies = " ".join(b for _to, b in sent)
+    bodies = " ".join(followed(b) for _to, b in sent)
     assert "/handoff/" in bodies, "the person in the room was never handed a link"
     # And the son is not handed one: he had the full alert and cannot show a
     # doctor anything from Nashville.
-    links = [b for _to, b in sent if "/handoff/" in b]
+    links = [b for _to, b in sent if "/handoff/" in followed(b)]
     assert len(links) == 1, f"the link went out {len(links)} times"

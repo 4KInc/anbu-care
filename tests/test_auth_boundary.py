@@ -443,7 +443,7 @@ def test_the_browser_is_not_stricter_than_the_server():
     page = (pathlib.Path(__file__).resolve().parents[1]
             / "anbu_care" / "webui" / "index.html").read_text()
 
-    assert "if(!S.token && !S.linkToken) return S.caseId ? gate() : vOpen();" in page
+    assert "if(!S.token && !S.linkToken) return S.caseId ? gate() : vOpenOrWait();" in page
     assert "if(S.parentId && (S.token || S.linkToken)){" in page
     assert "if(!S.token) return gate();" not in page
 
@@ -468,7 +468,7 @@ def test_the_sign_in_is_reachable_from_the_view_it_gates():
     record = page[page.index("function vRecord()"):page.index("function docDetails")]
 
     credential_check = record.index("if(!S.token && !S.linkToken)")
-    parent_check = record.index("if(!S.parentId) return vOpen();")
+    parent_check = record.index("if(!S.parentId) return vOpenOrWait();")
     assert credential_check < parent_check, "the gate is behind the parent id again"
 
 

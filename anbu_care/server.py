@@ -29,7 +29,7 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
@@ -1274,6 +1274,35 @@ def _tell_the_family_what_settled(reference: str, result: dict[str, Any]) -> Non
         logger.exception("could not tell the family a payment %s", status)
 
 
+@app.get("/s/{code}")
+def follow_shortlink(code: str) -> Response:
+    """Send a short alias on to the link it stands for.
+
+    Unauthenticated, like the long URL it hides: the credential is inside the
+    target, and this resolves an alias rather than granting anything. An
+    unknown or expired code says so in words a person can act on, and says the
+    same thing for both - a shortener that distinguished "never existed" from
+    "expired" would let anyone map which links were ever issued.
+    """
+    from anbu_care.comms import shortlinks
+
+    target = shortlinks.resolve(code)
+    if not target:
+        return Response(
+            content=("<!doctype html><meta charset=utf-8>"
+                     "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                     "<style>body{font:16px/1.6 system-ui;margin:0;display:grid;"
+                     "place-items:center;min-height:100vh;padding:24px;color:#1a2b32}"
+                     "div{max-width:32rem}</style>"
+                     "<div><h1 style='font-size:1.25rem'>This link has expired</h1>"
+                     "<p>Anbu Care links are short-lived on purpose. Ask for a new "
+                     "one from the message thread, or open the case from your "
+                     "dashboard.</p></div>"),
+            media_type="text/html", status_code=410)
+
+    return RedirectResponse(target, status_code=302)
+
+
 @app.get("/api/cases/{case_id}/verify")
 def case_verify(case_id: str) -> dict[str, Any]:
     """Independently verify a case's chain.
@@ -2372,12 +2401,22 @@ def _read_clinician_order(case_id: str, e164: str, audio: bytes,
 
 
 def _tell_family_a_note_was_left(case_id: str) -> None:
-    """One message, logistics, and it does NOT carry what the doctor said.
+    """Send what the doctor said, in the family's language.
 
-    The gate would refuse the words and it is right to: a status update is
-    clinical detail about her, and WhatsApp is not where that goes. The family
-    is told an update exists and where to read it, which is one tap away and
-    behind the credential.
+    This used to carry only the fact that an update existed, on the reasoning
+    that clinical detail has no business on WhatsApp. The reasoning was sound
+    and the result was not: a son eleven time zones away got "an update was
+    left, go and read it" at 4am, which is a notification about a notification.
+    The sentence is the only part that tells him whether to get on a plane.
+
+    So the words go, under a named exception the gate knows by name and writes
+    onto the receipt. The English rendering is what is sent, because that is
+    what this reader can act on, and it is LABELLED as rendered rather than
+    spoken - the same honesty the record page already shows. Where nothing
+    could be rendered, the note's own words go instead of a guess.
+
+    Falls back to the bare notice if the note cannot be read at all, because
+    telling the family nothing is worse than telling them less.
     """
     case = service.load_case(case_id)
     profile = service.load_profile(case.parent_id) if case else None
@@ -2387,7 +2426,29 @@ def _tell_family_a_note_was_left(case_id: str) -> None:
         return
 
     first = profile.name.split()[0] if profile and profile.name else "your parent"
+    note = next(iter(reversed(service.list_clinician_notes(case_id))), None)
+
     try:
+        if note is not None and (note.text_en or note.text):
+            spoken = "spoken" if note.via_voice else "typed"
+            if note.text_en and note.text_en != note.text:
+                provenance = (f"That is the English of what was {spoken} by "
+                              f"{note.recorded_by or 'the treating team'}. The "
+                              f"words as said are on the record.")
+            else:
+                provenance = (f"As {spoken} by "
+                              f"{note.recorded_by or 'the treating team'}.")
+            whatsapp_tools.send_family_update(
+                case_id=case_id, parent_id=case.parent_id,
+                to_e164=contact.whatsapp_e164,
+                template_name="clinician_note_text",
+                template_params={"parent_name": first,
+                                 "note": note.text_en or note.text,
+                                 "provenance": provenance},
+                message_class="status",
+                purpose_override=consent.STATUS_UPDATES)
+            return
+
         whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=case.parent_id,
             to_e164=contact.whatsapp_e164,
