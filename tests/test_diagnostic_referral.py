@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -1405,3 +1406,61 @@ def test_the_note_rendering_is_not_on_the_urgent_timeout(monkeypatch):
         call = call[:call.index(")")+1] if ")" in call else call
         assert "UNHURRIED_TIMEOUT_SECONDS" in source, \
             "a rendering is still on the urgent budget"
+
+
+# =========================================================================
+# ONE HANDSET, TWO JOBS
+# =========================================================================
+
+
+def test_a_photo_from_a_bound_handset_is_not_read_as_a_dictation(case, monkeypatch):
+    """A bill photographed on a phone still connected as the treating team.
+
+    This path read `media.data` as audio whatever it was, so the photo went to
+    the transcriber and came back "that recording could not be made out" - the
+    one answer that explains nothing. It is not quietly filed as a bill either:
+    a photograph from a handset holding a clinical grant could as easily be a
+    lab report, and choosing between those is the guess this system does not
+    make.
+    """
+    from fastapi import BackgroundTasks
+
+    from anbu_care import server
+    from anbu_care.comms import inbound
+
+    _parent_id, case_id = case
+    monkeypatch.setattr(inbound, "media_from",
+                        lambda fields: inbound.InboundMedia(
+                            audio=b"\xff\xd8\xff" + b"j" * 4000,
+                            mime_type="image/jpeg", kind="image"))
+
+    background = BackgroundTasks()
+    bound = SimpleNamespace(case_id=case_id, e164="+919000012345")
+    response = server._handle_clinician_message(bound, {"Body": ""}, background)
+
+    assert not background.tasks, "a photograph was sent to the transcriber"
+    said = response.body.decode()
+    assert "STOP" in said, "there is no way back to the family lane"
+    assert "not bills" in said
+    assert "could not be made out" not in said
+
+
+def test_a_voice_note_from_a_bound_handset_still_reaches_the_reader(case, monkeypatch):
+    """The guard above is about images, and must not have shut the door on the
+    thing this channel exists for."""
+    from fastapi import BackgroundTasks
+
+    from anbu_care import server
+    from anbu_care.comms import inbound
+
+    _parent_id, case_id = case
+    monkeypatch.setattr(inbound, "media_from",
+                        lambda fields: inbound.InboundMedia(
+                            audio=b"o" * 4000, mime_type="audio/ogg", kind="audio"))
+
+    background = BackgroundTasks()
+    bound = SimpleNamespace(case_id=case_id, e164="+919000012345")
+    server._handle_clinician_message(bound, {"Body": ""}, background)
+
+    assert len(background.tasks) == 1
+    assert background.tasks[0].func is server._read_clinician_order

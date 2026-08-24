@@ -2168,6 +2168,23 @@ def _handle_clinician_message(bound: Any, fields: dict, background: BackgroundTa
     if media is None and not body:
         return Response(status_code=204)
 
+    # A PHOTO is not a dictation. This path read `media.data` as audio whatever
+    # it was, so a bill photographed on a handset that is still connected as the
+    # treating team went to the transcriber and came back "that recording could
+    # not be made out" — the one message that tells you nothing about why.
+    #
+    # It is not silently treated as a bill either. This handset is holding a
+    # clinical grant, and a photograph from it could as easily be a lab report
+    # as an invoice; deciding between those is exactly the guess this system
+    # does not make. So it says which hat the handset is wearing and how to take
+    # it off, which is the whole answer when one phone is doing two jobs.
+    if media is not None and media.kind != "audio":
+        return _twiml(
+            "Anbu Care: this handset is connected as the treating team, so it "
+            "records notes and orders \u2014 not bills. Send STOP to hand it "
+            "back, then send the photo again."
+        )
+
     background.add_task(_read_clinician_order, bound.case_id, bound.e164,
                         media.data if media else b"",
                         media.mime_type if media else "",

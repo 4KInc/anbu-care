@@ -149,6 +149,30 @@ curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
       the answer, and it is the chain working rather than failing. The case you
       create live during the demo will use the corrected coordinates.
 
+### 4b. The handset starts as the son's, not the doctor's
+
+**Read this before every take.** A phone that is still bound as the treating
+team from a rehearsal will file your mother's opening voice note as a clinical
+note. No alert, no care-circle message, no QR — Beat 2 produces nothing and
+gives you no error to notice. It is the quietest way to lose a take, and it has
+happened.
+
+```bash
+./.venv/bin/python - <<'EOF'
+from anbu_care import service
+from anbu_care.handoff import channel
+key = service.number_key("+16692167706")     # the recording handset
+while (b := channel.for_number(key)):
+    print("unbinding from", b.case_id); channel.unbind(b)
+print("bound as the treating team:", bool(channel.for_number(key)), "<- must be False")
+EOF
+```
+
+- [ ] **False.** If it prints True, the take will fail silently.
+- [ ] Binding lasts **12 hours**, so yesterday's rehearsal is still live today.
+- [ ] Sending `STOP` from the handset does the same thing, and is what you do
+      on camera in Beat 5e. This is the off-camera version, for rehearsals.
+
 ### 5. The paperwork beat — the state trap
 
 **Read this one twice.** The system refuses a photograph it has already seen,
@@ -346,28 +370,37 @@ the Gemini transcription and extraction is deterministic;
 | Time | Beat | Point at |
 |---|---|---|
 | 0:00–0:20 | **The question** | "If something happens to my mother tonight, who makes sure the right decisions get made?" Every incumbent answers: a human coordinator. |
-| 0:20–1:15 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. |
-| 1:15–1:50 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
-| 1:50–2:25 | **The boundary, and who is allowed to look** ⭐ | Clinical detail refused, family still told. Then a real sign-in, and a 403. |
-| 2:25–3:05 | **She arrives, and you are not there** ⭐⭐ | Scan the QR. A nurse reads her allergies with no login. |
-| 3:05–3:50 | **Photograph the paperwork** ⭐⭐ | A bill becomes an itemised claim. A discharge summary fills in the unknowns. |
-| 3:50–4:35 | **It pays one, and refuses another** ⭐⭐ | The refusal first. Then it clears a bill alone, and nobody is woken. Optional +20s: the same bill photographed twice. |
-| 4:35–5:15 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
-| 5:15–5:50 | **The honest wall** | What it does not do, said out loud. |
+| 0:20–1:10 | **She sends a voice note in Tamil** ⭐⭐ | The hook. Phone on camera. Ends with a QR going out to the care circle unasked. |
+| 1:10–1:45 | **What decided that** ⭐ | Gemini translated. A table in code decided. Both are recorded. |
+| 1:45–2:20 | **The boundary, and who is allowed to look** ⭐ | Clinical detail refused, family still told. Then a real sign-in, and a 403. |
+| 2:20–3:20 | **The treating team, and you never touch it** ⭐⭐⭐ | Scan, connect, a Tamil update, a test ordered, labs found. The son does nothing. |
+| 3:20–4:00 | **Photograph the paperwork** ⭐⭐ | A bill becomes an itemised claim. A discharge summary fills in the unknowns. |
+| 4:00–4:45 | **It pays one, and refuses another** ⭐⭐ | The refusal first. Then it clears a bill alone, and nobody is woken. Optional +20s: the same bill photographed twice. |
+| 4:45–5:25 | **Watch it decide, then check that it did** ⭐⭐ | The trace, then `/verify`. Autonomy and audit on one screen. |
+| 5:25–6:00 | **The honest wall** | What it does not do, said out loud. |
 
-Runs ~5:45. The paperwork beat replaced the old scripted claim beat at roughly
-the same length, and the sign-in moment cost about fifteen seconds inside an
-existing beat rather than becoming one of its own — signing in is not
-interesting, being refused is.
+Runs ~6:00. The treating-team beat took the extra twenty seconds and is worth
+every one of them: it is the only stretch of the demo where a system does the
+whole job a son does — get the credential to the right hands, hear the doctor,
+record what he said in his words, and find the lab — with the son asleep the
+entire time. **The order inside it is load-bearing.** The link goes out before
+the doctor speaks, and the doctor speaks before the bill arrives, because each
+step is what makes the next possible. On one handset it is also a hard
+constraint: the phone must be handed back with `STOP` before it can photograph
+a bill.
 
-Runs ~5:50. The payment beat cost forty-five seconds and the tamper beat paid
-for it: tamper is gone from the running order, deliberately. It was a lovely
+The paperwork beat replaced the old scripted claim beat at roughly the same
+length, and the sign-in moment cost about fifteen seconds inside an existing
+beat rather than becoming one of its own — signing in is not interesting, being
+refused is.
+
+The payment beat cost forty-five seconds and the tamper beat paid for it: tamper is gone from the running order, deliberately. It was a lovely
 thirty seconds, but the trace beat already ends on `/verify`, so verifiability
 survives without it — and an agent that declines to spend money is a stronger
 thirty seconds than a hash that does not match.
 
-**If you must cut further:** take the second half of the payment beat, the
-auto-clear. Keep the refusal. A system that pays is ordinary; a system that
+**To hold 5:45:** cut the second half of the payment beat, the auto-clear. Keep
+the refusal. A system that pays is ordinary; a system that
 refuses to, and says exactly which limit stopped it, is the one nobody else
 will have. **Do not cut** the paperwork beat, the handoff, or the trace.
 
@@ -383,7 +416,7 @@ will have. **Do not cut** the paperwork beat, the handoff, or the trace.
 
 ---
 
-## Beat 2 (0:20–1:15) — she sends a voice note ⭐⭐
+## Beat 2 (0:20–1:10) — she sends a voice note ⭐⭐
 
 **On the handset**, record a WhatsApp voice note to the sandbox number saying,
 in Tamil:
@@ -454,7 +487,7 @@ attack".
 
 ---
 
-## Beat 3 (1:15–1:50) — what actually decided that ⭐
+## Beat 3 (1:10–1:45) — what actually decided that ⭐
 
 Terminal. This is where the architecture argument lands, and it now has two
 halves: what the model did, and what it was not allowed to do.
@@ -516,7 +549,7 @@ uv run pytest tests/test_escalation.py -k "junk or quieten or silent" -q
 **Do not say** "the AI decides" or "the AI knows". Say **the table decides, and
 the model can add**.
 
-## Beat 4 (1:50–2:25) — the boundary, and who is allowed to look ⭐
+## Beat 4 (1:45–2:20) — the boundary, and who is allowed to look ⭐
 
 Two halves. The refusal, then the thing most people forget.
 
@@ -579,62 +612,122 @@ Scroll the menu to the consents.
 
 ---
 
-## Beat 5 (2:25–3:05) — she arrives, and you are not there ⭐⭐
+## Beat 5 (2:20–3:20) — the treating team, and the son never touches it ⭐⭐⭐
 
-The beat nobody else will have. It needs **two devices on camera**: the laptop
-showing the family dashboard, and a second phone standing in for the nurse's.
+The beat nobody else will have, and the one the whole pitch rests on. **The son
+does nothing in it.** Watch for that while you record: if your hand is the one
+forwarding the link, the demo is showing the opposite of the product.
 
-On the dashboard, **Record** tab, scroll to *Share with the treating team* and
-tap **Create a link**. A QR appears.
+Sequence matters here, and it is not the order you would guess. The link goes
+out **before** the doctor speaks, and the doctor speaks **before** the bill
+arrives — because that is the order it happens in a hospital, and because each
+step is what makes the next one possible.
 
-> "She has been routed to Sacred Heart. She arrives, and her son is eleven time
-> zones away and asleep. The nurse receiving her has no idea what she is
-> allergic to."
+### 5a. The link went out on its own (~10s)
 
-Now **pick up the second phone and scan the QR off the laptop screen.** Do it
-slowly and let the camera see it happen — this is the shot.
+Scroll back to the WhatsApp thread from Beat 2. Under the alert, unprompted,
+is a QR and a link addressed to the care circle.
 
-> "No login. No account. That nurse has never authenticated with anything."
+> "Nobody asked for that. She reported chest pain, it decided this was going to
+> need a hospital, and it did what a son does next — it got a credential into
+> the hands of the person who is actually standing next to her.
+>
+> That is not me. I am asleep. It went to Meena, the neighbour."
 
-Let the summary land. **Penicillin** is at the top, large and red.
+### 5b. The doctor scans it (~15s)
+
+**Pick up the second phone and scan the QR off the laptop screen.** Slowly, and
+let the camera see it happen. This is the shot.
+
+> "No login. No account. That doctor has never authenticated with anything."
+
+Let the summary land. **Penicillin** at the top, large and red.
 
 > "Allergies first, because that is the field that kills people when it is
 > missed. Conditions, current medication, and her most recent troponin — with
 > the date, because a troponin from March means something different from one
 > taken this morning.
 >
-> Nothing on this page is advice. It does not tell the doctor what to do. Anbu
-> Care is the record, not the clinician — and the summary has no field a
-> recommendation could even be written into."
+> Nothing on this page is advice. Anbu Care is the record, not the clinician."
 
-Then the part that makes it defensible rather than reckless:
+Then tap **Connect this phone on WhatsApp**. It opens WhatsApp with a code
+already typed. Send it.
 
-> "That link is scoped to this one case, it dies in an hour, her son can revoke
-> it from here, and **every time it is opened a receipt is written to the chain
-> he can read.** It cannot reach the audit trail, her full record, or any other
-> case.
+> "One tap. That handset is now the treating team's, for this admission only.
+> It proved it by holding the credential — not by claiming to be a doctor,
+> because anyone can claim that."
+
+The reply names the mode out loud: messages from this handset are recorded as
+clinical notes and **not** as her check-ins, and `STOP` hands it back.
+
+### 5c. The doctor speaks, in Tamil (~20s)
+
+Record a voice note on the doctor's phone, in Tamil:
+
+> நெஞ்சு வலி குறைந்துவிட்டது. காலையில் வார்டுக்கு மாற்றுகிறோம்.
+> *(The chest pain has settled. We are moving her to the ward in the morning.)*
+
+> "A status update is the commonest thing a treating team says, and it is the
+> thing that never reaches the family."
+
+Two things come back, and point at both:
+
+- **On the doctor's phone:** recorded on her record, attributed to the treating
+  team, nothing ordered.
+- **On the family's:** an update was left, and where to read it — **not what it
+  said.** The words are clinical detail and WhatsApp is not where those go.
+
+Open the record behind the credential and show the note: the Tamil exactly as
+he said it, and the English underneath, **labelled** as rendered rather than
+spoken.
+
+> "It kept his words and it did not put its own in his mouth."
+
+### 5d. He orders a test (~15s)
+
+Second voice note, same phone:
+
+> ரத்த பரிசோதனை செய்ய வேண்டும்.
+> *(She needs a blood test.)*
+
+The reply carries the test as recorded and a list of real Thoothukudi centres
+with distances.
+
+> "It heard the order in Tamil and wrote it in English, because that is what a
+> lab searches on. It did not upgrade "blood test" into "complete blood count"
+> — translating what was said and deciding what he meant are different jobs,
+> and it only does the first.
 >
-> And it does not claim to know who opened it, because a link cannot. The
-> receipt says a link holder read the summary. Not a name we could not verify."
+> Those are live Google Places results, ranked by distance. **Nothing is
+> booked. No centre has been contacted.** It found the options. A human rings
+> them."
 
-**Optional, if the take is going well** (~15s): record a voice note on the
-nurse's phone and show the transcript come back for confirmation.
+### 5e. Hand the phone back (~5s)
 
-> "A doctor would rather talk than type. Gemini transcribes it — and **nothing
-> is written until they confirm it.** A misheard number must never land as a
-> clinical fact with someone's name on it."
+Send **`STOP`**.
 
-Tap confirm. The note appears on the chain in the next beat.
+> "And it stops being the doctor's."
+
+**This step is not optional on one handset.** While it is connected as the
+treating team, a photograph from it is refused — it will tell you it records
+notes and orders, not bills, and ask for `STOP` first. With three phones the
+handback is a nicety; with one it is the demo.
 
 **Foot-guns:**
 - Set `ANBU_PUBLIC_BASE_URL` before deploying, or the QR encodes a relative path
   and scans to nothing. Test the scan during pre-flight, not on camera.
 - Screen glare kills QR scanning. Tilt the laptop back before the take.
-- The link expires in **60 minutes**. Mint it during the take, not before.
+- The link expires in **60 minutes**; the binding lasts **12 hours**. Mint the
+  link during the take, not before.
+- **Start unbound.** Pre-flight checks this. A handset left bound from a
+  rehearsal will file your mother's opening voice note as a clinical note, and
+  Beat 2 dies silently — no alert, no QR, nothing to cut to.
+- The Tamil rendering is a live model call. If it is slow the note still lands;
+  the English fills in a moment later.
 
 ---
 
-## Beat 6 (3:05–3:50) — photograph the paperwork ⭐⭐
+## Beat 6 (3:20–4:00) — photograph the paperwork ⭐⭐
 
 The most visual beat in the demo, and the one that most looks like the actual
 job. Everything before this was the night it happened. This is the week
@@ -722,7 +815,7 @@ see pre-flight §5. Say so and move on; do not re-send it.
 
 ---
 
-## Beat 7 (3:50–4:35) — it pays one, and refuses another ⭐⭐
+## Beat 7 (4:00–4:45) — it pays one, and refuses another ⭐⭐
 
 The highest-consequence thing in the project, and the reason to lead with the
 refusal: a system that spends money is believable in proportion to what it
@@ -833,7 +926,7 @@ Point at the money view, unchanged.
 
 ---
 
-## Beat 8 (4:35–5:15) — watch it decide, then check that it did ⭐⭐
+## Beat 8 (4:45–5:25) — watch it decide, then check that it did ⭐⭐
 
 The agentic beat. Everything so far showed the system *acting*; this shows it
 **deciding**, and then lets anyone verify the decisions were real.
@@ -912,7 +1005,7 @@ reason: payload does not hash to the recorded hash — content was altered
 
 ---
 
-## Beat 10 (5:15–5:50) — the honest wall
+## Beat 10 (5:25–6:00) — the honest wall
 
 Do not skip this. It is the strongest beat in the demo, because everyone else's
 demo skips it.
