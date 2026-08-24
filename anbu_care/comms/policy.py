@@ -79,6 +79,38 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "The itemised breakdown is here: {dashboard_url}",
         "params": ["parent_name", "total", "line_count"],
     },
+    "payment_settled": {
+        # The other half of a promise bill_recorded already makes. That message
+        # says the money was sent and "is not confirmed as settled yet", which
+        # is a promise of a second message - and there was no second message.
+        # The rail confirmed, a receipt was written, and the person whose money
+        # it was heard nothing.
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: the INR {amount} for {parent_name}'s bill has been "
+                "confirmed as settled by {payee_label}.\n"
+                "This is the rail confirming it, not Anbu Care assuming it.\n\n"
+                "The receipt for it: {dashboard_url}",
+        "params": ["amount", "parent_name", "payee_label"],
+    },
+    "payment_failed": {
+        # Worth more than the confirmation. Nobody has to act on money that
+        # arrived; somebody has to act on money that did not.
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: the INR {amount} for {parent_name}'s bill did NOT go "
+                "through. The hospital has not been paid.\n"
+                "Nothing was retried automatically. This one needs you.\n\n"
+                "The bill and what happened: {dashboard_url}",
+        "params": ["amount", "parent_name"],
+    },
+    "payment_amount_mismatch": {
+        "message_class": MessageClass.BILLING,
+        "body": "Anbu Care: the rail reported INR {received} against a bill for "
+                "INR {expected} on {parent_name}'s record. That is not a "
+                "settlement and nothing has been marked paid.\n"
+                "This needs a person to look at it.\n\n"
+                "The bill: {dashboard_url}",
+        "params": ["received", "expected", "parent_name"],
+    },
     "bill_recorded": {
         # BILLING, and the numbers here are the family's own bill read back to
         # them — what was charged, not what a clinician found. The estimate is

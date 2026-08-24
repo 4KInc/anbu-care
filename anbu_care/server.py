@@ -1219,8 +1219,59 @@ async def razorpay_webhook(request: Request) -> dict[str, Any]:
             reference=reference, note="failed" if failed else "captured",
             failed=failed, amount_paise=None if failed else amount_paise)
         if result.get("status") != "ignored":
+            # The family hears about it. `bill_recorded` already told them the
+            # money was sent and "is not confirmed as settled yet", which is a
+            # promise of a second message - and there was none. The rail
+            # confirmed, a receipt was written, and the person whose money it
+            # was found out by opening a dashboard, if they thought to.
+            _tell_the_family_what_settled(reference, result)
             return result
     return {"status": "ignored", "reason": "no payment carries any of those references"}
+
+
+def _tell_the_family_what_settled(reference: str, result: dict[str, Any]) -> None:
+    """One message when a payment lands, fails, or comes back the wrong size.
+
+    Never raises. This runs inside a provider callback, and a webhook that
+    500s because a WhatsApp send failed gets retried by the provider - which
+    would confirm nothing twice and tell nobody once.
+
+    A failure matters more than a confirmation: nobody has to act on money that
+    arrived, and somebody has to act on money that did not.
+    """
+    status = result.get("status") or result.get("outcome")
+    template = {"confirmed": "payment_settled",
+                "failed": "payment_failed",
+                "amount_mismatch": "payment_amount_mismatch"}.get(status)
+    if template is None:
+        # already_confirmed included, deliberately: a provider retrying a
+        # callback must not send the family the same news twice.
+        return
+
+    try:
+        payment = next(iter(service.find_payments_by_settlement_ref(reference)), None)
+        if payment is None:
+            return
+        profile = service.load_profile(payment.parent_id)
+        contact = _who_is_told(payment.parent_id)
+        if contact is None or profile is None:
+            return
+
+        first = profile.name.split()[0] if profile.name else "your parent"
+        params = {"parent_name": first,
+                  "amount": group(payment.amount_inr),
+                  "payee_label": payment.payee_label,
+                  "expected": group(int(result.get("expected_inr") or 0)),
+                  "received": group(int(result.get("received_inr") or 0))}
+
+        whatsapp_tools.send_family_update(
+            case_id=payment.case_id, parent_id=payment.parent_id,
+            to_e164=contact.whatsapp_e164, template_name=template,
+            template_params=params, message_class="billing",
+            purpose_override=consent.BILLING_UPDATES,
+        )
+    except Exception:  # noqa: BLE001 - the payment is settled either way
+        logger.exception("could not tell the family a payment %s", status)
 
 
 @app.get("/api/cases/{case_id}/verify")

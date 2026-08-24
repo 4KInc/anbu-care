@@ -2141,3 +2141,123 @@ def test_a_second_standing_grant_is_refused_while_one_is_live(case):
     _standing(parent_id)
     with pytest.raises(MandateRejected, match="already live"):
         _standing(parent_id)
+
+
+# =========================================================================
+# THE FAMILY HEARS WHAT HAPPENED TO THE MONEY
+# =========================================================================
+
+
+def test_the_family_is_told_when_a_payment_actually_settles(case, monkeypatch):
+    """`bill_recorded` says the money was sent and "is not confirmed as settled
+    yet". That is a promise of a second message, and there was none: the rail
+    confirmed, a receipt was written, and the person whose money it was found
+    out by opening a dashboard, if they thought to."""
+    from anbu_care import server
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id, case_id = case
+    _with_a_contact(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    monkeypatch.setattr(service, "find_payments_by_settlement_ref",
+                        lambda ref, store=None: [_stub_payment(parent_id, case_id)])
+
+    server._tell_the_family_what_settled("plink_X", {"outcome": "confirmed"})
+
+    assert len(sent) == 1, "the family was never told the payment landed"
+    assert sent[0]["template_name"] == "payment_settled"
+    assert sent[0]["template_params"]["amount"] == "27,300"
+
+
+def test_a_failed_payment_is_told_louder_than_a_settled_one(case, monkeypatch):
+    """Nobody has to act on money that arrived. Somebody has to act on money
+    that did not."""
+    from anbu_care import server
+    from anbu_care.comms import policy
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id, case_id = case
+    _with_a_contact(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    monkeypatch.setattr(service, "find_payments_by_settlement_ref",
+                        lambda ref, store=None: [_stub_payment(parent_id, case_id)])
+
+    server._tell_the_family_what_settled("plink_X", {"status": "failed"})
+
+    assert sent[0]["template_name"] == "payment_failed"
+    body = policy.TEMPLATES["payment_failed"]["body"]
+    assert "did NOT go through" in body
+    assert "has not been paid" in body
+    assert "needs you" in body
+
+
+def test_a_retried_callback_does_not_tell_the_family_twice(case, monkeypatch):
+    """Providers retry. The news does not get to arrive again."""
+    from anbu_care import server
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id, case_id = case
+    _with_a_contact(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    monkeypatch.setattr(service, "find_payments_by_settlement_ref",
+                        lambda ref, store=None: [_stub_payment(parent_id, case_id)])
+
+    server._tell_the_family_what_settled("plink_X", {"status": "already_confirmed"})
+    assert sent == []
+
+
+def test_a_failed_send_never_breaks_the_callback(case, monkeypatch):
+    """A webhook that 500s because WhatsApp was down gets retried by the
+    provider, which would confirm nothing twice and tell nobody once."""
+    from anbu_care import server
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id, case_id = case
+    _with_a_contact(parent_id)
+
+    def boom(**kw):
+        raise RuntimeError("whatsapp is down")
+
+    monkeypatch.setattr(whatsapp_tools, "send_family_update", boom)
+    monkeypatch.setattr(service, "find_payments_by_settlement_ref",
+                        lambda ref, store=None: [_stub_payment(parent_id, case_id)])
+
+    server._tell_the_family_what_settled("plink_X", {"outcome": "confirmed"})
+
+
+def test_the_settlement_message_never_carries_the_destination():
+    """Same rule as everywhere else: a label, never the account."""
+    from anbu_care.comms import policy
+
+    for name in ("payment_settled", "payment_failed", "payment_amount_mismatch"):
+        body = policy.TEMPLATES[name]["body"]
+        assert "payee_vpa" not in body
+        assert "@" not in body
+
+
+def _with_a_contact(parent_id):
+    """The fixture's parent has nobody on it, and a message needs a recipient."""
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True,
+        consent_purposes=["billing_updates", "status_updates", "outbound_notify"])
+
+
+def _stub_payment(parent_id, case_id):
+    from datetime import UTC, datetime
+
+    from anbu_care.schemas import PaymentRecord
+
+    return PaymentRecord(
+        payment_id="pay-x", case_id=case_id, parent_id=parent_id,
+        bill_id="bill-x", amount_inr=27_300, payee_ref="ref",
+        payee_label="Sacred Heart Hospital", mandate_id="mandate-x",
+        autonomous=True, guards_passed=[], settlement_ref="plink_X",
+        initiated_at=datetime.now(UTC))
