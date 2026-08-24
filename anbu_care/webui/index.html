@@ -373,7 +373,7 @@ nav button.on .g{background:var(--teal-bg);color:var(--teal-ink)}
 <script>
 const API = location.origin;
 const S = { caseId:null, parentId:null, token:null, trail:null, brief:null,
-            record:null, verify:null, wellbeing:null, careCircle:null, recovery:null,
+            record:null, verify:null, wellbeing:null, careCircle:null, recovery:null, dx:null,
             linkToken:null, bills:null,
             who:null, authConfig:null, authError:null, pay:null, payBusy:null,
             signInFor:null, payNote:null, payNoteOk:false,
@@ -785,6 +785,41 @@ function copyHandoff(){
   navigator.clipboard?.writeText(full);
 }
 
+// A clinician ordered a test, and Anbu Care looked up where it could be done.
+// The WhatsApp message links here and does not name the test, because the
+// classifier refuses test names over WhatsApp as clinical detail. So this is
+// the only surface the name appears on, and it sits behind the credential.
+function vDiagnostics(){
+  const orders=(S.dx&&S.dx.orders)||[];
+  if(!orders.length) return "";
+  return `<div class="sec">Tests a clinician ordered</div>
+  ${orders.slice().reverse().map(o=>{
+    const opts=o.options||[];
+    return `<div class="card">
+      <h2 class="mini">${esc(o.test_label)}</h2>
+      <p class="mute" style="margin:-8px 0 10px;font-size:13px">
+        Ordered by ${esc(o.ordered_by||"the treating team")} ·
+        ${esc(new Date(o.recorded_at).toLocaleString())}</p>
+      ${o.mobility_note?`<p style="margin:0 0 12px">${esc(o.mobility_note)}</p>`:""}
+      ${opts.length===0
+        ? `<p class="mute">${unknown("no options have been looked up yet")}</p>`
+        : `<div class="rows">${opts.map(x=>`
+            <div class="row stack">
+              <div class="k">${esc(x.name)}</div>
+              <div class="v">
+                <span class="num">${Number(x.distance_km).toFixed(1)} km</span>
+                from the hospital.<br>
+                <span class="mute">${esc(x.network_note||"")}</span><br>
+                <span class="mute">${esc(x.offers_test_note||"")}</span>
+              </div>
+            </div>`).join("")}</div>`}
+      ${opts.length?`<p class="mute" style="margin-top:12px">
+        ${esc(o.options_source_label||"")} Nothing here is booked: Anbu Care is
+        not connected to any of these centres and has not contacted them.</p>`:""}
+    </div>`;
+  }).join("")}`;
+}
+
 function vRecord(){
   // The credential check comes FIRST. The parent id is read from the brief,
   // which itself needs a credential, so ordering these the other way meant an
@@ -811,6 +846,7 @@ function vRecord(){
            </div></div>`
         : row("Medication", unknown("none recorded"))}
   </div>
+  ${vDiagnostics()}
   <div class="sec">Documents on file</div>
   ${docs.length===0?`<div class="card"><p>${unknown("no documents have been added yet")}</p></div>`:""}
   ${docs.map(d=>{
@@ -1897,6 +1933,7 @@ async function load(){
     S.verify=await api(`/api/cases/${S.caseId}/verify`);
     S.bills=await api(`/api/cases/${S.caseId}/bills`,{auth:true});
     S.pay=await api(`/api/cases/${S.caseId}/payments`,{auth:true});
+    S.dx=await api(`/api/cases/${S.caseId}/diagnostics`,{auth:true});
     if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
   if(S.parentId && (S.token || S.linkToken)){

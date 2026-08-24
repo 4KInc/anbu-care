@@ -15,6 +15,7 @@ import logging
 import os
 import urllib.parse
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -1277,7 +1278,7 @@ def handoff_page(token: str) -> HTMLResponse:
     access.record_access(grant)
 
     composed = handoff_summary.compose_emergency_summary(grant.parent_id)
-    return HTMLResponse(_handoff_html(composed, grant))
+    return HTMLResponse(_handoff_html(composed, grant, token))
 
 
 class NoteConfirmRequest(BaseModel):
@@ -1402,6 +1403,15 @@ def diagnostic_options(case_id: str, order_id: str,
     receipt_id = record(case_id=case_id, order_id=order_id,
                         test_label=order.test_label, surfaced=surfaced,
                         grouped=grouped)
+
+    # Kept against the order so the record renders what was actually surfaced
+    # and receipted, rather than a fresh search nothing on the chain covers.
+    order.options = surfaced["options"]
+    order.options_source = surfaced["source"]
+    order.options_source_label = surfaced["source_label"]
+    order.mobility_note = grouped["mobility_note"]
+    order.surfaced_at = datetime.now(UTC)
+    service.save_diagnostic_order(order)
 
     return {
         "case_id": case_id,
@@ -1655,6 +1665,13 @@ body{font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif
 main{max-width:640px;margin:0 auto}
 .band{background:#fff;border:1px solid #dbe3ea;border-radius:12px;padding:16px;margin-bottom:12px}
 .allergy{border:2px solid #b3261e;background:#fff5f4}
+.fl{display:block;font-size:13px;color:#5b6b7b;margin:12px 0 4px}
+.fi{width:100%;font:inherit;padding:10px 12px;border:1px solid #cbd5e0;
+    border-radius:8px;background:#fff;color:#12212e}
+.fi:focus{outline:2px solid #12212e;outline-offset:1px}
+.fb{width:100%;margin-top:14px;font:inherit;font-weight:600;padding:12px;
+    border:0;border-radius:8px;background:#12212e;color:#fff}
+.fb:disabled{opacity:.55}
 .allergy h2{color:#b3261e;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
 .allergy .v{font-size:30px;font-weight:800;line-height:1.15;color:#8c1d18}
 .allergy .none{font-size:17px;font-weight:700;color:#8c1d18;line-height:1.45}
@@ -1695,7 +1712,59 @@ def _handoff_denied_html(reason: str) -> str:
     )
 
 
-def _handoff_html(summary: Any, grant: Any) -> str:
+def _order_form_html(token: str) -> str:
+    """Where a clinician orders a test, on the phone in their hand.
+
+    The whole feature hangs off this and there was no way to reach it: the note
+    endpoints existed, the page rendered a summary and nothing else, so an
+    order could only be placed with curl. A clinician does not have curl.
+
+    Deliberately spare. The tag above still says READ ONLY about the summary,
+    and this is the one thing a write-scoped link may add — so it says what it
+    is, and says plainly that Anbu Care does not order tests.
+    """
+    return (
+        f"<div class=band><h2>Order a test</h2>"
+        f"<p class=foot>You are ordering this. Anbu Care does not order tests, "
+        f"and does not decide whether she can travel — it only looks up where "
+        f"the test could be done and tells the family.</p>"
+        f"<label class=fl for=dxtest>Test</label>"
+        f"<input id=dxtest class=fi placeholder='e.g. Troponin I (repeat)' "
+        f"autocomplete=off>"
+        f"<label class=fl for=dxwho>Your name</label>"
+        f"<input id=dxwho class=fi placeholder='e.g. Dr A. Anand' autocomplete=off>"
+        f"<label class=fl for=dxmob>Can she travel to a centre?</label>"
+        f"<select id=dxmob class=fi>"
+        f"<option value=unknown selected>I am not saying</option>"
+        f"<option value=ambulatory>Yes, she can travel</option>"
+        f"<option value=non_ambulatory>No, she cannot travel</option>"
+        f"</select>"
+        f"<p class=foot>Left as \u201cI am not saying\u201d, the family is shown "
+        f"both and told the choice is theirs.</p>"
+        f"<button id=dxgo class=fb type=button>Record the order</button>"
+        f"<p id=dxout class=foot></p></div>"
+        f"<script>(function(){{"
+        f"var b=document.getElementById('dxgo'),o=document.getElementById('dxout');"
+        f"b.addEventListener('click',function(){{"
+        f"var t=document.getElementById('dxtest').value.trim();"
+        f"if(!t){{o.textContent='Name the test first.';return;}}"
+        f"b.disabled=true;o.textContent='Recording\u2026';"
+        f"fetch('/handoff/{token}/note/confirm',{{method:'POST',"
+        f"headers:{{'content-type':'application/json'}},"
+        f"body:JSON.stringify({{text:'Ordered: '+t,"
+        f"recorded_by:document.getElementById('dxwho').value.trim(),"
+        f"orders_test:t,mobility:document.getElementById('dxmob').value}})}})"
+        f".then(function(r){{return r.json();}}).then(function(d){{"
+        f"o.textContent=d.order_id?('Recorded, and attributed to you. The family '"
+        f"+'has been shown that an order was placed.'):"
+        f"('That was not recorded: '+(d.detail||'unknown error'));"
+        f"if(!d.order_id){{b.disabled=false;}}}})"
+        f".catch(function(){{o.textContent='That did not reach Anbu Care. "
+        f"Nothing was recorded.';b.disabled=false;}});}});}})();</script>"
+    )
+
+
+def _handoff_html(summary: Any, grant: Any, token: str = "") -> str:
     def facts(items: list[Any], bullet: bool = False) -> str:
         out = []
         for fact in items:
@@ -1730,6 +1799,7 @@ def _handoff_html(summary: Any, grant: Any) -> str:
         f"<div class=band><h2>Conditions</h2><ul>{facts(summary.conditions, bullet=True)}</ul></div>"
         f"<div class=band><h2>Current medication</h2>{facts(summary.medications)}</div>"
         f"<div class=band><h2>Recent results</h2>{facts(summary.recent_labs)}</div>"
+        f"{_order_form_html(token) if grant.may_write_note and token else ''}"
         f"<div class=band><p class=foot>{_esc(summary.disclaimer)}</p>"
         f"<p class=foot style='margin-top:8px'>The family has been shown that this "
         f"summary was opened. This link expires on its own.</p></div>"

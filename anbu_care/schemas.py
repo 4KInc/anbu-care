@@ -822,6 +822,15 @@ class DiagnosticOrder(BaseModel):
     # be traced back to the attributed action that created it.
     note_receipt_id: str = ""
     recorded_at: datetime = Field(default_factory=utcnow)
+    # What was surfaced for this order, kept so the record shows the SAME list
+    # the receipt attests to. Re-running the search when somebody opens the page
+    # would show them a list that no receipt covers, and would spend a paid API
+    # call on every render.
+    options: list[dict] = Field(default_factory=list)
+    options_source: str = ""
+    options_source_label: str = ""
+    mobility_note: str = ""
+    surfaced_at: datetime | None = None
 
 
 class PaymentRecord(BaseModel):

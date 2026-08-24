@@ -466,3 +466,96 @@ def test_nothing_local_is_refused_rather_than_widened(case, monkeypatch):
         referral.options_for(test_label="MRI", lat=HOSPITAL_LAT, lon=HOSPITAL_LON,
                              city="Thoothukudi")
     assert "farther away and were not offered" in str(refused.value)
+
+
+# =========================================================================
+# THE CLINICIAN CAN ACTUALLY REACH IT
+# =========================================================================
+
+
+def _summary_stub():
+    """The shape `_handoff_html` reads, with everything absent.
+
+    The form is what is under test, not the summary, and "not on file"
+    everywhere is a real state the page has to render anyway.
+    """
+    class _Fact:
+        known = False
+        label = "x"
+        value = ""
+
+        class source:
+            note = "not on file"
+
+    class _Summary:
+        def __init__(self):
+            self.allergies = [_Fact()]
+            self.identity = [_Fact()]
+            self.conditions = [_Fact()]
+            self.medications = [_Fact()]
+            self.recent_labs = [_Fact()]
+            self.disclaimer = "not a hospital system"
+
+    return _Summary()
+
+
+def test_a_write_scoped_link_offers_the_order_form(case):
+    """The whole feature hung off an endpoint with no way to reach it.
+
+    The note endpoints existed, the page rendered a summary and nothing else,
+    so an order could only be placed with curl. A clinician does not have curl.
+    """
+    from anbu_care.server import _handoff_html
+
+    class _Grant:
+        may_write_note = True
+
+
+    page = _handoff_html(_summary_stub(), _Grant(), token="tok123")
+    assert 'id=dxtest' in page, "no field to name the test"
+    assert "/handoff/tok123/note/confirm" in page
+    assert "Anbu Care does not order tests" in page
+
+
+def test_a_read_only_link_offers_no_order_form(case):
+    """A read link cannot be edited into one that orders tests."""
+    from anbu_care.server import _handoff_html
+
+    class _Grant:
+        may_write_note = False
+
+
+    page = _handoff_html(_summary_stub(), _Grant(), token="tok123")
+    assert "id=dxtest" not in page
+    assert "note/confirm" not in page
+
+
+def test_the_form_defaults_to_saying_nothing_about_mobility():
+    """"I am not saying" is the default, and it is the honest one."""
+    from anbu_care.server import _order_form_html
+
+    form = _order_form_html("tok")
+    assert "<option value=unknown selected>" in form
+    assert "I am not saying" in form
+
+
+def test_the_record_shows_what_was_surfaced_not_a_fresh_search(case, live_places):
+    """Re-searching on page load would show a list no receipt covers.
+
+    It would also spend a paid API call on every render, which is its own
+    reason, but the first one is why this is a correctness test.
+    """
+    _parent_id, case_id = case
+    surfaced = referral.options_for(test_label="MRI", lat=HOSPITAL_LAT,
+                                    lon=HOSPITAL_LON, city="Thoothukudi")
+
+    from anbu_care.schemas import DiagnosticOrder
+
+    order = DiagnosticOrder(order_id="dxorder-x", case_id=case_id, parent_id="p",
+                            test_label="MRI", options=surfaced["options"],
+                            options_source=surfaced["source"])
+    service.save_diagnostic_order(order)
+
+    stored = service.load_diagnostic_order(case_id, "dxorder-x")
+    assert [o["place_id"] for o in stored.options] == \
+           [o["place_id"] for o in surfaced["options"]]
