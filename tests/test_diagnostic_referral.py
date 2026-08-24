@@ -827,19 +827,35 @@ def test_the_page_says_plainly_when_it_could_not_tell():
     assert "Check the test above is right" in form
 
 
-def test_an_order_dictated_in_tamil_is_read_and_kept_in_tamil(monkeypatch):
-    """She is in Thoothukudi and so is her doctor.
+def test_a_tamil_dictation_fills_the_field_in_english(monkeypatch):
+    """She is in Thoothukudi and so is her doctor, and the son reads English.
 
-    Verified against the real model: a Tamil dictation comes back in Tamil
-    script, code-mixed Tanglish comes back as the English clinical terms the
-    clinician actually used, and both search Places usefully. The words are
-    kept as spoken either way, which is the same rule that applies in English.
+    The transcript stays in the language spoken; the TEST comes back in
+    English. The first version of this had it backwards, and a doctor who said
+    the English words "blood test" got "பிளட் டெஸ்ட்" in the field: an English
+    term transliterated into Tamil script, which nobody ordered and no search
+    would find.
+
+    English at THIS point matters, because this is the moment a human checks
+    it. Translating after the order is recorded is a translation nobody
+    confirmed.
     """
     from anbu_care.diagnostics import dictation
 
-    _hears(monkeypatch, {"tests": ["மீண்டும் ட்ரோபோனின் பரிசோதனை"], "unclear": False})
-    p = dictation.propose_tests("காலையில் மீண்டும் ட்ரோபோனின் பரிசோதனை செய்ய வேண்டும்.")
-    assert p.first == "மீண்டும் ட்ரோபோனின் பரிசோதனை"
+    _hears(monkeypatch, {"tests": ["blood test"], "unclear": False})
+    p = dictation.propose_tests(
+        "ஓகே, உங்க அம்மாவுக்கு வந்து பிளட் டெஸ்ட் எடுக்கணும்.")
+    assert p.first == "blood test"
+
+
+def test_the_prompt_translates_without_formalising():
+    """Two different acts, and only one of them is allowed here."""
+    from anbu_care.diagnostics import dictation
+
+    prompt = dictation._PROMPT
+    assert "IN ENGLISH" in prompt
+    assert "complete blood count" in prompt, "nothing stops it formalising"
+    assert "Translating what was said is not the same as deciding" in prompt
 
 
 def test_a_code_mixed_dictation_keeps_the_clinical_terms_as_said(monkeypatch):
@@ -853,8 +869,13 @@ def test_a_code_mixed_dictation_keeps_the_clinical_terms_as_said(monkeypatch):
     assert p.tests == ["repeat troponin", "echo"]
 
 
-def test_a_tamil_label_reaches_the_search_unrewritten(case, live_places):
-    """Translating it before searching would be deciding what was ordered."""
+def test_a_label_reaches_the_search_exactly_as_confirmed(case, live_places):
+    """Whatever the clinician confirmed is what gets searched.
+
+    A Tamil label can still reach here, because the field is editable and a
+    clinician may type one. It is passed through untouched either way:
+    rewriting a confirmed order would be deciding what was ordered.
+    """
     referral.options_for(test_label="ரத்த பரிசோதனை", lat=HOSPITAL_LAT,
                          lon=HOSPITAL_LON, city="Thoothukudi")
     assert "ரத்த பரிசோதனை" in live_places[0]["textQuery"]

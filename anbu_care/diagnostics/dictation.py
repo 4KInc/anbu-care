@@ -19,9 +19,18 @@ sentence:
 - An empty answer is a fine answer. "I could not tell what test that was" costs
   the clinician a moment of typing. A confident wrong answer costs her a day
   and a bill.
-- The words come back as SPOKEN, not normalised into a catalogue. "Repeat
-  troponin" stays "repeat troponin". Mapping it to a code would be a second
-  decision nobody asked for, and the search wants the clinician's words anyway.
+- The test comes back in ENGLISH, and the transcript stays in whatever language
+  was spoken. Those are different things and getting them backwards was the
+  first version of this: a doctor who said the English words "blood test" got
+  "பிளட் டெஸ்ட்" in the field, a transliteration of English into Tamil script
+  that nobody had ordered and no search would find.
+- English AT THIS POINT rather than later, because this is the moment a human
+  checks it. A translation applied after the order was recorded is one nobody
+  confirmed; a proposal in the field is one the clinician either accepts or
+  corrects, which makes the English theirs.
+- It is still not normalised into a catalogue. "Blood test" stays "blood test",
+  never "complete blood count". Translating what was said and deciding what it
+  should have been are different acts, and only the first one is allowed here.
 - More than one test is reported as more than one, never silently reduced to
   the first. Picking one for them is exactly the kind of quiet choice this
   system does not get to make.
@@ -46,13 +55,20 @@ ONLY which diagnostic tests, scans or investigations they are ORDERING.
 Return ONLY a JSON object, no prose and no code fence:
 
 {
-  "tests": ["<each ordered test, as the clinician said it>"],
+  "tests": ["<each ordered test, in English>"],
   "unclear": <true if you cannot tell what was ordered>
 }
 
 Rules you must not break:
-- Report the words AS SPOKEN. "repeat troponin" stays "repeat troponin". Do not
-  expand it into a formal name, do not map it to a code, do not tidy it.
+- Report each test IN ENGLISH, whatever language the note is in. A clinician in
+  Thoothukudi dictating in Tamil is ordering a blood test, not a Tamil test,
+  and the family reading this and the search looking for it both work in
+  English. "ரத்த பரிசோதனை" is "blood test". "பிளட் டெஸ்ட்" is "blood test" —
+  that is an English term written in Tamil script, not a Tamil term.
+- Do NOT expand, formalise or tidy. "blood test" stays "blood test", never
+  "complete blood count". "repeat troponin" stays "repeat troponin", never
+  "Troponin I, serial". Translating what was said is not the same as deciding
+  what it should have been.
 - Only tests being ORDERED. A test already done, or a result being discussed, is
   not an order. "Her troponin was 0.9, get an echo" orders an echo and nothing
   else.
