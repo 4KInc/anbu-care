@@ -819,3 +819,36 @@ def test_the_page_says_plainly_when_it_could_not_tell():
     form = _order_form_html("tok")
     assert "could not tell which test that was" in form
     assert "Check the test above is right" in form
+
+
+def test_an_order_dictated_in_tamil_is_read_and_kept_in_tamil(monkeypatch):
+    """She is in Thoothukudi and so is her doctor.
+
+    Verified against the real model: a Tamil dictation comes back in Tamil
+    script, code-mixed Tanglish comes back as the English clinical terms the
+    clinician actually used, and both search Places usefully. The words are
+    kept as spoken either way, which is the same rule that applies in English.
+    """
+    from anbu_care.diagnostics import dictation
+
+    _hears(monkeypatch, {"tests": ["மீண்டும் ட்ரோபோனின் பரிசோதனை"], "unclear": False})
+    p = dictation.propose_tests("காலையில் மீண்டும் ட்ரோபோனின் பரிசோதனை செய்ய வேண்டும்.")
+    assert p.first == "மீண்டும் ட்ரோபோனின் பரிசோதனை"
+
+
+def test_a_code_mixed_dictation_keeps_the_clinical_terms_as_said(monkeypatch):
+    """Indian clinicians speak Tanglish. "Oru repeat troponin pannunga" is two
+    languages and one order, and the clinical term stays the English one."""
+    from anbu_care.diagnostics import dictation
+
+    _hears(monkeypatch, {"tests": ["repeat troponin", "echo"], "unclear": False})
+    p = dictation.propose_tests(
+        "Oru repeat troponin pannunga, appuram echo-um venum discharge-ku munnadi.")
+    assert p.tests == ["repeat troponin", "echo"]
+
+
+def test_a_tamil_label_reaches_the_search_unrewritten(case, live_places):
+    """Translating it before searching would be deciding what was ordered."""
+    referral.options_for(test_label="ரத்த பரிசோதனை", lat=HOSPITAL_LAT,
+                         lon=HOSPITAL_LON, city="Thoothukudi")
+    assert "ரத்த பரிசோதனை" in live_places[0]["textQuery"]

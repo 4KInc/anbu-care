@@ -203,6 +203,14 @@ This matters more than any feature list, so it comes first.
   dictation proposes nothing and says so; two tests in one sentence are
   reported as two rather than silently reduced to the first.
 
+  **It works in Tamil**, which matters because she is in Thoothukudi and so is
+  her doctor. Verified end to end against the real model and real Places: a
+  Tamil dictation is transcribed in Tamil script, the order is read out of it
+  in Tamil, and a Tamil query returns seven local centres. Code-mixed Tanglish
+  keeps the English clinical terms the clinician actually used. The words are
+  never translated before the search, because translating them would be
+  deciding what was ordered.
+
   The `diagnostic.referral` receipt carries counts, place ids and the source
   label, never the test name, so `/verify` stays public and leaks nothing.
 
@@ -361,7 +369,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 863 tests, no GCP or model access needed
+make test             # 866 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -529,7 +537,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  863 tests, no GCP or model access needed
+tests/                  866 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
