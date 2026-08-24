@@ -127,7 +127,20 @@ curl -sX POST $URL/api/demo/seed        # note the parent_id it returns
 - [ ] The canonical judge-facing pair is **case-da1c2cb6db** (valid, 8 receipts)
       and **case-a7cf9fa613** (tampered, `broken_at_seq: 1`). Both stay live
       after the recording so anyone can re-verify from the video. Do not delete
-      them.
+      them — and **check them, do not assume them**:
+
+      ```bash
+      curl -s $URL/api/cases/case-da1c2cb6db/verify | jq '{verified, receipt_count}'
+      curl -s $URL/api/cases/case-a7cf9fa613/verify | jq '{verified, broken_at_seq}'
+      ```
+
+      A deleted case still answers **200 with `verified: true` and
+      `receipt_count: 0`** — an empty chain is a valid chain. So the tampered
+      one silently stops being tampered, and the beat that proves the system
+      detects alteration proves nothing. This has happened once, to a bulk
+      cleanup that was careful about the case it was keeping and never looked
+      at these two. `receipt_count` is the field that catches it.
+      `parent-4787c08b00` owns them both and must survive with them.
 - [ ] **Old cases carry old distances, and that is correct.** Hospital
       coordinates were re-verified against Google Places on 21 Aug, which moved
       them by up to 5 km. Receipts are immutable, so a case triaged before that
@@ -238,10 +251,18 @@ done
 
 The 403 needs a parent your account is *not* a contact on.
 
+**Seeding will not give you one.** It is idempotent now and returns the family
+your handset is already bound to — which is precisely the parent your account
+*is* on, so the refusal would not fire.
+
+Use **`parent-4787c08b00`**. It is the parent the two canonical verify cases
+belong to, so it stays live permanently, and its only contact carries no email
+address at all. Confirmed 403 for this account.
+
 ```bash
-OTHER_PARENT=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
-# then unset its email so your account is not on it
-uv run python scripts/link_google_account.py --parent $OTHER_PARENT
+OTHER_PARENT=parent-4787c08b00
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $GOOGLE_ID_TOKEN" $URL/api/parents/$OTHER_PARENT   # 403
 ```
 
 - [ ] `curl -s $URL/api/auth-config | jq .google_client_id` is **not null**.
