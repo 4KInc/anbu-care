@@ -1270,6 +1270,7 @@ def send_handoff_link(
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=case.parent_id, to_e164=contact.whatsapp_e164,
             template_name="clinician_handoff_link", template_params=params,
+            attach_qr_of=url,
             message_class="logistics", purpose_override=purpose,
         )
         results.append({

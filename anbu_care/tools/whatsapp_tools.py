@@ -11,6 +11,7 @@ sandbox and are recorded either way.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -59,6 +60,11 @@ def send_family_update(
     template_params: dict[str, str],
     message_class: str,
     attach_claim_summary: bool = False,
+    # A link to draw as a QR and attach. For the handoff link, where the person
+    # holding the message is not the person who needs it: the neighbour is
+    # standing next to the doctor, and a picture he can scan off her screen is
+    # how it gets to him.
+    attach_qr_of: str = "",
     purpose_override: str = "",
 ) -> dict[str, Any]:
     """Send a templated WhatsApp update to a family member.
@@ -110,6 +116,7 @@ def send_family_update(
         language=getattr(contact, "language", "en"),
         template_name=template_name, template_params=template_params,
         declared=declared, attach_claim_summary=attach_claim_summary,
+        attach_qr_of=attach_qr_of,
     )
 
 
@@ -195,6 +202,7 @@ def _send(
     template_params: dict[str, Any],
     declared: MessageClass,
     attach_claim_summary: bool,
+    attach_qr_of: str = "",
 ) -> dict[str, Any]:
     """Consent, gate, render, deliver, record. The only way content leaves.
 
@@ -235,6 +243,8 @@ def _send(
     rendering = _render_for_reader(body, language, template_name)
 
     attachment = _attach(case_id) if attach_claim_summary else None
+    if attachment is None and attach_qr_of:
+        attachment = _attach_qr(attach_qr_of)
     media_url = attachment.pop("url", None) if attachment else None
 
     delivery = _deliver(to_e164, rendering.text, template_name, media_url=media_url)
@@ -333,6 +343,38 @@ def check_message_allowed(body: str, message_class: str) -> dict[str, Any]:
         "detected_class": gate.message_class.value,
         "reason": gate.reason,
         "detected_clinical_signals": gate.detected_clinical,
+    }
+
+
+def _attach_qr(payload: str) -> dict[str, Any]:
+    """A QR of this link, stored and signed so the provider can fetch it.
+
+    Never raises into a send. A QR that could not be built or stored degrades
+    to "no attachment" and the message still goes with the link in it — the
+    link is the thing that works, and the picture is what makes it easy.
+    """
+    from anbu_care.comms import artifacts, storage
+
+    try:
+        png = artifacts.qr_png(payload)
+    except Exception as exc:  # noqa: BLE001 - no QR is an outcome, not a failure
+        return {"attached": False, "reason": f"the QR could not be drawn: {type(exc).__name__}"}
+
+    digest = hashlib.sha256(png).hexdigest()
+    stored = storage.store(f"qr/{digest[:16]}.png", png, content_type="image/png")
+    if not stored.stored:
+        return {"attached": False, "reason": stored.detail}
+
+    return {
+        "attached": True,
+        "url": stored.url,
+        "kind": "handoff_qr",
+        "filename": f"qr/{digest[:16]}.png",
+        # The hash of the IMAGE, not of the link it encodes. A receipt that
+        # carried the URL would put a live credential on a chain anyone can
+        # read.
+        "sha256": digest,
+        "bytes": len(png),
     }
 
 

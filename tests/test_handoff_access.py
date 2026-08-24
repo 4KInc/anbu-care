@@ -726,3 +726,96 @@ def test_the_banner_says_what_this_link_actually_permits():
     assert _scope_tag(_Read()) == "READ ONLY"
     assert "RECORD" in _scope_tag(_Write())
     assert _scope_tag(_Write()) != "READ ONLY"
+
+
+# =========================================================================
+# THE QR, BECAUSE THE HOLDER IS NOT THE READER
+# =========================================================================
+
+
+def test_the_handoff_message_carries_a_scannable_code(monkeypatch):
+    """A link works when the person holding it needs it. Here she does not.
+
+    The neighbour is standing next to the doctor. "Tap this on my phone" is not
+    how it reaches him; a picture on her screen he can scan is.
+    """
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id = _parent()
+    _contact(parent_id, "+919000000101", ["outbound_notify"],
+             name="Meena", primary=False)
+    case_id = _case(parent_id)
+
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-qr-secret")
+    stored = []
+    from anbu_care.comms import storage
+
+    monkeypatch.setattr(storage, "store", lambda filename, data, content_type="": (
+        stored.append((filename, data, content_type)),
+        storage.StoredArtifact(stored=True, url="https://signed/qr.png",
+                               object_name=filename, detail="ok"),
+    )[1])
+
+    sent = []
+    real = whatsapp_tools._deliver
+    monkeypatch.setattr(whatsapp_tools, "_deliver",
+                        lambda to, body, template, media_url=None:
+                        sent.append(media_url) or real(to, body, template))
+
+    from anbu_care.wellbeing import handler
+
+    handler._hand_the_treating_team_a_link(case_id, parent_id)
+
+    assert stored, "no QR was drawn"
+    _filename, data, content_type = stored[0]
+    assert content_type == "image/png", "WhatsApp cannot render an SVG"
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert sent and sent[0] == "https://signed/qr.png", "the image was not attached"
+
+
+def test_the_qr_encodes_the_link_that_was_sent(monkeypatch):
+    """A code pointing somewhere else would be worse than no code."""
+    import io
+
+    from anbu_care.comms import artifacts
+
+    url = "https://anbu.example/handoff/case-x.note.0.1.sig"
+    png = artifacts.qr_png(url)
+
+    # Re-encode and compare: segno is deterministic, so an identical payload
+    # produces identical bytes.
+    buffer = io.BytesIO()
+    import segno
+
+    segno.make(url, error="h").save(buffer, kind="png", scale=8, border=3,
+                                    dark="#12212e", light="#ffffff")
+    assert png == buffer.getvalue()
+
+
+def test_a_failed_qr_still_sends_the_link(monkeypatch):
+    """The link is the thing that works; the picture is what makes it easy."""
+    from anbu_care.comms import storage
+    from anbu_care.tools import whatsapp_tools
+
+    monkeypatch.setattr(storage, "store", lambda *a, **k: storage.StoredArtifact(
+        stored=False, url=None, detail="no bucket configured"))
+
+    attachment = whatsapp_tools._attach_qr("https://anbu.example/handoff/x")
+    assert attachment["attached"] is False
+    assert "no bucket" in attachment["reason"]
+    assert "url" not in attachment, "a media url survived a failed store"
+
+
+def test_the_receipt_does_not_carry_the_link_itself(monkeypatch):
+    """A handoff URL is a live credential and /verify is public."""
+    from anbu_care.comms import storage
+    from anbu_care.tools import whatsapp_tools
+
+    monkeypatch.setattr(storage, "store", lambda filename, data, content_type="":
+                        storage.StoredArtifact(stored=True, url="https://signed/qr.png",
+                                               object_name=filename, detail="ok"))
+
+    attachment = whatsapp_tools._attach_qr("https://anbu.example/handoff/SECRET-TOKEN")
+    attachment.pop("url", None)          # as the sender does before recording
+    assert "SECRET-TOKEN" not in str(attachment)
+    assert attachment["sha256"], "nothing proves which image was sent"

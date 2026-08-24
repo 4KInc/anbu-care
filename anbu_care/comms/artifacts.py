@@ -154,6 +154,32 @@ def _pdf_of(text: str, title: str) -> bytes:
     return out.getvalue()
 
 
+def qr_png(payload: str, *, scale: int = 8, border: int = 3) -> bytes:
+    """A scannable QR, as a PNG, for attaching to a message.
+
+    The handoff link exists so a clinician can reach the summary without a
+    login, and until now it travelled as a URL. That works when the person
+    holding it IS the one who needs it — but the person holding it is the
+    neighbour, standing next to the doctor, and "tap this on my phone" is not
+    how she gets it to him. A picture on her screen he can scan is.
+
+    PNG rather than the SVG the dashboard renders, because WhatsApp fetches an
+    image and does not draw vectors. Error correction is high: this gets
+    photographed off a phone screen, at an angle, in a corridor, by somebody in
+    a hurry.
+    """
+    import io
+
+    import segno
+
+    buffer = io.BytesIO()
+    segno.make(payload, error="h").save(
+        buffer, kind="png", scale=scale, border=border,
+        dark="#12212e", light="#ffffff",
+    )
+    return buffer.getvalue()
+
+
 def build(kind: str, adjudication: Adjudication) -> Artifact:
     """Build an attachable artifact, or refuse.
 

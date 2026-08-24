@@ -564,6 +564,9 @@ def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
                 template_name="clinician_handoff_link", template_params=params,
                 message_class="logistics",
                 purpose_override=consent.OUTBOUND_NOTIFY,
+                # The picture, because she is the one holding the phone and he
+                # is the one who needs what is on it.
+                attach_qr_of=params["handoff_url"],
             )
         except Exception:
             logger.exception("could not share the handoff link with the care circle")

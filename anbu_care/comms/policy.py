@@ -229,7 +229,8 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # WhatsApp, and a link is not the thing it points at.
         "message_class": MessageClass.LOGISTICS,
         "body": "Anbu Care: if you are with {parent_name} at the hospital, or you "
-                "can reach whoever is, show the treating team this link.\n"
+                "can reach whoever is, let the treating team scan the code above, "
+                "or send them this link.\n"
                 "{handoff_url}\n\n"
                 "It opens her allergies, conditions, medication and recent "
                 "results, and lets the treating team record a note or a test "
