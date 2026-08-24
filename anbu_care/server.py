@@ -879,6 +879,62 @@ def parent_document_image(parent_id: str, document_id: str,
 # the mandate by the enforcer.
 
 
+@app.post("/api/parents/{parent_id}/payment-mandate")
+def grant_standing_mandate(parent_id: str, body: dict[str, Any],
+                           _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Authorise ahead of an admission, so nobody has to be awake for one.
+
+    The per-case route below still exists and still wins where it is used. This
+    is the one a family uses once, in daylight, for the admission that has not
+    happened yet - which is the only kind this system can be useful for.
+    """
+    from anbu_care.payments import MandateRejected, grant_standing
+
+    if service.load_profile(parent_id) is None:
+        raise HTTPException(status_code=404, detail=f"no parent {parent_id}")
+    try:
+        mandate = grant_standing(
+            parent_id=parent_id,
+            payee_vpa=str(body.get("payee_vpa", "")),
+            payee_label=str(body.get("payee_label", "")),
+            per_bill_cap_inr=int(body.get("per_bill_cap_inr", 0)),
+            total_cap_inr=int(body.get("total_cap_inr", 0)),
+            hours=int(body.get("hours", 720)),
+            granted_by=str(body.get("granted_by", "")),
+        )
+    except MandateRejected as rejected:
+        raise HTTPException(status_code=400, detail=str(rejected)) from None
+    except (TypeError, ValueError) as bad:
+        raise HTTPException(status_code=400, detail=str(bad)) from None
+
+    from anbu_care.payments import payee_ref
+
+    return {
+        "status": "granted",
+        "scope": "standing",
+        "mandate_id": mandate.mandate_id,
+        "payee_ref": payee_ref(mandate.payee_vpa),
+        "payee_label": mandate.payee_label,
+        "per_bill_cap_inr": mandate.per_bill_cap_inr,
+        "total_cap_inr": mandate.total_cap_inr,
+        "window_closes_at": mandate.window_closes_at.isoformat(),
+        "note": ("Every admission opened while this is live adopts it, and they "
+                 "share the total cap rather than each starting fresh at it."),
+    }
+
+
+@app.delete("/api/parents/{parent_id}/payment-mandate")
+def revoke_standing_mandate(parent_id: str,
+                            _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Withdraw it, including from admissions already carrying it."""
+    from anbu_care.payments import revoke_standing
+
+    mandate = revoke_standing(parent_id, revoked_by="family")
+    if mandate is None:
+        return {"status": "no_live_mandate"}
+    return {"status": "revoked", "scope": "standing", "mandate_id": mandate.mandate_id}
+
+
 @app.post("/api/cases/{case_id}/payment-mandate")
 def grant_mandate(case_id: str, body: dict[str, Any],
                   _session: str = Depends(require_family_session)) -> dict[str, Any]:

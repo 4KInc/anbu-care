@@ -260,21 +260,49 @@ def decide(*, bill_id: str, case_id: str, amount_inr: int,
                       f"INR {group(mandate.per_bill_cap_inr)}")
     passed.append("per_bill_cap")
 
-    spent = sum(p.amount_inr for p in history)
+    # 6 — the grant behind a standing copy is still standing
+    #
+    # An adopted copy is a copy, and a copy can outlive the thing it came from.
+    # Revoking the standing grant has to stop the admissions already carrying
+    # it in the same act, or "revoke" means "revoke, and also go and find every
+    # case that inherited it", which nobody will do at 3am.
+    if mandate.standing_id:
+        from anbu_care.payments import mandate as mandates
+
+        behind = mandates.live_standing_for(mandate.parent_id)
+        if behind is None or behind.mandate_id != mandate.standing_id:
+            return refuse("standing_live",
+                          "the standing authority this admission was paying "
+                          "under has been withdrawn")
+        passed.append("standing_live")
+
+    # 7 — a capped total, counted across everything the grant covers
+    #
+    # For a standing grant this counts EVERY admission it covers, not just this
+    # one. The alternative - each case starting fresh at the full cap - turns
+    # one authorisation into as many as there are admissions, and a family that
+    # authorised INR 400,000 would find INR 1,200,000 gone across three of them
+    # with every individual decision looking correct.
+    spent = sum(p.amount_inr for p in _history_under(mandate, history))
     if spent + amount_inr > mandate.total_cap_inr:
         return refuse("total_cap",
                       f"INR {group(spent)} has been paid already and INR "
                       f"{group(amount_inr)} more would pass the total cap of "
-                      f"INR {group(mandate.total_cap_inr)}")
+                      f"INR {group(mandate.total_cap_inr)}"
+                      + (" authorised across every admission this standing "
+                         "authority covers" if mandate.standing_id else ""))
     passed.append("total_cap")
 
-    # 6 — the destination. ASSIGNED from the mandate, never taken from the bill.
+    # 8 — the destination. ASSIGNED from the mandate, never taken from the bill.
     payee = mandate.payee_vpa
     passed.append("payee_from_mandate")
 
-    # 7 — nothing unusual about this bill
-    anomalies = _anomalies(amount_inr, mandate, history, now, extracted_payee,
-                           extracted_vendor)
+    # 9 — nothing unusual about this bill
+    # The same widening as the total cap, for the same reason: a burst is a
+    # fraction of the authority the family granted, and under a standing
+    # grant that authority is not this admission's alone.
+    anomalies = _anomalies(amount_inr, mandate, _history_under(mandate, history),
+                           now, extracted_payee, extracted_vendor)
     if anomalies:
         return refuse("no_anomaly", "; ".join(anomalies))
     passed.append("no_anomaly")
@@ -295,3 +323,28 @@ def upi_intent(*, payee_vpa: str, payee_label: str, amount_inr: int,
 
     return (f"upi://pay?pa={quote(payee_vpa)}&pn={quote(payee_label)}"
             f"&am={amount_inr}&cu=INR&tn={quote(note[:50])}")
+
+
+def _history_under(mandate: PaymentMandate, history: list) -> list:
+    """The payments the total cap is measured against.
+
+    For an admission-scoped mandate that is this admission's payments, which is
+    what `history` already holds. For a copy adopted from a standing grant it is
+    every admission that adopted the same grant - the cap is a ceiling on the
+    money, not on the money per episode.
+    """
+    if not mandate.standing_id:
+        return history
+
+    from anbu_care import service
+
+    seen = {p.payment_id for p in history}
+    everything = list(history)
+    for case_id in service.cases_adopting(mandate.standing_id):
+        if case_id == mandate.case_id:
+            continue
+        for payment in service.list_payments(case_id):
+            if payment.payment_id not in seen:
+                seen.add(payment.payment_id)
+                everything.append(payment)
+    return everything

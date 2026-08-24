@@ -764,8 +764,15 @@ class ArrivalBrief(BaseModel):
 class PaymentMandate(BaseModel):
     """What a family member authorised, once, in a credentialed session.
 
-    Scoped to ONE admission, not a standing arrangement. Everything the
-    enforcer needs to decide is here, and nothing here is a credential:
+    Either scoped to ONE admission, or STANDING and adopted by each admission
+    as it opens. The standing shape exists because the per-admission one put
+    the son back in the loop at the worst possible moment: a case opens at 3am
+    while he is asleep, and until he wakes and grants something the payment
+    lane is dead. Authority is his job; being awake for it is not.
+
+    An adopted copy carries `standing_id`, and that field is load-bearing - it
+    is what stops one authorisation becoming several. Everything the enforcer
+    needs to decide is here, and nothing here is a credential:
     `method_ref` is an opaque reference to a payment method held by a licensed
     provider, which this system never resolves and never sees behind.
 
@@ -791,6 +798,15 @@ class PaymentMandate(BaseModel):
     # An opaque handle to a method held elsewhere. NOT a credential, and the
     # schema has nowhere a credential could live even by accident.
     method_ref: str = ""
+    # Set on a copy adopted by a case from a standing grant, naming the grant
+    # it came from. Empty on a standing grant itself and on one granted for a
+    # single admission.
+    #
+    # The enforcer reads it for the one thing that makes standing authority
+    # safe: the total cap is a ceiling across EVERY case that adopted the
+    # grant, not a fresh allowance each time. A family that authorised INR
+    # 400,000 authorised that much money, not that much per admission.
+    standing_id: str = ""
 
     @property
     def is_live(self) -> bool:

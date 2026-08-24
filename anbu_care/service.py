@@ -97,6 +97,42 @@ def list_mandates(case_id: str, store: Store | None = None) -> list[PaymentManda
     return [PaymentMandate.model_validate(_clean(r)) for r in rows]
 
 
+def save_standing_mandate(mandate: PaymentMandate, store: Store | None = None) -> None:
+    """A standing grant lives on the PARENT, because it outlives any admission.
+
+    Kept under its own SK prefix rather than MANDATE#, so nothing that walks a
+    case's mandates can pick it up and treat it as one. It is authority waiting
+    to be adopted, not authority in force on anything yet.
+    """
+    store = store or get_store()
+    store.put(f"PARENT#{mandate.parent_id}", f"STANDING#{mandate.mandate_id}",
+              mandate.model_dump(mode="json"))
+
+
+def list_standing_mandates(parent_id: str,
+                           store: Store | None = None) -> list[PaymentMandate]:
+    store = store or get_store()
+    rows = store.query_prefix(f"PARENT#{parent_id}", "STANDING#")
+    return [PaymentMandate.model_validate(_clean(r)) for r in rows]
+
+
+def cases_adopting(standing_id: str, store: Store | None = None) -> list[str]:
+    """Every case that adopted this standing grant.
+
+    Needed for the one rule that keeps a standing authority from multiplying:
+    the total cap is spent across all of them together. A scan of mandate rows
+    is the honest way to get it - the alternative is a counter on the grant,
+    and a counter can drift from the payments it claims to describe.
+    """
+    store = store or get_store()
+    seen = []
+    for row in store.query_sk_prefix_across("MANDATE#"):
+        if row.get("standing_id") == standing_id and row.get("case_id"):
+            if row["case_id"] not in seen:
+                seen.append(row["case_id"])
+    return seen
+
+
 def save_payment(payment: PaymentRecord, store: Store | None = None) -> None:
     store = store or get_store()
     store.put(f"CASE#{payment.case_id}", f"PAYMENT#{payment.payment_id}",

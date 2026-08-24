@@ -1985,3 +1985,159 @@ def test_the_qr_encodes_the_mandate_address_not_the_bills(case, monkeypatch):
     svg = _qr_of(intent["upi_intent"])
     assert svg.lstrip().startswith("<svg")
     assert "attacker" not in svg
+
+
+# =========================================================================
+# STANDING AUTHORITY: GRANTED IN DAYLIGHT, ADOPTED AT 3AM
+# =========================================================================
+
+
+def _standing(parent_id, *, per_bill=100_000, total=400_000, hours=720):
+    from anbu_care.payments import grant_standing
+
+    return grant_standing(parent_id=parent_id, payee_vpa=HOSPITAL_VPA,
+                          payee_label="Sacred Heart Hospital",
+                          per_bill_cap_inr=per_bill, total_cap_inr=total,
+                          hours=hours, granted_by="Karthik")
+
+
+def _open_another(parent_id):
+    return triage_tools.run_triage(
+        parent_id=parent_id, symptoms=["chest pain"], free_text="",
+        reported_by="caregiver", lat=0.0, lon=0.0, case_id="")["case_id"]
+
+
+def test_a_case_opened_after_the_grant_can_pay_without_waking_anyone(case, monkeypatch):
+    """The whole reason this shape exists.
+
+    A per-admission mandate put the son back in the loop at the one moment he
+    cannot be in it: a case opens at 3am while he is asleep eleven time zones
+    away, and until he wakes and grants something the payment lane is dead.
+    """
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "payout")
+    parent_id, _first = case
+    _standing(parent_id)
+
+    later = _open_another(parent_id)
+    result = consider_bill(case_id=later, parent_id=parent_id,
+                           bill_id="IP/9", amount_inr=40_000)
+
+    assert result["paid"] is True, "an admission opened after the grant cannot pay"
+    assert "standing_live" in result["guards_passed"]
+    assert live_for_case(later) is not None
+
+
+def test_the_case_record_says_nobody_authorised_anything_for_it(case):
+    """A case whose bills were paid under an authority its own record never
+    mentions would be unauditable. Adoption is written down."""
+    parent_id, _first = case
+    standing = _standing(parent_id)
+    later = _open_another(parent_id)
+
+    live_for_case(later)
+    applied = next(r for r in service.get_chain(later).receipts
+                   if r.kind == "mandate.standing_applied")
+    assert applied.payload["standing_id"] == standing.mandate_id
+    assert "NOBODY AUTHORISED ANYTHING FOR THIS ADMISSION" in applied.payload["note"]
+    assert HOSPITAL_VPA not in str(applied.payload), "the destination is on the chain"
+
+
+def test_one_authorisation_does_not_become_several(case, monkeypatch):
+    """The rule the whole design rests on.
+
+    A family that authorised INR 400,000 authorised that much MONEY, not that
+    much per admission. Copying the cap onto each new case would turn one
+    signature into as many as there are admissions, with every individual
+    decision looking correct.
+    """
+    monkeypatch.setenv("ANBU_PAYMENT_MODE", "payout")
+    parent_id, first = case
+    _standing(parent_id, per_bill=80_000, total=100_000)
+
+    paid = consider_bill(case_id=first, parent_id=parent_id,
+                         bill_id="IP/1", amount_inr=50_000)
+    assert paid["paid"] is True, "the first admission could not pay at all"
+
+    # Comfortably inside this admission's own caps. It is only over the line
+    # once the other admission's spending counts, which is the whole point.
+    second = _open_another(parent_id)
+    again = consider_bill(case_id=second, parent_id=parent_id,
+                          bill_id="IP/2", amount_inr=60_000)
+
+    assert again["paid"] is False, "the cap reset itself on a new admission"
+    assert "total cap" in again["reason"]
+    assert "every admission this standing authority covers" in again["reason"]
+    assert service.list_payments(second) == []
+
+
+def test_revoking_the_standing_grant_stops_admissions_already_carrying_it(case):
+    """A copy can outlive the thing it came from.
+
+    Revoke has to mean revoke, not "revoke, and also go and find every case
+    that inherited this", which nobody will do at 3am.
+    """
+    from anbu_care.payments import revoke_standing
+
+    parent_id, case_id = case
+    _standing(parent_id)
+    assert live_for_case(case_id) is not None, "it was never adopted"
+
+    revoke_standing(parent_id, revoked_by="Karthik")
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/7", amount_inr=10_000)
+    assert result["paid"] is False
+    assert "has been withdrawn" in result["reason"]
+    assert service.list_payments(case_id) == []
+
+
+def test_declining_it_on_one_admission_is_not_undone_by_the_next_question(case):
+    """Revoking an adopted copy must stick. Without a check for one already
+    declined here, the next call re-adopts the grant it was just told to stop."""
+    parent_id, case_id = case
+    _standing(parent_id)
+    assert live_for_case(case_id) is not None
+
+    revoke(case_id, revoked_by="Karthik")
+    assert live_for_case(case_id) is None, "it re-adopted itself"
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/8", amount_inr=10_000)
+    assert result["paid"] is False
+
+
+def test_an_explicit_grant_for_one_admission_beats_the_standing_one(case):
+    """A narrower, later human act should win, and it is how a family limits
+    a single admission without withdrawing the arrangement."""
+    parent_id, case_id = case
+    _standing(parent_id, per_bill=100_000, total=400_000)
+    _mandate(case_id, parent_id, per_bill=5_000, total=5_000)
+
+    live = live_for_case(case_id)
+    assert live.standing_id == "", "the standing grant overrode an explicit one"
+    assert live.per_bill_cap_inr == 5_000
+
+    result = consider_bill(case_id=case_id, parent_id=parent_id,
+                           bill_id="IP/3", amount_inr=40_000)
+    assert result["paid"] is False
+    assert "above the per-bill cap of INR 5,000" in result["reason"]
+
+
+def test_a_standing_grant_is_refused_the_same_way_a_case_one_is(case):
+    """The wider act does not get looser rules."""
+    parent_id, _case_id = case
+    with pytest.raises(MandateRejected):
+        _standing(parent_id, per_bill=400_000, total=100_000)
+    with pytest.raises(MandateRejected):
+        from anbu_care.payments import grant_standing
+        grant_standing(parent_id=parent_id, payee_vpa="not-a-vpa",
+                       payee_label="x", per_bill_cap_inr=1, total_cap_inr=2,
+                       hours=1, granted_by="")
+
+
+def test_a_second_standing_grant_is_refused_while_one_is_live(case):
+    """Two would make "the destination" ambiguous at the parent level too."""
+    parent_id, _case_id = case
+    _standing(parent_id)
+    with pytest.raises(MandateRejected, match="already live"):
+        _standing(parent_id)
