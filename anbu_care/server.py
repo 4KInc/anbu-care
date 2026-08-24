@@ -908,6 +908,37 @@ def case_payments(case_id: str,
     }
 
 
+@app.get("/api/cases/{case_id}/payments/{payment_id}/upi")
+def payment_upi(case_id: str, payment_id: str,
+                _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """How to actually pay this, on the rail the country already uses.
+
+    UPI is not a fallback here, it is the normal way an Indian family settles a
+    hospital bill: scan, confirm in whichever app they use, done. No merchant
+    account, no provider onboarding, nothing for the hospital to integrate.
+
+    This is the ONLY response in the system that carries a raw destination, and
+    it is behind the case session for that reason. Everywhere else a payment
+    appears it carries `payee_ref` — a hash prefix that proves which
+    destination without being one — so a bug cannot turn a listing into a
+    payment instruction. Here the address is the entire point: nobody can pay
+    an account they have not been given.
+
+    The address comes from the MANDATE, never from the bill, which is the same
+    rule the enforcer holds one layer down.
+    """
+    from anbu_care.payments import PaymentRefused, intent_for
+
+    if service.load_case(case_id) is None:
+        raise HTTPException(status_code=404, detail=f"no case {case_id}")
+    try:
+        intent = intent_for(case_id=case_id, payment_id=payment_id)
+    except PaymentRefused as refused:
+        raise HTTPException(status_code=404, detail=str(refused)) from None
+
+    return {**intent, "qr_svg": _qr_of(intent["upi_intent"])}
+
+
 @app.post("/api/cases/{case_id}/payments/{payment_id}/confirm")
 def confirm_payment(case_id: str, payment_id: str,
                     _session: str = Depends(require_family_session)) -> dict[str, Any]:
@@ -949,7 +980,8 @@ def consider_bill_for_payment(case_id: str, bill_id: str,
     case = service.load_case(case_id)
     return consider_bill(case_id=case_id, parent_id=case.parent_id,
                          bill_id=bill_id, amount_inr=bill.balance_due_inr,
-                         extracted_payee=bill.vendor)
+                         extracted_payee=bill.payee_vpa or bill.vendor,
+                         extracted_vendor=bill.vendor)
 
 
 @app.post("/api/cases/{case_id}/payments/approve")
@@ -1552,6 +1584,25 @@ def _handoff_html(summary: Any, grant: Any) -> str:
     )
 
 
+def _qr_of(payload: str) -> str:
+    """A QR encoding exactly this string, verbatim.
+
+    Separate from `_qr_svg`, which resolves a dashboard path against the public
+    base URL. A UPI intent is already complete and prefixing anything to it
+    produces a QR that scans to nothing.
+    """
+    import io
+
+    import segno
+
+    buffer = io.BytesIO()
+    segno.make(payload, error="m").save(
+        buffer, kind="svg", scale=5, border=2, dark="#12212e", light="#ffffff",
+        svgclass=None, lineclass=None, xmldecl=False, svgns=True,
+    )
+    return buffer.getvalue().decode("utf-8")
+
+
 def _qr_svg(path: str) -> str:
     """A scannable QR for the handoff link, as inline SVG.
 
@@ -1845,7 +1896,13 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
     try:
         outcome = consider_bill(
             case_id=case_id, parent_id=parent_id, bill_id=bill.bill_id,
-            amount_inr=payable, extracted_payee=bill.vendor,
+            amount_inr=payable,
+            # The UPI ID off the paper where the bill printed one, falling back
+            # to the hospital name. This is the string the payee guard compares
+            # against the mandate — and it is checked, never followed. A bill
+            # printing a different UPI ID is the attack that guard exists for,
+            # and until bills carried one it had nothing to look at.
+            extracted_payee=bill.payee_vpa or bill.vendor,
             extracted_vendor=bill.vendor)
     except Exception:
         logger.exception("payment decision failed")

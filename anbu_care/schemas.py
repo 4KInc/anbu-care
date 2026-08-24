@@ -550,6 +550,10 @@ class ExtractedBill(BaseModel):
     is_interim: bool | None = None
     currency: str = "INR"
     vendor: str | None = None
+    # The UPI ID printed on the paper. Kept because the enforcer treats it as
+    # EVIDENCE that a bill is not what it should be, never as somewhere to send
+    # money. A bill is the one input that can never choose a destination.
+    payee_vpa: str | None = None
     bill_date: str | None = None
     # Admission and discharge as printed on the bill. Read because a per-day
     # sub-limit is multiplied by the length of stay: a three-day ICU stay read

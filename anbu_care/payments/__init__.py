@@ -16,10 +16,11 @@ from anbu_care.payments.run import (
     confirm,
     consider_bill,
     escalations,
+    intent_for,
     money_view,
 )
 
 __all__ = ["Decision", "MandateRejected", "PaymentRefused", "approve_escalated",
            "confirm", "consider_bill", "decide", "escalations", "grant",
-           "live_for_case",
+           "intent_for", "live_for_case",
            "money_view", "payee_ref", "revoke", "upi_intent"]

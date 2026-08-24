@@ -116,7 +116,26 @@ def render(spec: dict, out: Path) -> Path:
         d.text((960 - d.textlength(text, font=f), y), text, font=f, fill=INK)
         y += 32
 
-    y += 20
+    # The payment block a real Indian hospital bill carries, because UPI is how
+    # these are actually settled. It matters to this system for a second
+    # reason: the enforcer treats an address PRINTED ON A BILL as evidence, not
+    # as a destination, and with no bill ever printing one that check had
+    # nothing to look at. A bill whose UPI ID disagrees with the mandate is the
+    # attack the payee guard exists for.
+    upi = spec.get("upi_vpa")
+    if upi:
+        y += 24
+        d.line([(50, y), (W - 50, y)], fill=RULE, width=1); y += 16
+        d.text((50, y), "PAY BY UPI", font=_font(15, bold=True), fill=(70, 90, 110))
+        y += 24
+        d.text((50, y), "UPI ID", font=_font(16), fill=MUTED)
+        d.text((190, y), upi, font=_font(18, bold=True), fill=INK); y += 26
+        d.text((50, y), "Payee", font=_font(16), fill=MUTED)
+        d.text((190, y), spec["hospital"], font=_font(17), fill=INK); y += 26
+        d.text((50, y), "Scan any UPI app at the billing counter, or pay to the ID above.",
+               font=_font(15), fill=MUTED)
+
+    y += 26
     d.text((50, y), "SYNTHETIC — generated for testing Anbu Care. Not a real bill, not a real patient.",
            font=_font(15), fill=(150, 60, 60))
 
@@ -132,6 +151,7 @@ CARDIAC = {
     "hospital": "Sacred Heart Hospital",
     "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
     "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "upi_vpa": "sacredheart@okhdfcbank",
     "bill_no": "IP/2026/04471", "patient": "Ashanthi Machado",
     "uhid": "SHH-0092841", "age_sex": "71 / F", "consultant": "Dr A. Anand, Cardiology",
     "ip_no": "IP-26-8841", "admitted": "19 Aug 2026, 02:40",
@@ -275,6 +295,7 @@ INTERIM_DAY_TWO = {
     "hospital": "Sacred Heart Hospital",
     "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
     "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "upi_vpa": "sacredheart@okhdfcbank",
     "bill_title": "INTERIM BILL - DAY 2",
     "bill_no": "IP/2026/04471-I2", "patient": "Ashanthi Machado",
     "uhid": "SHH-0092841", "age_sex": "71 / F",
@@ -322,6 +343,7 @@ INTERIM_DAY_THREE = {
     "hospital": "Sacred Heart Hospital",
     "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
     "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "upi_vpa": "sacredheart@okhdfcbank",
     "bill_title": "INTERIM BILL - DAY 3",
     "bill_no": "IP/2026/04471-I3", "patient": "Ashanthi Machado",
     "uhid": "SHH-0092841", "age_sex": "71 / F",
@@ -371,6 +393,7 @@ INTERIM_DAY_FOUR = {
     "hospital": "Sacred Heart Hospital",
     "address": "Palayamkottai Road, Thoothukudi, Tamil Nadu 628002",
     "gstin": "33AABCS1429B1ZQ", "reg": "Reg. No. TN/THO/1187",
+    "upi_vpa": "sacredheart@okhdfcbank",
     "bill_title": "INTERIM BILL - DAY 4",
     "bill_no": "IP/2026/04471-I4", "patient": "Ashanthi Machado",
     "uhid": "SHH-0092841", "age_sex": "71 / F",

@@ -172,10 +172,6 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
         "autonomous": autonomous,
         "settlement_note": result.detail,
         "checkout_url": result.checkout_url,
-        "upi_intent": upi_intent(payee_vpa=verdict.payee_vpa,
-                                 payee_label=mandate.payee_label,
-                                 amount_inr=verdict.amount_inr,
-                                 note=bill_id),
     }
 
 
@@ -215,6 +211,48 @@ def approve_escalated(*, case_id: str, parent_id: str, bill_id: str,
                         verdict=verdict, mandate=mandate, autonomous=False)
     outcome["approved_by"] = approved_by
     return outcome
+
+
+def intent_for(*, case_id: str, payment_id: str) -> dict:
+    """The UPI intent for one payment, composed on demand and never stored.
+
+    UPI is the rail every phone in the country already has, and paying over it
+    means the payer's app receiving an address — there is no version of this
+    where the destination stays hidden from the person being asked to pay.
+
+    So it is built here, from the MANDATE, at the moment somebody asks for it,
+    and it is deliberately the only place a destination leaves the store. Every
+    other response carries `payee_ref`, a hash prefix that proves which
+    destination without being one. Keeping this to a single named door is what
+    makes "a bill can never set where money goes" checkable rather than hoped
+    for: there is one function to audit instead of a field riding on every
+    payload that happens to include a payment.
+    """
+    record = next((p for p in service.list_payments(case_id)
+                   if p.payment_id == payment_id), None)
+    if record is None:
+        raise PaymentRefused(f"no payment {payment_id} on case {case_id}")
+
+    mandate = mandates.live_for_case(case_id)
+    if mandate is None or mandate.mandate_id != record.mandate_id:
+        # The authority this payment was made under is gone or replaced. The
+        # address on it is not a thing to keep offering.
+        raise PaymentRefused(
+            "the authority this payment was made under is no longer live, so "
+            "its destination is not shown")
+
+    return {
+        "payment_id": record.payment_id,
+        "bill_id": record.bill_id,
+        "amount_inr": record.amount_inr,
+        "payee_label": record.payee_label,
+        "payee_vpa": mandate.payee_vpa,
+        "upi_intent": upi_intent(payee_vpa=mandate.payee_vpa,
+                                 payee_label=mandate.payee_label,
+                                 amount_inr=record.amount_inr,
+                                 note=record.bill_id),
+        "confirmed": record.confirmed_at is not None,
+    }
 
 
 def confirm(*, case_id: str, payment_id: str) -> dict:

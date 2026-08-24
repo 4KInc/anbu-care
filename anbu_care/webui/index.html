@@ -1261,11 +1261,54 @@ function paymentCard(x){
     ${!x.confirmed && x.checkout_url?`<button class="paper"
       onclick="window.open('${esc(x.checkout_url)}','_blank')">
       <span aria-hidden="true">\u25B8</span> Open the payment page</button>`:""}
+    ${!x.confirmed?(S.upi&&S.upi.payment_id===x.payment_id
+      ? upiPanel(S.upi)
+      : `<button class="paper" onclick="showUpi('${esc(x.payment_id)}')">
+          <span aria-hidden="true">\u25A6</span> Pay by UPI</button>`):""}
     ${(x.guards_passed||[]).length?`<div class="guards">${
       x.guards_passed.map(g=>`<span class="guard">${esc(String(g).replace(/_/g," "))}</span>`).join("")
     }</div>`:""}
   </div>`;
 }
+
+// UPI is how an Indian family actually settles a hospital bill: scan, confirm
+// in whichever app they use, done. No provider onboarding, nothing for the
+// hospital to integrate, and it works on the phone already in their hand.
+//
+// Fetched on demand rather than shipped with the payment list. Every other
+// response carries a reference to the destination instead of the destination,
+// so this is the one place an address arrives, and asking for it is a
+// deliberate act rather than a side effect of opening the tab.
+function upiPanel(u){
+  return `<div class="card" style="margin-top:10px;text-align:center">
+    <h2 class="mini">Pay ${inr(u.amount_inr)} to ${esc(u.payee_label)}</h2>
+    <div style="max-width:210px;margin:10px auto;line-height:0">${u.qr_svg||""}</div>
+    <p class="mute">Scan with any UPI app, or use the ID below.</p>
+    <p class="num" style="font-weight:700;word-break:break-all">${esc(u.payee_vpa||"")}</p>
+    <div class="btns" style="justify-content:center">
+      <a class="btn" href="${esc(u.upi_intent||"")}">Open a UPI app</a>
+      <button class="btn ghost" onclick="hideUpi()">Close</button>
+    </div>
+    <p class="mute" style="margin-top:8px">This is the destination on your
+      mandate. A bill cannot change it.</p>
+  </div>`;
+}
+
+async function showUpi(paymentId){
+  if(!S.token){
+    askSignIn("Seeing where a payment goes needs a signed-in family session.");
+    return;
+  }
+  const r = await fetch(`${API}/api/cases/${encodeURIComponent(S.caseId)}`
+    + `/payments/${encodeURIComponent(paymentId)}/upi`,
+    {headers:{Authorization:`Bearer ${S.token}`}});
+  if(!r.ok){ S.payNote = `Could not load the UPI details (HTTP ${r.status}).`;
+             S.payNoteOk = false; render(); return; }
+  S.upi = await r.json();
+  render();
+}
+
+function hideUpi(){ S.upi = null; render(); }
 
 function mandateForm(){
   return `<div class="card" style="margin-top:12px">

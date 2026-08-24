@@ -28,6 +28,7 @@ from anbu_care.payments import (
     confirm,
     consider_bill,
     grant,
+    intent_for,
     live_for_case,
     money_view,
     revoke,
@@ -103,8 +104,9 @@ def test_a_payment_only_ever_targets_the_mandate_payee(case):
     result = consider_bill(case_id=case_id, parent_id=parent_id,
                            bill_id="IP/1", amount_inr=40_000)
 
-    assert "sacredheart%40hdfcbank" in result["upi_intent"]
-    assert "okaxis" not in result["upi_intent"]
+    intent = intent_for(case_id=case_id, payment_id=result["payment_id"])
+    assert "sacredheart%40hdfcbank" in intent["upi_intent"]
+    assert "okaxis" not in intent["upi_intent"]
 
 
 # =========================================================================
@@ -478,7 +480,8 @@ def test_a_human_can_approve_what_the_enforcer_refused(case):
                                  approved_by="Karthik")
     assert approved["outcome"] == "initiated"
     assert approved["autonomous"] is False
-    assert "sacredheart%40hdfcbank" in approved["upi_intent"]
+    intent = intent_for(case_id=case_id, payment_id=approved["payment_id"])
+    assert "sacredheart%40hdfcbank" in intent["upi_intent"]
 
 
 def test_the_upi_intent_is_a_real_one():
@@ -498,7 +501,7 @@ IMAGE = b"\xff\xd8\xff" + b"x" * 8000
 
 
 def _bill_reads(monkeypatch, *, balance_due, vendor="Sacred Heart Hospital",
-                total=90_000):
+                total=90_000, payee_vpa=None):
     """Pin what the model returns at the one seam, so the guards under test are
     the real enforcer rather than a mock of it."""
     import json
@@ -510,7 +513,7 @@ def _bill_reads(monkeypatch, *, balance_due, vendor="Sacred Heart Hospital",
 
     monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
     monkeypatch.setattr(bill_vision, "_call_model", lambda image, mime_type: json.dumps({
-        "vendor": vendor, "bill_date": "2026-08-20",
+        "vendor": vendor, "payee_vpa": payee_vpa, "bill_date": "2026-08-20",
         "stated_total_inr": total, "balance_due_inr": balance_due,
         "is_interim": True, "unreadable": False, "unreadable_reason": None,
         "line_items": [{"label": "ICU bed charges", "item": "icu",
@@ -544,7 +547,8 @@ def test_a_photographed_interim_bill_auto_clears(case, monkeypatch):
     assert outcome["outcome"] == "initiated"
     # The vendor string off the photograph named a hospital, not a VPA, and it
     # still did not become a destination.
-    assert "sacredheart%40hdfcbank" in outcome["upi_intent"]
+    intent = intent_for(case_id=case_id, payment_id=outcome["payment_id"])
+    assert "sacredheart%40hdfcbank" in intent["upi_intent"]
 
 
 def test_a_bill_with_nothing_outstanding_is_not_paid(case, monkeypatch):
@@ -724,7 +728,7 @@ def test_the_client_computes_no_cap_and_no_pay_decision():
         "SPIKE_FACTOR", "BURST_WINDOW", "NEAR_CAP", "LATE_WINDOW",
         "per_bill_cap_inr >", "> m.per_bill_cap_inr",
         "amount_inr > ", "total_cap_inr >",
-        "payee_vpa ==", ".payee_vpa",     # never reads a destination back
+        "payee_vpa ==",                   # never compares a destination itself
     ]
     for token in forbidden:
         assert token not in page, f"the client appears to decide: {token!r}"
@@ -743,7 +747,8 @@ def test_no_destination_VALUE_can_appear_in_the_page():
     same risk as a destination rendered back into the document.
     """
     page = _client()
-    # Read-back paths, which would put a real address on screen.
+    # Read-back paths on the general payloads, which would put a real address
+    # on screen as a side effect of opening the tab.
     assert "m.payee_vpa" not in page
     assert "x.payee_vpa" not in page
     # The address IS shown back once, in the confirmation dialog, because the
@@ -754,12 +759,40 @@ def test_no_destination_VALUE_can_appear_in_the_page():
     assert "${vpa}" in confirm_fn, "the son is no longer shown what he is pinning"
     assert page.count("${vpa}") == 1, "the address appears outside the dialog"
 
-    # And no render path interpolates it into HTML.
+    # And no ORDINARY render path interpolates it into HTML.
     for renderer in ("vMandate", "paymentCard", "refusalCard", "mandateForm"):
         body = page[page.index(f"function {renderer}("):]
         body = body[:body.index("\n}")]
         assert "vpa" not in body.replace('id="mvpa"', "").replace("mvpa", ""), \
             f"{renderer} touches an address"
+
+
+def test_a_destination_reaches_the_page_only_where_paying_requires_it():
+    """The claim is narrower than it was, and deliberately so.
+
+    UPI cannot work without the payer receiving an address; that is what an
+    address is for. So one panel renders one, and the precise property is now:
+    it arrives from the one endpoint whose job that is, on an explicit request,
+    read-only, and nowhere else.
+
+    What has NOT changed is the thing that matters: the address comes from the
+    mandate. No bill, and nothing typed into this page, can alter where money
+    goes.
+    """
+    page = _client()
+
+    upi = page[page.index("function upiPanel("):]
+    upi = upi[:upi.index("\n}")]
+    assert "u.payee_vpa" in upi, "the panel cannot help anybody pay"
+
+    # It is fetched, never derived, and never from a payment listing.
+    fetcher = page[page.index("async function showUpi("):page.index("function hideUpi(")]
+    assert "/upi" in fetcher and "Authorization" in fetcher
+
+    # Read-only. Nothing on this page can edit a destination except the grant
+    # form, which is where a human deliberately sets one.
+    assert "value=${esc(u.payee_vpa" not in page
+    assert 'id="upivpa"' not in page
 
 
 def test_no_payment_response_carries_a_destination(case):
@@ -857,8 +890,13 @@ def test_considering_a_bill_carries_no_amount_or_payee(case):
     source = inspect.getsource(server.consider_bill_for_payment)
     assert "body" not in inspect.signature(server.consider_bill_for_payment).parameters
     assert "bill.balance_due_inr" in source
-    assert "payee" not in source.split("def consider_bill_for_payment")[1].split("return")[0] \
-        or "extracted_payee=bill.vendor" in source
+
+    # Everything handed to the enforcer is read off the STORED bill. A caller
+    # can name which bill; it cannot say what the bill says.
+    call = source.split("return consider_bill(")[1]
+    for argument in ("amount_inr", "extracted_payee", "extracted_vendor"):
+        value = call.split(f"{argument}=")[1].split(",")[0]
+        assert value.startswith("bill."), f"{argument} did not come from the bill"
 
 
 def test_a_bill_with_no_balance_is_not_put_to_the_enforcer(case, monkeypatch):
@@ -1828,3 +1866,113 @@ def test_a_payout_still_in_flight_settles_nothing(case, monkeypatch):
         assert out["status"] == "ignored"
 
     assert money_view(case_id)["paid_inr"] == 0
+
+
+# =========================================================================
+# UPI: THE RAIL EVERY PHONE ALREADY HAS
+# =========================================================================
+
+
+def test_the_upi_intent_is_reachable_for_a_payment(case):
+    """It was built on every payment and thrown away with the response.
+
+    Nothing could show it, so the one rail an Indian family can actually use
+    without any provider onboarding was generated and discarded.
+    """
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    out = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                        amount_inr=27_300)
+
+    intent = intent_for(case_id=case_id, payment_id=out["payment_id"])
+    assert intent["upi_intent"].startswith("upi://pay?")
+    assert "sacredheart%40hdfcbank" in intent["upi_intent"]
+    assert "am=27300" in intent["upi_intent"]
+    assert intent["payee_label"] == "Sacred Heart Hospital"
+
+
+def test_the_destination_leaves_by_exactly_one_door(case):
+    """The listing stays clean; one named endpoint hands out an address.
+
+    Keeping it to a single door is what makes "a bill can never set where money
+    goes" checkable: there is one function to audit, rather than a field riding
+    along on every payload that happens to include a payment.
+    """
+    from anbu_care.payments import escalations, money_view
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id)
+    out = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/1",
+                        amount_inr=27_300)
+
+    blob = str({"view": money_view(case_id),
+                "escalations": escalations(case_id),
+                "payments": [p.model_dump(mode="json")
+                             for p in service.list_payments(case_id)]}).lower()
+    assert HOSPITAL_VPA not in blob
+    assert "hdfcbank" not in blob
+
+    # And the door itself does carry it, because nobody can pay an account they
+    # have not been given.
+    intent = intent_for(case_id=case_id, payment_id=out["payment_id"])
+    assert intent["payee_vpa"] == HOSPITAL_VPA
+    assert "sacredheart%40hdfcbank" in intent["upi_intent"]
+
+
+def test_a_bill_printing_someone_elses_upi_id_is_refused(case, monkeypatch):
+    """The attack the payee guard exists for, which it could never see before.
+
+    Real Indian bills print a UPI ID. Ours printed none, so the guard compared
+    a hospital NAME against a VPA, never matched, and was written to ignore
+    anything without an "@" — which meant it ignored everything.
+    """
+    from anbu_care.bills import ingest_bill_image
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    _bill_reads(monkeypatch, balance_due=27_300, total=27_300,
+                payee_vpa="attacker@okaxis")
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    assert bill.payee_vpa == "attacker@okaxis"
+
+    from anbu_care.server import _consider_payment
+
+    line = _consider_payment(case_id, parent_id, bill)
+    assert "NOT paid automatically" in line
+    assert service.list_payments(case_id) == [], "an attacker's VPA was paid"
+
+
+def test_a_bill_printing_the_right_upi_id_still_pays(case, monkeypatch):
+    """The guard must not refuse the ordinary case it now finally sees."""
+    from anbu_care.bills import ingest_bill_image
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    _bill_reads(monkeypatch, balance_due=27_300, total=27_300,
+                payee_vpa=HOSPITAL_VPA)
+    bill = ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+
+    from anbu_care.server import _consider_payment
+
+    line = _consider_payment(case_id, parent_id, bill)
+    assert "NOT paid automatically" not in line
+    assert len(service.list_payments(case_id)) == 1
+
+
+def test_the_qr_encodes_the_mandate_address_not_the_bills(case, monkeypatch):
+    """A QR is a destination in a form somebody's camera will act on."""
+    from anbu_care.bills import ingest_bill_image
+    from anbu_care.server import _qr_of
+
+    parent_id, case_id = case
+    _mandate(case_id, parent_id, per_bill=50_000)
+    _bill_reads(monkeypatch, balance_due=27_300, total=27_300,
+                payee_vpa=HOSPITAL_VPA)
+    ingest_bill_image(case_id, parent_id, IMAGE, "image/jpeg")
+    out = consider_bill(case_id=case_id, parent_id=parent_id, bill_id="IP/9",
+                        amount_inr=27_300, extracted_payee=HOSPITAL_VPA)
+
+    intent = intent_for(case_id=case_id, payment_id=out["payment_id"])
+    svg = _qr_of(intent["upi_intent"])
+    assert svg.lstrip().startswith("<svg")
+    assert "attacker" not in svg
