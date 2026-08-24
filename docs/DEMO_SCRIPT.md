@@ -706,12 +706,18 @@ with distances.
 
 Send **`STOP`**.
 
-> "And it stops being the doctor's."
+> "And the phone goes back to being Meena's."
 
-**This step is not optional on one handset.** While it is connected as the
+Say **Meena's**, not yours. The next beat is a bill, and **doctors do not
+photograph bills** — the neighbour standing in the corridor holding the paper
+does. On three phones this is obvious because the bill arrives from her number
+and no handback is needed at all. On one it is a line of narration doing the
+work, and getting it wrong quietly puts the son back in the loop the whole
+demo exists to get him out of.
+
+**On one handset the `STOP` is not optional.** While it is connected as the
 treating team, a photograph from it is refused — it will tell you it records
-notes and orders, not bills, and ask for `STOP` first. With three phones the
-handback is a nicety; with one it is the demo.
+notes and orders, not bills, and ask for `STOP` first.
 
 **Foot-guns:**
 - Set `ANBU_PUBLIC_BASE_URL` before deploying, or the QR encodes a relative path
@@ -734,6 +740,18 @@ job. Everything before this was the night it happened. This is the week
 afterwards, which is where families in this situation actually lose money — and
 it has to come after the handoff, or you are showing a discharge summary for an
 admission the audience has not seen yet.
+
+**Whose hands this is.** The bill comes from **Meena**, the neighbour. She is
+the one at the hospital; the son is asleep. Say so, because it is the
+difference between a system that replaces him and an app he still has to open.
+
+She holds `inbound_wellbeing`, so she can send paperwork in, and she does
+**not** hold `billing_updates` — so the amount, what was claimable and what was
+refused go to the son's thread, not hers. She gets an acknowledgement that says
+he is being told. That asymmetry is the design, and it is worth ten seconds:
+
+> "She can hand the system a bill. She cannot read the family's money. Helping
+> is not the same as being entitled to look."
 
 **Half one — a hospital bill becomes an itemised claim.**
 

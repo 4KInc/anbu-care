@@ -2380,11 +2380,54 @@ def _handle_bill_photo(sender: Any, media: Any, background: BackgroundTasks) -> 
 
     background.add_task(_read_intake, case_id, sender.parent_id,
                         media.data, media.mime_type, held)
-    return _twiml(
-        "Got that. Reading it now. What it turned out to be, and anything it "
-        "changes, will follow in a moment. Nothing is recorded until it has "
-        "been read."
-    )
+    return _twiml(_bill_acknowledgement(sender))
+
+
+def _who_is_told(parent_id: str) -> Any | None:
+    """The contact a document's outcome goes to. Primary, else the first one.
+
+    Lifted out of the reader so the acknowledgement can be honest about whose
+    thread the answer lands in, instead of promising it to whoever happened to
+    hold the camera.
+    """
+    profile = service.load_profile(parent_id)
+    contacts = profile.family_contacts if profile else []
+    return next((c for c in contacts if c.is_primary), None) or next(iter(contacts), None)
+
+
+def _bill_acknowledgement(sender: Any) -> str:
+    """What the photographer is told, which depends on who they are.
+
+    The neighbour is the one who photographs a bill. She is standing in the
+    hospital corridor holding the paper; the son is asleep eleven time zones
+    away and could not do it if he wanted to. That is the whole point, and it
+    means the person sending the photograph is routinely NOT the person the
+    answer is for.
+
+    The outcome carries the amount, what was claimable and what was refused,
+    and it goes to the contact who consented to hear about money. A care circle
+    member who agreed to help is not thereby entitled to read the family's
+    bills, and quietly widening that because she was the one holding the camera
+    would be a consent decision made by accident.
+
+    So she is told the truth: it arrived, and the family is being told what it
+    says. What she must NOT be told is "the answer will follow in a moment",
+    which is what this said to everybody — a promise kept only for the primary
+    contact and broken, silently, in every other thread.
+    """
+    told = _who_is_told(sender.parent_id)
+    mine = sender.source.startswith("caregiver:") and told is not None \
+        and sender.source.split(":", 1)[1].strip() == told.name.strip()
+
+    if told is None or mine or sender.source == inbound.SELF_REPORTED:
+        return ("Got that. Reading it now. What it turned out to be, and anything "
+                "it changes, will follow in a moment. Nothing is recorded until "
+                "it has been read.")
+
+    first = told.name.split()[0] if told.name else "the family"
+    return (f"Got that, thank you. It is being read now, and {first} will be told "
+            f"what it says and anything it changes. Nothing is recorded until it "
+            f"has been read.")
 
 
 def _read_intake(case_id: str, parent_id: str, image: bytes, mime_type: str,

@@ -1464,3 +1464,93 @@ def test_a_voice_note_from_a_bound_handset_still_reaches_the_reader(case, monkey
 
     assert len(background.tasks) == 1
     assert background.tasks[0].func is server._read_clinician_order
+
+
+def test_the_neighbour_who_photographs_a_bill_is_not_promised_the_answer(case, monkeypatch):
+    """She is the one in the corridor holding the paper. The son is asleep.
+
+    So the sender of a bill is routinely NOT the person its outcome is for, and
+    the acknowledgement used to promise everybody that the answer would follow
+    in a moment - a promise kept only in the primary contact's thread.
+    """
+    from fastapi import BackgroundTasks
+
+    from anbu_care import server
+    from anbu_care.comms import inbound
+
+    parent_id, case_id = case
+    media = inbound.InboundMedia(audio=b"\xff\xd8\xff" + b"j" * 3000,
+                                mime_type="image/jpeg", kind="image")
+    monkeypatch.setattr(server, "_latest_open_case_for", lambda pid: case_id)
+    monkeypatch.setattr(server.intake_ledger, "record", lambda *a, **k: None)
+
+    told = server._who_is_told(parent_id)
+    assert told is not None, "this fixture has nobody to tell"
+
+    circle = SimpleNamespace(parent_id=parent_id, source="caregiver:Meena")
+    said = server._handle_bill_photo(circle, media, BackgroundTasks()).body.decode()
+    assert "will follow in a moment" not in said, "a promise made in the wrong thread"
+    assert told.name.split()[0] in said, "she is not told who does get the answer"
+
+    primary = SimpleNamespace(parent_id=parent_id, source=f"caregiver:{told.name}")
+    his = server._handle_bill_photo(primary, media, BackgroundTasks()).body.decode()
+    assert "will follow in a moment" in his, "the answer stopped being promised to anyone"
+
+
+def test_the_care_circle_can_send_a_bill_in_from_her_own_handset(case):
+    """The neighbour is the only person who can photograph the paperwork.
+
+    She is in the corridor holding the paper; the son is asleep eleven time
+    zones away and could not do it if he wanted to. A care circle member
+    holding only `outbound_notify` can be told things and can send nothing, so
+    her photograph is dropped with a 204 and no error anywhere.
+
+    On a shared handset this is invisible, which is how it survived: the index
+    gets to the parent, and resolve_sender finds the son on the same number and
+    uses HIS consent. Give her her own phone and the bill lane is dead.
+    """
+    from anbu_care.comms import inbound
+    from anbu_care.tools import onboarding_tools
+
+    parent_id, _case_id = case
+    hers = "+919000055555"
+
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164=hers, timezone_name="Asia/Kolkata", is_primary=False,
+        consent_purposes=["outbound_notify"], role="care_circle")
+    assert inbound.resolve_sender(hers) is None, \
+        "a fixture that already lets her write in cannot prove this"
+
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164=hers, timezone_name="Asia/Kolkata", is_primary=False,
+        consent_purposes=["outbound_notify", "inbound_wellbeing"],
+        role="care_circle")
+
+    sender = inbound.resolve_sender(hers)
+    assert sender is not None, "the care circle still cannot send a bill in"
+    assert sender.parent_id == parent_id
+    assert sender.source == "caregiver:Meena"
+
+
+def test_the_care_circle_does_not_get_the_familys_money_by_helping(case):
+    """Handing over paperwork is not consent to read the family's bills.
+
+    `inbound_wellbeing` lets her send; `billing_updates` is what carries the
+    amount and what was refused. Widening the second because she held the
+    camera would be a consent decision made by accident.
+    """
+    from anbu_care.tools import onboarding_tools
+
+    parent_id, _case_id = case
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164="+919000055555", timezone_name="Asia/Kolkata",
+        is_primary=False, consent_purposes=["outbound_notify", "inbound_wellbeing"],
+        role="care_circle")
+
+    profile = service.load_profile(parent_id)
+    meena = next(c for c in profile.family_contacts if c.name == "Meena")
+    assert "billing_updates" not in meena.consents
+    assert "claim_updates" not in meena.consents

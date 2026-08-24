@@ -169,8 +169,15 @@ def test_the_photograph_is_stored_before_the_acknowledgement_is_returned():
 
     source = inspect.getsource(server._handle_bill_photo)
     stored_at = source.index("intake_ledger.record")
-    acknowledged_at = source.index("Got that. Reading it now")
+    # The wording moved into _bill_acknowledgement when the acknowledgement
+    # started depending on WHO sent the photograph - the neighbour who
+    # photographs a bill is not the contact its outcome goes to. The ordering
+    # this protects is unchanged: the row is written, then anything is said.
+    # rindex, not index: the first `return _twiml(` is the no-open-case branch,
+    # which stores nothing and promises nothing and is right to come earlier.
+    acknowledged_at = source.rindex("return _twiml(")
     assert stored_at < acknowledged_at, "the promise is made before it is held"
+    assert "Got that" in inspect.getsource(server._bill_acknowledgement)
 
 
 def test_the_family_clock_is_configured_not_hardcoded(monkeypatch):
