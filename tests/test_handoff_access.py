@@ -710,3 +710,19 @@ def test_a_contact_who_changes_phones_is_still_one_contact(monkeypatch):
     meenas = [c for c in profile.family_contacts if c.name == "Meena"]
     assert len(meenas) == 1, "she changed phones and became two people"
     assert meenas[0].whatsapp_e164 == "+16692167706", "the old number won"
+
+
+def test_the_banner_says_what_this_link_actually_permits():
+    """Every handoff page said READ ONLY, including the write-scoped ones that
+    render an order form underneath it."""
+    from anbu_care.server import _scope_tag
+
+    class _Read:
+        may_write_note = False
+
+    class _Write:
+        may_write_note = True
+
+    assert _scope_tag(_Read()) == "READ ONLY"
+    assert "RECORD" in _scope_tag(_Write())
+    assert _scope_tag(_Write()) != "READ ONLY"

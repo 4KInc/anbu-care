@@ -231,11 +231,13 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "body": "Anbu Care: if you are with {parent_name} at the hospital, or you "
                 "can reach whoever is, show the treating team this link.\n"
                 "{handoff_url}\n\n"
-                "It opens a read-only summary of her allergies, conditions, "
-                "medication and recent results. No login is needed. It stops "
-                "working in {expires_minutes} minutes and you can stop it sooner "
-                "from the dashboard.\n"
-                "Every time it is opened, that is recorded on her case.",
+                "It opens her allergies, conditions, medication and recent "
+                "results, and lets the treating team record a note or a test "
+                "they are ordering. No login is needed. It stops working in "
+                "{expires_minutes} minutes and you can stop it sooner from the "
+                "dashboard.\n"
+                "Every time it is opened, and anything they record, is written "
+                "to her case.",
         "params": ["parent_name", "handoff_url", "expires_minutes"],
     },
     "urgent_family_alert": {

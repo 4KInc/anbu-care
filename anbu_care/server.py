@@ -1875,9 +1875,9 @@ def _order_form_html(token: str) -> str:
     endpoints existed, the page rendered a summary and nothing else, so an
     order could only be placed with curl. A clinician does not have curl.
 
-    Deliberately spare. The tag above still says READ ONLY about the summary,
-    and this is the one thing a write-scoped link may add — so it says what it
-    is, and says plainly that Anbu Care does not order tests.
+    Deliberately spare. The tag above now says what this link actually permits
+    rather than claiming read-only over an order form, and this block says
+    plainly that Anbu Care does not order tests.
     """
     return (
         f"<div class=band><h2>Order a test</h2>"
@@ -1954,6 +1954,18 @@ def _order_form_html(token: str) -> str:
     )
 
 
+def _scope_tag(grant: Any) -> str:
+    """What THIS link actually permits, said on its own face.
+
+    Every handoff page carried "READ ONLY", including the write-scoped ones
+    that render an order form underneath it. A page that understates what it
+    grants is the same defect as one that overstates it: the person holding it
+    is deciding on something untrue.
+    """
+    return ("YOU CAN RECORD A NOTE OR AN ORDER" if getattr(grant, "may_write_note", False)
+            else "READ ONLY")
+
+
 def _whatsapp_handshake_html(token: str) -> str:
     """Carry this grant onto WhatsApp, so the doctor can just send voice notes.
 
@@ -2022,7 +2034,7 @@ def _handoff_html(summary: Any, grant: Any, token: str = "") -> str:
         f"<meta name=viewport content='width=device-width,initial-scale=1'>"
         f"<title>Emergency clinical summary</title><style>{_HANDOFF_CSS}</style>"
         f"</head><body><main>"
-        f"<span class=tag>READ ONLY &middot; NOT CONNECTED TO ANY HOSPITAL SYSTEM</span>"
+        f"<span class=tag>{_scope_tag(grant)} &middot; NOT CONNECTED TO ANY HOSPITAL SYSTEM</span>"
         f"<div class='band allergy'><h2>Allergies</h2>{allergy_block}</div>"
         f"<div class=band><h2>Patient</h2>{facts(summary.identity)}</div>"
         f"<div class=band><h2>Conditions</h2><ul>{facts(summary.conditions, bullet=True)}</ul></div>"

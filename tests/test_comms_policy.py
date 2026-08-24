@@ -382,8 +382,13 @@ def test_the_handoff_template_says_the_link_expires_and_is_recorded():
     """Both are true and both are load-bearing for the person receiving it."""
     body = str(TEMPLATES["clinician_handoff_link"]["body"]).lower()
     assert "stops working" in body
-    assert "recorded" in body
+    assert "written to her case" in body, "the reader is not told it is recorded"
     assert "no login" in body
+    # And it must not understate what it grants. The link is write-scoped, so
+    # the message describing it as read-only was telling the holder they could
+    # do less than they could.
+    assert "read-only" not in body
+    assert "record a note or a test" in body
 
 
 def test_a_template_may_choose_a_view_but_never_an_address():

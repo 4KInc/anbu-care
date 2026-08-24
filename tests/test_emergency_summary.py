@@ -172,5 +172,8 @@ def test_summary_for_an_unknown_parent_states_it_rather_than_erroring():
 def test_summary_says_it_is_not_connected_to_any_hospital_system(parent):
     s = compose_emergency_summary(parent)
     assert "not connected to any hospital system" in s.disclaimer.lower()
-    assert "read-only" in s.disclaimer.lower()
+    # NOT "read-only" any more. A write-scoped link renders an order form under
+    # this very sentence, and a page that understates what it grants is the
+    # same defect as one that overstates it.
+    assert "read-only" not in s.disclaimer.lower()
     assert "not connected to any hospital system" in render_summary_text(s).lower()

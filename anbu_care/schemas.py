@@ -725,9 +725,13 @@ class EmergencySummary(BaseModel):
 
     # Stated on the artifact itself, not left to the reader to infer.
     disclaimer: str = (
-        "Emergency clinical summary for the treating team. Read-only, and not "
-        "connected to any hospital system. This is a record of what the family "
-        "has provided, not a clinical assessment and not advice."
+        # It stopped being read-only when a write-scoped link gained an order
+        # form, and this line went on saying so on the page itself. A surface
+        # that understates what it grants is the same defect as one that
+        # overstates it: either way the reader is deciding on something untrue.
+        "Emergency clinical summary for the treating team. Not connected to any "
+        "hospital system. This is a record of what the family has provided, not "
+        "a clinical assessment and not advice."
     )
 
 
