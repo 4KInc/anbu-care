@@ -89,7 +89,17 @@ This matters more than any feature list, so it comes first.
   people who are physically with her, so the neighbour who reaches the hospital
   has something to show a doctor. Before this the link only existed if the son
   minted one from the dashboard, which meant the person the whole system stands
-  in for had to wake up and copy a URL. The son is told; he is not the courier.
+  in for had to wake up and copy a URL. The son is told; he is not the courier,
+  and on an escalation he is skipped for the link entirely because he was
+  already alerted as family.
+
+  The seeded family now includes **the neighbour**, Meena, who holds
+  `outbound_notify` and nothing else. Without her the care circle was the son,
+  so every workflow reaching for "whoever is with her" reached for a man in
+  Nashville: the mechanism was right and the data made it a no-op, which is the
+  worst kind of wrong because nothing looks broken. She can be told to go round
+  and handed a link to show a doctor. She cannot read the record, cannot
+  authorise a payment, and receives no clinical detail.
 - **Per-purpose consent, read live.** Seven purposes across four directions —
   what a family member may be SENT, what they may SEND IN, what may be SHOWN to
   a third party, and what may be sent TO THE PARENT herself — deliberately
@@ -382,7 +392,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 887 tests, no GCP or model access needed
+make test             # 889 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -550,7 +560,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  887 tests, no GCP or model access needed
+tests/                  889 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 

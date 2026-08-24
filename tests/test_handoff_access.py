@@ -581,3 +581,51 @@ def test_the_escalation_path_calls_it(monkeypatch):
     escalate = source[source.index("circle_alerted, circle_failed = _tell_the_care_circle"):]
     escalate = escalate[:escalate.index("alerted = _unique")]
     assert "_hand_the_treating_team_a_link" in escalate
+
+
+def test_the_seeded_care_circle_is_not_the_son(monkeypatch):
+    """Without a neighbour, "whoever is with her" resolves to Nashville.
+
+    The seed created one contact and gave him outbound_notify, so the son WAS
+    the care circle and every workflow reaching for the person in the room
+    reached for him. The mechanism was right and the data made it a no-op,
+    which is the worst kind of wrong: nothing looks broken.
+    """
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server
+    from anbu_care.care_circle import notify as circle
+
+    monkeypatch.setenv("ANBU_DEMO_FAMILY_E164", "+16692167706")
+    monkeypatch.setenv("ANBU_DEMO_CIRCLE_E164", "+919000000101")
+
+    with TestClient(server.app) as client:
+        parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    members = circle.care_circle(parent_id)
+    numbers = {m.whatsapp_e164 for m in members}
+    assert "+919000000101" in numbers, "nobody is with her"
+    assert numbers != {"+16692167706"}, "the care circle is only the son"
+
+
+def test_the_neighbour_can_be_told_and_nothing_else(monkeypatch):
+    """A neighbour who agreed to help is not a family member who agreed to
+    everything. She can be asked to go round; she cannot read the record."""
+    from fastapi.testclient import TestClient
+
+    from anbu_care import server
+    from anbu_care.comms import consent as consent_purposes
+
+    monkeypatch.setenv("ANBU_DEMO_CIRCLE_E164", "+919000000101")
+
+    with TestClient(server.app) as client:
+        parent_id = client.post("/api/demo/seed").json()["parent_id"]
+
+    profile = service.load_profile(parent_id)
+    meena = next(c for c in profile.family_contacts
+                 if c.whatsapp_e164 == "+919000000101")
+
+    assert set(meena.consents) == {consent_purposes.OUTBOUND_NOTIFY}
+    assert meena.is_primary is False
+    assert meena.role == "care_circle"
+    assert not meena.email, "the neighbour can sign in and read the record"

@@ -124,6 +124,7 @@ def record_family_contact(
     consent_purposes: list[str],
     email: str = "",
     language: str = "en",
+    role: str = "family",
 ) -> dict[str, Any]:
     """Register a family member and their purpose-specific consent.
 
@@ -143,6 +144,11 @@ def record_family_contact(
         email: Google account address this contact signs in with, or "" if they
             do not sign in. Messages go to the WhatsApp number either way;
             this is only what a dashboard session is matched against.
+        role: "family" or "care_circle". Display only, and deliberately so:
+            membership of the care circle is the set of contacts holding
+            `outbound_notify`, so the roster cannot drift away from what people
+            actually agreed to. This labels who they are, it does not decide
+            what reaches them.
         language: What THIS contact reads. "ta" renders their messages into
             Tamil from the recorded English; "en" leaves them as they are.
             Per-contact and not global: a daughter in Thoothukudi and a son in
@@ -164,6 +170,7 @@ def record_family_contact(
         timezone=timezone_name,
         language=(language or "en").strip().lower(),
         is_primary=is_primary,
+        role=(role or "family").strip().lower(),
         consents={purpose: now for purpose in consent_purposes},
     )
     # One entry per number. Recording the same person twice is a correction,

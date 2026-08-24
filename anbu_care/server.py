@@ -414,6 +414,30 @@ def demo_seed() -> dict[str, Any]:
             consent.INBOUND_WELLBEING, consent.OUTBOUND_NOTIFY,
         ],
     )
+    # THE NEIGHBOUR. Without her the care circle is the son, and every workflow
+    # that reaches for "whoever is with her" reaches for a man in Nashville —
+    # which is the failure the care circle exists to prevent, arriving through
+    # the door marked "the data is fine".
+    #
+    # She holds OUTBOUND_NOTIFY and nothing else. She is told to go round and
+    # she can be handed a link to show a doctor; she cannot read the record,
+    # cannot authorise a payment, and receives no clinical detail. A neighbour
+    # who agreed to help is not a family member who agreed to everything.
+    onboarding_tools.record_family_contact(
+        parent_id,
+        name=os.getenv("ANBU_DEMO_CIRCLE_NAME") or "Meena",
+        relationship="neighbour",
+        # Defaults to a number that cannot receive anything, so an
+        # unconfigured deploy never messages a stranger. Point it at a real
+        # opted-in handset to see the care-circle beat actually arrive.
+        whatsapp_e164=os.getenv("ANBU_DEMO_CIRCLE_E164") or "+919000000101",
+        timezone_name="Asia/Kolkata",
+        language=os.getenv("ANBU_DEMO_CIRCLE_LANGUAGE") or "ta",
+        is_primary=False,
+        role="care_circle",
+        consent_purposes=[consent.OUTBOUND_NOTIFY],
+    )
+
     # Her own handset, and the language she actually reads. Until recovery
     # check-ins existed nothing was ever sent TO her, so her number was on file
     # for one direction only and the demo never needed to set it.
