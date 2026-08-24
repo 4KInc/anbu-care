@@ -634,6 +634,11 @@ def test_an_ordinary_note_starts_no_referral(case, monkeypatch):
                         lambda c, o: started.append(o))
 
     _parent_id, case_id = case
+    # Set explicitly. Reading it from the ambient environment passed locally,
+    # where .env is loaded, and failed in CI where it is not — which is the
+    # whole class of bug this project keeps finding the slow way.
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-referral-secret")
+
     from anbu_care.handoff import access
 
     token = access.mint(case_id, allow_notes=True)
