@@ -833,13 +833,16 @@ def commit(*, url: str, payload: dict, handle: dict,
                             "cancel_url": cancel_url, "cancel_phone": cancel_phone,
                             "evidence": _shot(page, "otp-rejected")}
 
+            outcome, evidence = read_outcome(after)
             return {
-                "outcome": "requested",
-                "detail": "the form was submitted and the centre has not "
-                          "confirmed anything yet",
+                "outcome": outcome,
+                "detail": ("the centre confirmed it"
+                           if outcome == "confirmed" else
+                           "the form was submitted and the centre has not "
+                           "confirmed anything yet"),
                 "cancel_url": cancel_url, "cancel_phone": cancel_phone,
-                "slot_text": _slot_from(after),
-                "evidence": _shot(page, "submitted"),
+                "slot_text": evidence or _slot_from(after),
+                "evidence": _shot(page, outcome),
             }
         finally:
             context.close()
@@ -930,6 +933,64 @@ def _false_friend(element) -> bool:
     except Exception:  # noqa: BLE001
         return False
     return any(word in blob for word in _NOT_A_CODE)
+
+
+# What a page says when it has actually agreed to something.
+CONFIRMED_SIGNALS = ("appointment confirmed", "booking confirmed",
+                     "successfully booked", "appointment is booked",
+                     "slot booked", "your appointment id", "booking id",
+                     "appointment number", "confirmed for")
+
+# And what it says when it has agreed to NOTHING and is merely being polite.
+# Checked FIRST and it wins outright: almost every callback form thanks you in
+# language a keyword search could mistake for agreement, and "thank you, our
+# team will call you" is a request no matter what else is on the page.
+NOT_CONFIRMED_SIGNALS = ("we will call", "will call you", "call you back",
+                         "callback", "call back", "our team will",
+                         "will contact you", "will get back", "request received",
+                         "enquiry received", "we have received your request",
+                         "shortly")
+
+
+def read_outcome(text: str) -> tuple[str, str]:
+    """Whether the centre agreed a slot, and the reference if it did.
+
+    Under-claims on purpose. A confirmation needs TWO independent things - a
+    phrase saying it is confirmed, and a reference or a time to point at -
+    because "Thank you!" on a green background is what almost every form says
+    and it means nothing. Recording a confirmation the centre never gave would
+    put an appointment on a woman's record that nobody is expecting her at,
+    which is the one failure this lane must not have.
+
+    Silence is REQUESTED, never confirmed. A page that says nothing recognisable
+    has not agreed to anything.
+    """
+    lowered = (text or "").lower()
+
+    hedge = next((w for w in NOT_CONFIRMED_SIGNALS if w in lowered), "")
+    if hedge:
+        return "requested", ""
+
+    said = next((w for w in CONFIRMED_SIGNALS if w in lowered), "")
+    if not said:
+        return "requested", ""
+
+    evidence = _slot_from(text) or _when_from(text)
+    if not evidence:
+        # It used the words and showed nothing to hold them up.
+        return "requested", ""
+    return "confirmed", evidence
+
+
+def _when_from(text: str) -> str:
+    """A date or a time the page is offering as the appointment."""
+    for pattern in (r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}(?:[,\s]+\d{1,2}[:.]\d{2}\s*(?:am|pm)?)?",
+                    r"\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*"
+                    r"(?:\s+\d{4})?(?:[,\s]+\d{1,2}[:.]\d{2}\s*(?:am|pm)?)?"):
+        match = re.search(pattern, text or "", re.I)
+        if match:
+            return match.group(0).strip()
+    return ""
 
 
 def _otp_submit(page) -> str:

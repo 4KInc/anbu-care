@@ -152,6 +152,8 @@ def test_every_template_renders_and_passes_its_own_gate():
         "payee_label": "Sacred Heart Hospital",
         "centre": "DLABS Diagnostics",
         "address": "KTC Nagar, Thoothukudi, Tamil Nadu 628002, India",
+        "status_line": "Ashanthi's test is requested. The centre has not "
+                       "confirmed a time yet, and will be in touch.",
         "map_line": "On the map: https://anbu.example/s/abc123\n",
         "minutes": "4",
         "distance": "1.8",
@@ -309,6 +311,8 @@ def test_a_rendered_template_still_passes_the_gate():
         "payee_label": "Sacred Heart Hospital",
         "centre": "DLABS Diagnostics",
         "address": "KTC Nagar, Thoothukudi, Tamil Nadu 628002, India",
+        "status_line": "Ashanthi's test is requested. The centre has not "
+                       "confirmed a time yet, and will be in touch.",
         "map_line": "On the map: https://anbu.example/s/abc123\n",
         "minutes": "4",
         "distance": "1.8",

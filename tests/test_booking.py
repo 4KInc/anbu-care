@@ -1147,8 +1147,10 @@ def test_the_booking_message_says_how_to_undo_it():
 
     body = policy.TEMPLATES["booking_done"]["body"]
     assert "{cancel}" in body
-    assert "not confirmed a time" in body
     assert "Nothing was paid" in body
+    # The opening sentence is built per outcome now, because a confirmation and
+    # a callback request are different events and were described in one wording.
+    assert "{status_line}" in body
 
 
 def test_a_reference_without_a_digit_is_not_a_reference():
@@ -1238,3 +1240,88 @@ def test_a_map_link_is_shortened_but_a_stranger_is_not(monkeypatch):
                     "https://maps.google.com/" + "y" * 90,
                     "https://evil.example/maps/" + "z" * 90):
         assert shortlinks.shorten(hostile) == hostile
+
+
+# =========================================================================
+# A CONFIRMATION NEEDS THE CENTRE TO HAVE ACTUALLY CONFIRMED
+# =========================================================================
+
+
+def _driver_module():
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "booker_driver_conf", pathlib.Path("booker/driver.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_page_that_says_nothing_recognisable_confirms_nothing():
+    """Silence is requested, never confirmed."""
+    driver = _driver_module()
+    for quiet in ("", "Thank you for your submission!", "Booking Info | About us"):
+        assert driver.read_outcome(quiet)[0] == "requested"
+
+
+def test_the_words_alone_are_not_a_confirmation():
+    """"Thank you!" on a green background is what almost every form says."""
+    driver = _driver_module()
+    assert driver.read_outcome("Booking confirmed.")[0] == "requested"
+    assert driver.read_outcome("Your appointment is booked.")[0] == "requested"
+
+
+def test_a_hedge_beats_a_confirmation_outright():
+    """Almost every callback form thanks you in language a keyword search could
+    mistake for agreement. "Our team will call you" is a request whatever else
+    is on the page."""
+    driver = _driver_module()
+    outcome, _ = driver.read_outcome(
+        "Appointment confirmed. Our team will call you back to fix a time. "
+        "Booking ID: 88231")
+    assert outcome == "requested"
+
+
+def test_a_confirmation_with_something_to_point_at_is_taken():
+    driver = _driver_module()
+    for text in ("Appointment confirmed. Your Appointment ID: AP-99213 on 12/09/2026",
+                 "Booking confirmed for 12 Sep 2026, 9:30 am",
+                 "Your appointment is booked. Booking ID: 88231"):
+        outcome, evidence = driver.read_outcome(text)
+        assert outcome == "confirmed", text
+        assert evidence, "confirmed with nothing to point at"
+
+
+def test_the_message_does_not_describe_a_booking_as_a_request(case):
+    """"The centre has not confirmed a time yet" is true of one event and a lie
+    about the other, and the whole card downstream rests on this line."""
+    from anbu_care.schemas import Appointment
+
+    parent_id, case_id = case
+    requested = Appointment(appointment_id="a", case_id=case_id,
+                            parent_id=parent_id, order_id="o", status="requested",
+                            centre_name="X")
+    confirmed = Appointment(appointment_id="b", case_id=case_id,
+                            parent_id=parent_id, order_id="o", status="confirmed",
+                            centre_name="X", slot_text="12 Sep 2026, 9:30 am")
+
+    assert "not confirmed a time" in run._status_line(requested, "Ashanthi")
+    booked = run._status_line(confirmed, "Ashanthi")
+    assert "BOOKED" in booked
+    assert "12 Sep 2026, 9:30 am" in booked
+    assert "not confirmed" not in booked
+
+
+def test_a_confirmed_booking_is_recorded_as_confirmed(case, monkeypatch):
+    """The path existed in the protocol and downstream, and nothing produced
+    it: every commit returned a hardcoded "requested"."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Landing(outcome=channels.CONFIRMED))
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+    assert out["outcome"] == "confirmed"
+    appt = service.list_appointments(case_id)[0]
+    assert appt.status == "confirmed" and appt.confirmed_at is not None

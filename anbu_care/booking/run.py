@@ -375,6 +375,21 @@ def readable(name: str) -> str:
     return ", ".join(tidy)
 
 
+def _status_line(appointment, first: str) -> str:
+    """The opening sentence, and it must not overstate what happened.
+
+    A confirmation and a callback request are different events and were being
+    described in the same words. "The centre has not confirmed a time yet" is
+    true of one and a lie about the other, and the whole card downstream is
+    built on the reader believing this line.
+    """
+    if appointment.status == "confirmed":
+        when = f" for {appointment.slot_text}" if appointment.slot_text else ""
+        return (f"{first}'s test is BOOKED{when}. The centre confirmed it.")
+    return (f"{first}'s test is requested. The centre has not confirmed a time "
+            f"yet, and will be in touch.")
+
+
 def _tell_them_it_is_arranged(appointment) -> None:
     """Say that a booking exists, and how to undo it.
 
@@ -411,7 +426,7 @@ def _tell_them_it_is_arranged(appointment) -> None:
                 case_id=appointment.case_id, parent_id=appointment.parent_id,
                 to_e164=contact.whatsapp_e164, template_name="booking_done",
                 template_params={
-                    "parent_name": first,
+                    "status_line": _status_line(appointment, first),
                     "centre": readable(appointment.centre_name),
                     "address": appointment.centre_address or "",
                     "map_line": (f"On the map: {map_link(appointment)}\n"

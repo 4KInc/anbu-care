@@ -239,15 +239,14 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # acts as the header a person reads before the street. Naming it in the
         # sentence as well read like a form letter with a merge field in it
         # twice, and pushed the address further down the screen.
-        "body": "Anbu Care: {parent_name}'s test is requested. The centre has "
-                "not confirmed a time yet.\n\n"
+        "body": "Anbu Care: {status_line}\n\n"
                 "{centre}\n"
                 "{address}\n"
                 "{map_line}"
                 "{distance} km from the hospital.\n\n"
                 "To change or cancel it, ring {cancel}.\n\n"
                 "Nothing was paid.",
-        "params": ["parent_name", "centre", "address", "map_line", "distance",
+        "params": ["status_line", "centre", "address", "map_line", "distance",
                    "cancel"],
     },
 
