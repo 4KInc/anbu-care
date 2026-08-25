@@ -2727,7 +2727,19 @@ def _read_clinician_order(case_id: str, e164: str, audio: bytes,
         _tell_about_order(case_id, order_id, option_count=None)
         return
 
+    # The doctor hears back immediately: what was recorded and where it can be
+    # done. Booking takes a browser and the better part of a minute, and a
+    # clinician at a bedside is not waiting for it.
     _reply_to_clinician(e164, _clinician_options_reply(proposal, surfaced))
+
+    # THE SPOKEN ORDER BOOKS TOO. This path had its own copy of "surface, then
+    # tell" and was left behind when the bedside form learned to book - so a
+    # doctor who TYPED an order got an appointment and a doctor who SPOKE one
+    # got a list, which is the same job done twice and only one of them
+    # finished. The spoken path is the one a doctor actually uses.
+    if _tried_to_book(case_id, order_id):
+        return
+
     _tell_about_order(case_id, order_id, option_count=len(surfaced["options"]))
 
 

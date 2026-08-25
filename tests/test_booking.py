@@ -1409,3 +1409,22 @@ def test_nothing_is_booked_without_the_authority_to(case, monkeypatch):
     order = _order(parent_id, case_id, options=[NEAR])
     # no booking mandate granted at all
     assert server._tried_to_book(case_id, order.order_id) is False
+
+
+def test_a_spoken_order_books_as_well_as_a_typed_one(case, monkeypatch):
+    """This path had its own copy of "surface, then tell" and was left behind
+    when the bedside form learned to book - so a doctor who TYPED an order got
+    an appointment and a doctor who SPOKE one got a list. The spoken path is
+    the one a doctor actually uses."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server._read_clinician_order)
+    assert "_tried_to_book" in source, \
+        "a spoken order still only surfaces options"
+
+    booked_at = source.index("_tried_to_book")
+    told_at = source.rindex("_tell_about_order")
+    assert booked_at < told_at, \
+        "it sends an options list before it knows whether it booked"
