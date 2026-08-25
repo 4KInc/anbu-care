@@ -25,12 +25,18 @@ from datetime import UTC, datetime
 
 from anbu_care import service
 from anbu_care.booking import channels as channel_registry
-from anbu_care.booking import disclosure, enforcer
+from anbu_care.booking import disclosure, enforcer, otp
 from anbu_care.booking import mandate as mandates
 from anbu_care.comms import consent
 from anbu_care.schemas import Appointment
+from anbu_care.tools import whatsapp_tools
 
 logger = logging.getLogger(__name__)
+
+# How long the driver may hold a browser open waiting for somebody to read a
+# text and type six digits. Shorter than the request's own life, so the code is
+# always still valid when it arrives.
+OTP_WAIT_SECONDS = 240
 
 
 class BookingRefused(Exception):
@@ -182,16 +188,28 @@ def arrange(*, case_id: str, order_id: str) -> dict:
                         verdict.failed_check)
             continue
 
+        # A CODE IS COMING. Ask the person in the room for it BEFORE the centre
+        # sends it, so she is not handed six digits from a lab nobody told her
+        # to expect - and so the request is on file before the reply can arrive.
+        pending = None
+        if getattr(prepared, "expects_otp", False):
+            pending = _ask_for_a_code(case_id, order, centre, prepared)
+
         # COMMIT. Only now, and only because the guards allowed it.
         try:
-            result = driver.commit(centre=centre, payload=this_payload,
-                                   prepared=prepared)
+            result = driver.commit(
+                centre=centre, payload=this_payload, prepared=prepared,
+                session_id=pending.session_id if pending else "",
+                otp_wait_seconds=OTP_WAIT_SECONDS if pending else 0)
         except Exception as exc:  # noqa: BLE001
             logger.exception("booking driver failed committing %s", centre.get("name"))
             note(channel_registry.UNAVAILABLE,
                  f"the booking driver could not complete this centre "
                  f"({type(exc).__name__})")
             continue
+
+        if pending is not None:
+            otp.close(pending, outcome="used" if result.landed else "not_used")
 
         if not result.landed:
             note(result.outcome, result.detail)
@@ -202,6 +220,50 @@ def arrange(*, case_id: str, order_id: str) -> dict:
 
     return _escalate(case_id, order, mandate, attempts,
                      "every centre this system was allowed to try has been tried")
+
+
+def _ask_for_a_code(case_id, order, centre, prepared):
+    """Message whoever is with her, and open the request the reply belongs to.
+
+    The care circle, not the son. He is asleep and cannot read a text sent to a
+    phone in Thoothukudi; she is standing in the room. This is the hop the whole
+    design says to hand to whoever is present, and it is the one place a booking
+    genuinely needs a human - which is exactly what an OTP is for.
+
+    Never raises. A message that could not be sent means nobody will answer,
+    which the driver's own timeout already handles honestly.
+    """
+    from anbu_care.care_circle import notify as care_notify
+
+    case = service.load_case(case_id)
+    profile = service.load_profile(case.parent_id) if case else None
+    circle = care_notify.care_circle(case.parent_id) if case else []
+    contact = next(iter(circle), None)
+
+    request = otp.open_request(
+        parent_id=case.parent_id, case_id=case_id, order_id=order.order_id,
+        centre_name=str(centre.get("name") or ""),
+        place_id=str(centre.get("place_id") or ""),
+        asked_of=contact.name if contact else "")
+
+    if contact is None:
+        logger.info("no care circle contact to ask for a code")
+        return request
+
+    first = profile.name.split()[0] if profile and profile.name else "your parent"
+    try:
+        whatsapp_tools.send_family_update(
+            case_id=case_id, parent_id=case.parent_id,
+            to_e164=contact.whatsapp_e164,
+            template_name="booking_code_needed",
+            template_params={"parent_name": first,
+                             "centre": str(centre.get("name") or "the centre"),
+                             "minutes": str(OTP_WAIT_SECONDS // 60)},
+            message_class="logistics",
+            purpose_override=consent.OUTBOUND_NOTIFY)
+    except Exception:  # noqa: BLE001 - the send has its own receipts
+        logger.exception("could not ask the care circle for a code")
+    return request
 
 
 def _number_for(profile) -> str:

@@ -150,6 +150,10 @@ def test_every_template_renders_and_passes_its_own_gate():
         "clinician": "Dr A. Anand",
         "option_count": "6",
         "payee_label": "Sacred Heart Hospital",
+        "centre": "DLABS Diagnostics",
+        "minutes": "4",
+        "distance": "1.8",
+        "cancel": "+91 88707 20883",
         "note": "Chest pain has settled. We are moving her to the ward.",
         "provenance": "That is the English of what was spoken by the treating team.",
         "expected": "27,300",
@@ -216,7 +220,18 @@ LINKLESS = {"care_circle_notice", "care_circle_unclear",
             # that would answer her with a sign-in screen — is not a courtesy,
             # and the message it sits in is a question, not a report she needs
             # to go and check the detail behind.
-            "recovery_check_in"}
+            "recovery_check_in",
+            # A message that asks for a one-time code and ALSO carries a link is
+            # the exact shape of every phishing text anybody has ever been
+            # warned about. It asks for six digits, says what it is booking and
+            # who it is for, and gives her nothing to tap - so a person taught
+            # to distrust links has nothing to distrust, and a person imitating
+            # this message gains nothing by it either.
+            "booking_code_needed",
+            # Goes to the care circle, who arranged the visit. It names the
+            # centre and the number to ring; the record behind it is not theirs
+            # to read.
+            "booking_done"}
 
 # The handoff message carries exactly ONE link, and it is not the dashboard.
 # Two links in one message read by a frightened person at 2am is how the wrong
@@ -290,6 +305,10 @@ def test_a_rendered_template_still_passes_the_gate():
         "clinician": "Dr A. Anand",
         "option_count": "6",
         "payee_label": "Sacred Heart Hospital",
+        "centre": "DLABS Diagnostics",
+        "minutes": "4",
+        "distance": "1.8",
+        "cancel": "+91 88707 20883",
         "note": "Chest pain has settled. We are moving her to the ward.",
         "provenance": "That is the English of what was spoken by the treating team.",
         "expected": "27,300",

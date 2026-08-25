@@ -36,11 +36,32 @@ from __future__ import annotations
 import json
 import logging
 import os
+import queue
 import re
+import threading
 import urllib.parse
 import urllib.request
 
 logger = logging.getLogger(__name__)
+
+# A browser session that has submitted a phone number and is waiting for the
+# code that was texted to it.
+#
+# It has to WAIT rather than finish and be resumed later, because an OTP is
+# bound to the session that asked for it. Re-navigating to type the code in
+# would trigger a fresh code and invalidate the one the person just read out.
+# So commit parks here, and the in-flight request is also what keeps Cloud Run
+# from reclaiming the instance underneath it.
+_WAITING: dict[str, queue.Queue] = {}
+_WAITING_LOCK = threading.Lock()
+
+# Long enough for somebody to notice a message, read a text and type six
+# digits; short enough that the browser is not held for ever.
+OTP_WAIT_SECONDS = 240
+
+# What the page says when it wants a code.
+OTP_SIGNALS = ("otp", "one time password", "one-time password", "verification code",
+               "verify your mobile", "enter the code", "sent to your")
 
 NAV_TIMEOUT_MS = 30_000
 SETTLE_MS = 2_500
@@ -443,15 +464,19 @@ def prepare(*, url: str, payload: dict, fallback_phone: str = "") -> dict:
                               f"({type(exc).__name__}: {str(exc)[:160]})"}
         try:
             cancel_url, cancel_phone = _cancel_path(page, fallback_phone)
+            text = _text_of(page)
+            wants_code, why_code = expects_otp(text, fields)
             return {
                 "outcome": "ready",
                 "detail": f"filled {', '.join(sorted(filled)) or 'nothing'} on "
                           f"{page.url}",
+                "expects_otp": wants_code,
+                "expects_otp_because": why_code,
                 "cancel_url": cancel_url,
                 "cancel_phone": cancel_phone,
                 # What the enforcer rules on. The page as it stands with the
                 # form filled, so a payment step is visible BEFORE committing.
-                "page_text": _text_of(page),
+                "page_text": text,
                 "handle": {"page_url": page.url, "submit": submit,
                            "fields": fields, "robots": why},
             }
@@ -461,7 +486,8 @@ def prepare(*, url: str, payload: dict, fallback_phone: str = "") -> dict:
 
 
 def commit(*, url: str, payload: dict, handle: dict,
-           fallback_phone: str = "") -> dict:
+           fallback_phone: str = "", session_id: str = "",
+           otp_wait_seconds: int = 0) -> dict:
     """Do it again, check again, and submit.
 
     Re-navigating rather than holding the browser open between two HTTP calls,
@@ -510,6 +536,45 @@ def commit(*, url: str, payload: dict, handle: dict,
             page.wait_for_timeout(SETTLE_MS * 2)
             after = _text_of(page)
 
+            # A CODE WAS TEXTED TO SOMEBODY. Park here holding the session,
+            # because the code is bound to it: finishing and being resumed
+            # later would mean re-navigating, which triggers a fresh code and
+            # invalidates the one she is reading out.
+            field = _otp_field(page)
+            if field and session_id and otp_wait_seconds > 0:
+                logger.info("waiting for a code on session %s", session_id[:8])
+                code = _await_code(session_id, otp_wait_seconds)
+                if not code:
+                    return {
+                        "outcome": "unavailable",
+                        "detail": ("the centre asked for a one-time code and "
+                                   "nobody sent one in time, so this was not "
+                                   "completed"),
+                        "cancel_url": cancel_url, "cancel_phone": cancel_phone,
+                        "evidence": _shot(page, "otp-timeout"),
+                    }
+                try:
+                    page.fill(field, code, timeout=10_000)
+                    verify = _validate_submit(page, _otp_submit(page))
+                    page.click(verify, timeout=15_000)
+                    page.wait_for_timeout(SETTLE_MS * 2)
+                    after = _text_of(page)
+                except DriverError as refused:
+                    return {"outcome": "unavailable",
+                            "detail": f"the code could not be submitted: {refused}",
+                            "cancel_url": cancel_url, "cancel_phone": cancel_phone}
+                except Exception as exc:  # noqa: BLE001
+                    return {"outcome": "unavailable",
+                            "detail": f"the code could not be submitted "
+                                      f"({type(exc).__name__})",
+                            "cancel_url": cancel_url, "cancel_phone": cancel_phone}
+
+                if _rejected(after):
+                    return {"outcome": "unavailable",
+                            "detail": "the centre did not accept that code",
+                            "cancel_url": cancel_url, "cancel_phone": cancel_phone,
+                            "evidence": _shot(page, "otp-rejected")}
+
             return {
                 "outcome": "requested",
                 "detail": "the form was submitted and the centre has not "
@@ -521,6 +586,99 @@ def commit(*, url: str, payload: dict, handle: dict,
         finally:
             context.close()
             browser.close()
+
+
+def expects_otp(page_text: str, fields: dict) -> tuple[bool, str]:
+    """Whether this flow is going to want a code, decided before submitting.
+
+    The lane needs to warn the person holding the phone BEFORE the code is
+    sent, or she gets six digits from a lab she was never told to expect. Two
+    signals, and neither is clever: the page says something about a code, or the
+    only thing it asked for was a telephone number, which is what a phone-first
+    flow looks like.
+
+    Being wrong in the cautious direction costs one extra message. Being wrong
+    the other way means a code arrives and nobody knows what it is for.
+    """
+    lowered = (page_text or "").lower()
+    said = next((w for w in OTP_SIGNALS if w in lowered), "")
+    if said:
+        return True, f"the page mentions {said!r}"
+    if set(fields) == {"phone"}:
+        return True, "the form asked only for a telephone number"
+    return False, ""
+
+
+def offer_code(session_id: str, code: str) -> bool:
+    """Hand a code to the session that is waiting for it. True if one was."""
+    with _WAITING_LOCK:
+        waiter = _WAITING.get(session_id)
+    if waiter is None:
+        return False
+    waiter.put(code)
+    return True
+
+
+def _await_code(session_id: str, seconds: int) -> str:
+    """Park until somebody sends the code, or give up."""
+    waiter: queue.Queue = queue.Queue(maxsize=1)
+    with _WAITING_LOCK:
+        _WAITING[session_id] = waiter
+    try:
+        return waiter.get(timeout=seconds)
+    except queue.Empty:
+        return ""
+    finally:
+        with _WAITING_LOCK:
+            _WAITING.pop(session_id, None)
+
+
+def _otp_field(page) -> str:
+    """The input the code goes in, found deterministically.
+
+    Not asked of the model. By this point the page has been submitted once and
+    is showing whatever it wants next; a model asked "where does the code go"
+    on a page that may be an error, a captcha or an advert is a model being
+    invited to type a stranger's details somewhere nobody checked.
+    """
+    for selector in ("input[autocomplete='one-time-code']",
+                     "input[name*='otp' i]", "input[id*='otp' i]",
+                     "input[placeholder*='OTP' i]",
+                     "input[name*='code' i]", "input[id*='code' i]",
+                     "input[placeholder*='code' i]"):
+        try:
+            found = page.locator(selector).filter(visible=True)
+            if found.count() >= 1:
+                return selector
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
+def _otp_submit(page) -> str:
+    """The button beside the code box. Deterministic, like the field."""
+    for selector in ("button[type='submit']", "input[type='submit']",
+                     "button:has-text('Verify')", "button:has-text('Submit')",
+                     "button:has-text('Continue')"):
+        try:
+            if page.locator(selector).filter(visible=True).count() >= 1:
+                return selector
+        except Exception:  # noqa: BLE001
+            continue
+    raise DriverError("no button was found to send the code with")
+
+
+def _rejected(text: str) -> bool:
+    """Whether the page is telling us the code was wrong.
+
+    Read rather than assumed, because reporting a booking that did not happen
+    is the one failure this lane must not have.
+    """
+    lowered = (text or "").lower()
+    return any(w in lowered for w in
+               ("invalid otp", "incorrect otp", "wrong otp", "invalid code",
+                "incorrect code", "otp expired", "code expired",
+                "please try again"))
 
 
 def _slot_from(text: str) -> str:

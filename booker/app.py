@@ -72,7 +72,9 @@ def commit(body: dict = Body(default_factory=dict)) -> dict:
     try:
         result = driver.commit(url=url, payload=dict(body.get("payload") or {}),
                                handle=dict(body.get("handle") or {}),
-                               fallback_phone=str(body.get("fallback_phone") or ""))
+                               fallback_phone=str(body.get("fallback_phone") or ""),
+                               session_id=str(body.get("session_id") or ""),
+                               otp_wait_seconds=int(body.get("otp_wait_seconds") or 0))
     except Exception as exc:  # noqa: BLE001
         logger.exception("commit failed")
         return {"outcome": "unavailable",
@@ -82,3 +84,24 @@ def commit(body: dict = Body(default_factory=dict)) -> dict:
     if key and result.get("outcome") in {"requested", "confirmed"}:
         _RECENT[key] = now
     return result
+
+
+@app.post("/otp")
+def otp(body: dict = Body(default_factory=dict)) -> dict:
+    """Hand a one-time code to the browser session that is waiting for it.
+
+    Served while /commit is parked on that session, which is why this container
+    runs with a concurrency above one and a single instance: the waiting session
+    lives in this process, and a code delivered to a different instance is a
+    code delivered to nobody.
+
+    The code is not logged, not stored and not returned. It exists in memory for
+    as long as it takes to type it into a form.
+    """
+    session_id = str(body.get("session_id") or "")
+    code = str(body.get("code") or "").strip()
+    if not session_id or not code.isdigit():
+        return {"status": "ignored", "reason": "no session or no code"}
+
+    delivered = driver.offer_code(session_id, code)
+    return {"status": "delivered" if delivered else "no_session_waiting"}

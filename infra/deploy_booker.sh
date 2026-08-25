@@ -8,8 +8,13 @@
 #               into a form on request is not left open to the internet; the
 #               API's service account is granted run.invoker and nothing else
 #               can call it.
-#   ONE AT A TIME  a browser is stateful, and two in one container is how this
-#               falls over under exactly the load it was built for.
+#   ONE INSTANCE  a browser session waiting for a one-time code lives in that
+#               process's memory. A code delivered to a different instance is a
+#               code delivered to nobody, so there is exactly one instance and
+#               no session affinity to get wrong.
+#   FEW AT ONCE  concurrency above one, because /otp has to be served WHILE
+#               /commit is parked waiting for it. Kept small: a browser is
+#               heavy and two real ones at a time is the honest ceiling here.
 #   DRY BY DEFAULT  ANBU_BOOKING_DRYRUN is not set here, and the driver treats
 #               absent as ON. Booking for real is a deliberate act.
 set -euo pipefail
@@ -29,9 +34,9 @@ gcloud run deploy "$SERVICE" \
   --no-allow-unauthenticated \
   --memory 4Gi \
   --cpu 2 \
-  --concurrency 1 \
-  --max-instances 3 \
-  --timeout 300 \
+  --concurrency 4 \
+  --max-instances 1 \
+  --timeout 600 \
   --set-env-vars "ANBU_ARTIFACT_BUCKET=${ANBU_ARTIFACT_BUCKET:-},GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_GENAI_USE_VERTEXAI=True,GOOGLE_CLOUD_LOCATION=${REGION}" \
   --quiet
 

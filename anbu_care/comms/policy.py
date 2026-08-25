@@ -215,6 +215,29 @@ TEMPLATES: dict[str, dict[str, object]] = {
     # clinical detail about her and the gate would refuse it — correctly. The
     # family is told an update exists and where to read it, one tap away and
     # behind the credential.
+    "booking_code_needed": {
+        # LOGISTICS. It names a centre and asks for six digits; it does not say
+        # what test, what she has, or why. A code request is an errand, not a
+        # medical fact, and the gate would be right to refuse it if it were.
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care is booking {parent_name}'s test at {centre}. They "
+                "have just sent a code by text to the phone.\n"
+                "Send the code here and nothing else, in the next {minutes} "
+                "minutes, and Anbu Care will finish the booking.\n\n"
+                "If you did not expect this, ignore it. Nothing is booked "
+                "without it, and Anbu Care never asks for a password or a card.",
+        "params": ["parent_name", "centre", "minutes"],
+    },
+
+    "booking_done": {
+        "message_class": MessageClass.LOGISTICS,
+        "body": "Anbu Care: {parent_name}'s test is requested at {centre}, "
+                "{distance} km away. The centre has not confirmed a time yet.\n"
+                "To change or cancel it, ring {cancel}.\n\n"
+                "Nothing was paid.",
+        "params": ["parent_name", "centre", "distance", "cancel"],
+    },
+
     "clinician_note_text": {
         # Carries the words. The only template in CLINICAL_EXCEPTIONS, and the
         # gate refuses everything else that reads like this one.

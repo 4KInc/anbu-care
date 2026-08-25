@@ -83,8 +83,10 @@ class Landing:
             cancel_phone=self.cancel_phone, page_text=self.page_text,
             handle={"page_url": "https://x/book"})
 
-    def commit(self, *, centre, payload, prepared):
+    def commit(self, *, centre, payload, prepared, session_id="",
+               otp_wait_seconds=0):
         self.committed.append((centre["place_id"], dict(payload)))
+        self.otp_asked = bool(otp_wait_seconds)
         return channels.AttemptResult(
             outcome=self.outcome, detail="stub", cancel_url=prepared.cancel_url,
             cancel_phone=prepared.cancel_phone)
@@ -729,3 +731,217 @@ def test_the_web_channel_is_off_unless_it_is_configured(monkeypatch):
     assert WebChannel.configured() is False
     monkeypatch.setenv("ANBU_BOOKING_CHANNELS", "web")
     assert [d.name for d in channels.available()] == ["none"]
+
+
+# =========================================================================
+# THE ONE-TIME CODE, RELAYED THROUGH THE PERSON IN THE ROOM
+# =========================================================================
+
+
+class OtpNeeded(Landing):
+    """A centre whose form texts a code before it will take a booking."""
+
+    name = "test-otp"
+
+    def prepare(self, *, centre, payload):
+        prep = super().prepare(centre=centre, payload=payload)
+        return channels.Preparation(
+            outcome=prep.outcome, detail=prep.detail, cancel_url=prep.cancel_url,
+            cancel_phone=prep.cancel_phone, page_text=prep.page_text,
+            handle=prep.handle, expects_otp=True,
+            expects_otp_because="the form asked only for a telephone number")
+
+
+def _with_a_neighbour(parent_id):
+    from anbu_care.tools import onboarding_tools
+
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164="+919000055555", timezone_name="Asia/Kolkata",
+        is_primary=False, role="care_circle",
+        consent_purposes=["outbound_notify", "inbound_wellbeing"])
+
+
+def test_the_code_is_asked_of_the_neighbour_before_it_is_sent(case, monkeypatch):
+    """She must be warned BEFORE the centre texts, or six digits arrive from a
+    lab nobody told her to expect."""
+    from anbu_care.booking import otp
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id, case_id = case
+    _with_a_neighbour(parent_id)
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    driver = OtpNeeded()
+    _drive(monkeypatch, driver)
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert sent, "nobody was asked for the code"
+    assert sent[0]["template_name"] == "booking_code_needed"
+    assert sent[0]["to_e164"] == "+919000055555", "the son was asked, not the neighbour"
+    assert driver.otp_asked is True, "the driver was not told to wait for one"
+
+
+def test_the_message_asking_for_a_code_carries_no_link(case):
+    """A message that asks for a code AND carries a link is the exact shape of
+    every phishing text anybody has been warned about."""
+    from anbu_care.comms import policy
+
+    body = policy.TEMPLATES["booking_code_needed"]["body"]
+    assert "{dashboard_url}" not in body
+    assert "http" not in body
+    assert "never asks for a password or a card" in body
+
+
+def test_a_code_is_only_read_as_one_while_a_request_is_outstanding(case):
+    """Digits are a shape ordinary messages have. "6" is an answer to how she
+    slept; "104" is a temperature."""
+    from anbu_care.booking import otp
+
+    parent_id, case_id = case
+    assert otp.live_for(parent_id) is None
+    assert otp.looks_like_code("123456") == "123456"
+    for not_a_code in ("she took 6 tablets", "temperature is 101 now",
+                       "", "123456 and she is fine", "ANBU-case-x-0-1-ab"):
+        assert otp.looks_like_code(not_a_code) == "", not_a_code
+
+
+def test_an_expired_request_cannot_be_answered(case):
+    from anbu_care.booking import otp
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    request = otp.open_request(parent_id=parent_id, case_id=case_id,
+                               order_id=order.order_id, centre_name="X",
+                               place_id="place-near", now=1_000.0)
+
+    assert otp.live_for(parent_id, now=1_000.0) is not None
+    assert otp.live_for(parent_id, now=1_000.0 + otp.TTL_SECONDS + 1) is None
+    assert request.request_id
+
+
+def test_a_code_cannot_be_used_twice(case):
+    """One shot. A stale reply must not resume a session that moved on."""
+    from anbu_care.booking import otp
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    request = otp.open_request(parent_id=parent_id, case_id=case_id,
+                               order_id=order.order_id, centre_name="X",
+                               place_id="place-near")
+    otp.close(request, outcome="used")
+    assert otp.live_for(parent_id) is None
+
+
+def test_the_code_itself_never_reaches_the_chain(case, monkeypatch):
+    """It passes through the process into a form and stops existing."""
+    from anbu_care.booking import otp
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    request = otp.open_request(parent_id=parent_id, case_id=case_id,
+                               order_id=order.order_id, centre_name="DLABS",
+                               place_id="place-near", asked_of="Meena")
+    otp.close(request, outcome="used")
+
+    for receipt in service.get_chain(case_id).receipts:
+        if receipt.kind.startswith("booking.otp"):
+            blob = str(receipt.payload)
+            assert "code" not in blob or "one-time code" in blob or "The code" in blob
+            assert "session" not in blob.lower(), "the session id is on the chain"
+
+
+def test_the_session_id_is_minted_before_the_reply_can_arrive(case):
+    """A system that has to wait for a stranger's answer to learn where to send
+    it has a race it cannot win."""
+    from anbu_care.booking import otp
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    request = otp.open_request(parent_id=parent_id, case_id=case_id,
+                               order_id=order.order_id, centre_name="X",
+                               place_id="p")
+    assert len(request.session_id) >= 20
+    assert otp.live_for(parent_id).session_id == request.session_id
+
+
+def test_a_centre_with_no_code_step_is_not_asked_for_one(case, monkeypatch):
+    parent_id, case_id = case
+    _with_a_neighbour(parent_id)
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    from anbu_care.tools import whatsapp_tools
+
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    driver = Landing()          # plain, no OTP
+    _drive(monkeypatch, driver)
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    assert not any(k["template_name"] == "booking_code_needed" for k in sent)
+    assert driver.otp_asked is False
+
+
+def test_digits_outside_a_request_are_still_a_wellbeing_message(case, monkeypatch):
+    """The inbound branch is the narrowest in the webhook, and this is why:
+    outside the window "123456" must fall through and be recorded as what it
+    is, not swallowed by a booking lane."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server)
+    branch = source[source.index("# A ONE-TIME CODE, from the person who is with her"):]
+    branch = branch[:branch.index("media = inbound.media_from")]
+
+    assert "sender is not None" in branch, "an unregistered number could send a code"
+    assert "otp.looks_like_code(body)" in branch
+    assert "otp.live_for(sender.parent_id)" in branch, \
+        "digits are read as a code with no outstanding request"
+    assert "if pending is not None" in branch, "it does not fall through"
+
+
+def test_a_late_code_is_answered_rather_than_dropped(case, monkeypatch):
+    """She typed it out and pressed send. Silence would be the worst answer."""
+    from anbu_care import server
+    from anbu_care.booking import otp
+    from anbu_care.booking import web as booking_web
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    request = otp.open_request(parent_id=parent_id, case_id=case_id,
+                               order_id=order.order_id, centre_name="DLABS",
+                               place_id="p")
+    monkeypatch.setattr(booking_web, "deliver_otp", lambda s, c: False)
+
+    said = server._relay_booking_code(request, "123456").body.decode()
+
+    assert "timed out" in said
+    assert "Nothing has been booked" in said
+    assert otp.live_for(parent_id) is None, "the request stayed answerable"
+
+
+def test_a_delivered_code_leaves_the_request_open_for_the_lane_to_close(case, monkeypatch):
+    """Only the lane knows whether the code actually completed the booking."""
+    from anbu_care import server
+    from anbu_care.booking import otp
+    from anbu_care.booking import web as booking_web
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    request = otp.open_request(parent_id=parent_id, case_id=case_id,
+                               order_id=order.order_id, centre_name="DLABS",
+                               place_id="p")
+    monkeypatch.setattr(booking_web, "deliver_otp", lambda s, c: True)
+
+    said = server._relay_booking_code(request, "123456").body.decode()
+
+    assert "finishing the booking" in said
+    assert otp.live_for(parent_id) is not None, "closed before the lane finished"

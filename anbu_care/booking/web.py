@@ -49,6 +49,10 @@ BOOKER_URL_ENV = "ANBU_BOOKER_URL"
 # refusal rather than a lane that never answers.
 PREPARE_TIMEOUT_SECONDS = 90
 COMMIT_TIMEOUT_SECONDS = 90
+# Longer, because commit may park holding the browser while somebody reads a
+# text message and types six digits. Comfortably over the driver's own wait, so
+# the driver's timeout is the one that fires and its answer is the one reported.
+COMMIT_WITH_OTP_TIMEOUT_SECONDS = 330
 
 
 class WebChannel:
@@ -94,17 +98,22 @@ class WebChannel:
             cancel_phone=str(body.get("cancel_phone") or ""),
             page_text=str(body.get("page_text") or ""),
             handle=dict(body.get("handle") or {}),
+            expects_otp=bool(body.get("expects_otp")),
+            expects_otp_because=str(body.get("expects_otp_because") or ""),
         )
 
-    def commit(self, *, centre: dict, payload: dict,
-               prepared: Preparation) -> AttemptResult:
+    def commit(self, *, centre: dict, payload: dict, prepared: Preparation,
+               session_id: str = "", otp_wait_seconds: int = 0) -> AttemptResult:
         body = self._call("/commit", {
             "url": centre.get("website"),
             "payload": payload,
             "fallback_phone": centre.get("phone") or "",
             "handle": prepared.handle,
             "idempotency_key": _key(centre, payload),
-        }, COMMIT_TIMEOUT_SECONDS)
+            "session_id": session_id,
+            "otp_wait_seconds": otp_wait_seconds,
+        }, COMMIT_WITH_OTP_TIMEOUT_SECONDS if otp_wait_seconds
+           else COMMIT_TIMEOUT_SECONDS)
 
         if body is None:
             # The dangerous case, and it is named rather than guessed at: the
@@ -174,3 +183,15 @@ def _key(centre: dict, payload: dict) -> str:
     guard keys on the ORDER and is what actually stops two appointments.
     """
     return f"{centre.get('place_id', '')}:{payload.get('phone', '')}"
+
+
+def deliver_otp(session_id: str, code: str) -> bool:
+    """Hand a code to whichever browser session is waiting for it.
+
+    Called from the inbound webhook, which is why it never raises: a code that
+    cannot be delivered must come back as "not delivered" and be answered with a
+    sentence, not become a 500 on the path her neighbour is messaging.
+    """
+    body = WebChannel()._call("/otp", {"session_id": session_id, "code": code},
+                              PREPARE_TIMEOUT_SECONDS)
+    return bool(body and body.get("status") == "delivered")

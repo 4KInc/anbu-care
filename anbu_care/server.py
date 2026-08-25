@@ -542,6 +542,7 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
     # symptoms, and the wellbeing path would read "she needs a blood test" as
     # somebody describing how she is. The number got here by holding a
     # write-scoped link, which is the same grant the bedside page runs on.
+    from anbu_care.booking import otp
     from anbu_care.handoff import channel as clinician_channel
 
     from_number = fields.get("From") or ""
@@ -562,6 +563,19 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
     # Somebody has to be in the room, and sometimes it is them.
     if clinician_channel.looks_like_code(body):
         return _bind_clinician(from_number, body)
+
+    # A ONE-TIME CODE, from the person who is with her.
+    #
+    # Deliberately the narrowest branch in this webhook. Digits are a shape
+    # ordinary messages have - "6" is an answer to how she slept, "104" is a
+    # temperature - so this only fires when a request is ACTUALLY outstanding
+    # for that parent, within a few minutes, and the message is digits and
+    # nothing else. Outside that window it falls through and is recorded as a
+    # wellbeing check-in like any other, which is what it is.
+    if sender is not None and otp.looks_like_code(body):
+        pending = otp.live_for(sender.parent_id)
+        if pending is not None:
+            return _relay_booking_code(pending, body)
 
     media = inbound.media_from(fields) if sender is not None else None
     if sender is not None and media is not None:
@@ -605,6 +619,34 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
         ),
         media_type="application/xml",
     )
+
+
+def _relay_booking_code(pending: Any, body: str) -> Response:
+    """Hand a code to the browser session that is holding a form open for it.
+
+    The code is never stored, never receipted and never logged. It passes
+    through this process into a form and stops existing. What goes on the chain
+    is that a code was asked for and that the request was closed - which is the
+    auditable part - and nothing that would let anybody replay it.
+    """
+    from anbu_care.booking import otp
+    from anbu_care.booking import web as booking_web
+
+    code = otp.looks_like_code(body)
+    delivered = booking_web.deliver_otp(pending.session_id, code)
+
+    if not delivered:
+        otp.close(pending, outcome="no_session_waiting")
+        return _twiml(
+            "Anbu Care: thank you, but that booking had already timed out and "
+            "the code was not used. Nothing has been booked. It will be tried "
+            "again, or somebody will ring the centre.")
+
+    # NOT closed here. The lane closes it when the browser finishes, because
+    # only the lane knows whether the code actually completed the booking.
+    return _twiml(
+        "Anbu Care: got it, finishing the booking now. You will get a message "
+        "with the centre and the number to ring if anything needs changing.")
 
 
 def _handle_voice_note(sender: Any, media: Any) -> Response:

@@ -56,6 +56,11 @@ class Preparation:
     # Opaque, and the driver's own business. Never a browser session: it is the
     # inputs commit needs to do the same navigation again.
     handle: dict = field(default_factory=dict)
+    # Whether this flow will text somebody a code. Known BEFORE committing, so
+    # the person holding the phone can be warned before it arrives rather than
+    # receiving six digits from a lab nobody told her to expect.
+    expects_otp: bool = False
+    expects_otp_because: str = ""
 
     @property
     def ready(self) -> bool:
@@ -90,8 +95,8 @@ class Channel(Protocol):
 
     def prepare(self, *, centre: dict, payload: dict) -> Preparation: ...
 
-    def commit(self, *, centre: dict, payload: dict,
-               prepared: Preparation) -> AttemptResult: ...
+    def commit(self, *, centre: dict, payload: dict, prepared: Preparation,
+               session_id: str = "", otp_wait_seconds: int = 0) -> AttemptResult: ...
 
 
 class NoChannel:
@@ -114,8 +119,8 @@ class NoChannel:
             detail=("no booking channel is configured on this deployment, so "
                     "nothing was sent to this centre"))
 
-    def commit(self, *, centre: dict, payload: dict,
-               prepared: Preparation) -> AttemptResult:
+    def commit(self, *, centre: dict, payload: dict, prepared: Preparation,
+               session_id: str = "", otp_wait_seconds: int = 0) -> AttemptResult:
         return AttemptResult(outcome=UNAVAILABLE, detail=prepared.detail)
 
 
