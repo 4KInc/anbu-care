@@ -879,6 +879,97 @@ def parent_document_image(parent_id: str, document_id: str,
 # the mandate by the enforcer.
 
 
+@app.post("/api/parents/{parent_id}/booking-mandate")
+def grant_booking_mandate(parent_id: str, body: dict[str, Any],
+                          _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Authorise Anbu Care to hold an appointment for a test a clinician orders.
+
+    Standing, ahead of any admission, for the same reason the payment one is: a
+    test gets ordered at 3am while the son is asleep. It carries NO authority to
+    spend - there is nowhere in the schema a cap could live.
+    """
+    from anbu_care.booking import BookingMandateRejected, grant_standing
+
+    if service.load_profile(parent_id) is None:
+        raise HTTPException(status_code=404, detail=f"no parent {parent_id}")
+    try:
+        mandate = grant_standing(
+            parent_id=parent_id,
+            max_distance_km=float(body.get("max_distance_km", 15.0)),
+            home_collection_only=bool(body.get("home_collection_only", False)),
+            prefer=str(body.get("prefer", "highest_score")),
+            max_attempts=int(body.get("max_attempts", 3)),
+            requires_cancellable=bool(body.get("requires_cancellable", True)),
+            hours=int(body.get("hours", 720)),
+            granted_by=str(body.get("granted_by", "")),
+        )
+    except BookingMandateRejected as rejected:
+        raise HTTPException(status_code=400, detail=str(rejected)) from None
+    except (TypeError, ValueError) as bad:
+        raise HTTPException(status_code=400, detail=str(bad)) from None
+
+    return {"status": "granted", "scope": "standing",
+            "mandate_id": mandate.mandate_id,
+            "max_distance_km": mandate.max_distance_km,
+            "prefer": mandate.prefer, "max_attempts": mandate.max_attempts,
+            "requires_cancellable": mandate.requires_cancellable,
+            "window_closes_at": mandate.window_closes_at.isoformat(),
+            "note": ("This authorises holding an appointment, never paying for "
+                     "one. Her own agreement to have her details given to a "
+                     "centre is separate and is held on her profile.")}
+
+
+@app.delete("/api/parents/{parent_id}/booking-mandate")
+def revoke_booking_mandate(parent_id: str,
+                           _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Withdraw it, including from admissions already carrying it."""
+    from anbu_care.booking import revoke_standing
+
+    mandate = revoke_standing(parent_id, revoked_by="family")
+    if mandate is None:
+        return {"status": "no_live_mandate"}
+    return {"status": "revoked", "scope": "standing",
+            "mandate_id": mandate.mandate_id}
+
+
+@app.post("/api/cases/{case_id}/diagnostics/{order_id}/arrange")
+def arrange_appointment(case_id: str, order_id: str,
+                        _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Choose a centre and try to hold the slot, falling through on failure."""
+    from anbu_care.booking import BookingRefused, arrange
+
+    try:
+        return arrange(case_id=case_id, order_id=order_id)
+    except BookingRefused as refused:
+        raise HTTPException(status_code=400, detail=str(refused)) from None
+
+
+@app.get("/api/cases/{case_id}/appointments")
+def list_case_appointments(case_id: str,
+                           _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """What was arranged, what was only requested, and what was tried.
+
+    **Credentialed.** An appointment names a centre and a time, and where a
+    seventy-one year old will be on Thursday morning is a fact about her.
+    """
+    appointments = service.list_appointments(case_id)
+    return {"case_id": case_id,
+            "appointments": [a.model_dump(mode="json") for a in appointments]}
+
+
+@app.post("/api/cases/{case_id}/appointments/{appointment_id}/cancel")
+def cancel_appointment(case_id: str, appointment_id: str,
+                       _session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Withdraw one, and hand back the path for telling the centre."""
+    from anbu_care.booking import BookingRefused, cancel
+
+    try:
+        return cancel(case_id=case_id, appointment_id=appointment_id,
+                      cancelled_by="family")
+    except BookingRefused as refused:
+        raise HTTPException(status_code=404, detail=str(refused)) from None
+
+
 @app.post("/api/parents/{parent_id}/payment-mandate")
 def grant_standing_mandate(parent_id: str, body: dict[str, Any],
                            _session: str = Depends(require_family_session)) -> dict[str, Any]:

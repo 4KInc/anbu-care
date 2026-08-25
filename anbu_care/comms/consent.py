@@ -71,11 +71,23 @@ RECOVERY_CHECKINS = "recovery_checkins"
 # flag the collapse will be invisible in exactly the way status_updates was.
 EMERGENCY_CLINICAL_SHARE = "emergency_clinical_share"
 
+# Giving her details OUT to a third party who will hold them, which is a
+# different act again from showing a clinician her record at the bedside.
+#
+# A diagnostic centre asked to hold a slot needs a name and a number, and once
+# it has them it keeps them, on its own systems, under its own policy, after
+# the appointment is over. That is not a disclosure that ends when the browser
+# closes. Being willing to have a treating team read her allergies in a
+# corridor is not agreeing to be entered into a lab's customer database, and
+# folding the two together would be exactly the collapse EMERGENCY_CLINICAL_SHARE
+# was split out to prevent.
+BOOKING_DISCLOSURE = "booking_disclosure"
+
 OUTBOUND_PURPOSES = frozenset({
     ADMISSION_ALERTS, STATUS_UPDATES, BILLING_UPDATES, CLAIM_UPDATES, OUTBOUND_NOTIFY,
 })
 INBOUND_PURPOSES = frozenset({INBOUND_WELLBEING})
-DISCLOSURE_PURPOSES = frozenset({EMERGENCY_CLINICAL_SHARE})
+DISCLOSURE_PURPOSES = frozenset({EMERGENCY_CLINICAL_SHARE, BOOKING_DISCLOSURE})
 # Held by the parent, about what may be sent to her. Kept as its own set so a
 # loop over "the outbound purposes" cannot silently start treating a family
 # member's agreement as hers.
@@ -94,6 +106,10 @@ def describe(purpose: str) -> str:
         CLAIM_UPDATES: "receive insurance claim updates",
         OUTBOUND_NOTIFY: "be notified, as a care-circle contact, where your parent was taken",
         INBOUND_WELLBEING: "send wellbeing check-ins about your parent",
+        BOOKING_DISCLOSURE: (
+            "have your name, age and a contact number given to a diagnostic "
+            "centre so an appointment can be held for you"
+        ),
         RECOVERY_CHECKINS: (
             "be sent recovery check-in messages after you come home, asking how "
             "you are and whether you took your medicines"

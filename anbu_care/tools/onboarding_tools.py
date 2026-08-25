@@ -345,6 +345,46 @@ def record_emergency_disclosure_consent(parent_id: str, granted: bool = True) ->
     }
 
 
+def record_booking_disclosure_consent(parent_id: str,
+                                     granted: bool = True) -> dict[str, Any]:
+    """Record whether the PARENT agrees her details may be given to a centre.
+
+    A third disclosure direction, and it needs to be one. Showing a treating
+    team her record at the bedside ends when the browser closes; a diagnostic
+    centre asked to hold a slot KEEPS her name and number, on its own systems,
+    under its own policy, after the appointment is over. Folding the two
+    together would be the exact collapse the emergency purpose was split out to
+    prevent.
+
+    Args:
+        parent_id: Whose details this governs.
+        granted: True to grant, False to withdraw. Read live on every booking,
+            so a withdrawal stops the next one.
+
+    Returns:
+        The purpose and whether it is now held.
+    """
+    from anbu_care.comms import consent as consent_purposes
+
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return {"status": "unknown_parent", "parent_id": parent_id}
+
+    purpose = consent_purposes.BOOKING_DISCLOSURE
+    if granted:
+        profile.disclosure_consents[purpose] = service._now()
+    else:
+        profile.disclosure_consents.pop(purpose, None)
+    service.save_profile(profile)
+
+    return {
+        "status": "recorded",
+        "purpose": purpose,
+        "granted": granted,
+        "means": consent_purposes.describe(purpose),
+    }
+
+
 def ingest_document(
     parent_id: str,
     kind: str,

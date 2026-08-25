@@ -1,0 +1,290 @@
+"""Choosing a centre, trying it, and trying the next one when it fails.
+
+This is the part that was asked for. Until now the diagnostics lane ranked
+options and presented them, and nothing decided - which meant the system did the
+easy half of the job and handed a seventy-one year old the hard half at 4am.
+
+The choosing itself is deliberately dull: filter the ranked options by what the
+family authorised, order by their stated preference, take the first, and record
+WHY that one, the same way hospital routing already explains what it traded for
+extra distance. A choice nobody can interrogate is not better than a list.
+
+**The agentic part is the falling through.** Attempt, fail, record the failure
+with its reason, try the next, up to the number of attempts the family allowed,
+then hand it to a person with an account of everything that was tried. A lane
+that tries one centre and gives up is a script. One that tries three, says it
+tried three, and says the fourth needs a phone call, is doing the job.
+
+Nothing here decides she needs a test, and nothing here spends.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+
+from anbu_care import service
+from anbu_care.booking import channels as channel_registry
+from anbu_care.booking import disclosure, enforcer
+from anbu_care.booking import mandate as mandates
+from anbu_care.comms import consent
+from anbu_care.schemas import Appointment
+
+logger = logging.getLogger(__name__)
+
+
+class BookingRefused(Exception):
+    """Nothing was arranged, and the reason is safe to show."""
+
+
+def choose(options: list[dict], mandate) -> list[dict]:
+    """The centres worth trying, best first.
+
+    Returns a LIST rather than one centre, because the next one matters as much
+    as the first: this is the queue the fall-through walks.
+    """
+    permitted = [o for o in options
+                 if float(o.get("distance_km") or 0.0) <= mandate.max_distance_km]
+    if mandate.home_collection_only:
+        permitted = [o for o in permitted if o.get("home_collection")]
+
+    if mandate.prefer == "nearest":
+        permitted.sort(key=lambda o: float(o.get("distance_km") or 0.0))
+    else:
+        permitted.sort(key=lambda o: (-float(o.get("score") or 0.0),
+                                      float(o.get("distance_km") or 0.0)))
+    return permitted
+
+
+def why(centre: dict, mandate) -> str:
+    """The sentence that makes the choice auditable."""
+    basis = ("it is the nearest of the options that fit"
+             if mandate.prefer == "nearest"
+             else "it ranked highest of the options that fit")
+    home = (" It is listed for home collection."
+            if centre.get("home_collection") else "")
+    return (f"{centre.get('name', 'this centre')} was tried first because "
+            f"{basis}, at {float(centre.get('distance_km') or 0):.1f} km."
+            f"{home} Anbu Care chose from its own search; no page suggested it.")
+
+
+def _consented(parent_id: str) -> bool:
+    """Her own agreement that her details may be given to a centre.
+
+    Held by the PARENT, not by the family member who granted the mandate. The
+    son may authorise Anbu Care to act; he cannot agree on her behalf to be
+    entered into a lab's database.
+    """
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return False
+    # `disclosure_consents`, where her own agreements live. Not `consents`,
+    # which does not exist on a profile - a getattr default would have made
+    # every booking refuse quietly and looked like the guard working.
+    return consent.BOOKING_DISCLOSURE in (profile.disclosure_consents or {})
+
+
+def arrange(*, case_id: str, order_id: str) -> dict:
+    """Try to hold an appointment for one ordered test. Never raises upward.
+
+    Returns what happened and, on every path, what was tried.
+    """
+    case = service.load_case(case_id)
+    if case is None:
+        raise BookingRefused(f"no case {case_id}")
+
+    order = next((o for o in service.list_diagnostic_orders(case_id)
+                  if o.order_id == order_id), None)
+    if order is None:
+        raise BookingRefused("no clinician ordered that test on this admission")
+
+    mandate = mandates.live_for_case(case_id)
+    profile = service.load_profile(case.parent_id)
+
+    if not _consented(case.parent_id):
+        return _escalate(case_id, order, mandate, [],
+                         "she has not agreed to her details being given to a "
+                         "diagnostic centre, so nothing was sent")
+
+    options = list(order.options or [])
+    if not options:
+        return _escalate(case_id, order, mandate, [],
+                         "no centres have been surfaced for this test yet")
+    if mandate is None:
+        return _escalate(case_id, order, None, [],
+                         "nobody has authorised Anbu Care to hold an appointment")
+
+    payload = disclosure.payload_for(
+        name=profile.name if profile else "",
+        age=getattr(profile, "age", "") if profile else "",
+        phone=_number_for(profile),
+        test_label=order.test_label,
+        home_collection=False,
+    )
+
+    queue = choose(options, mandate)
+    existing = service.list_appointments(case_id)
+    attempts: list[dict] = []
+    drivers = channel_registry.available()
+
+    for centre in queue[:mandate.max_attempts]:
+        # The payload's home_collection follows the centre, so a home visit is
+        # asked for as one rather than being a travel booking with a note.
+        this_payload = {**payload, "home_collection": bool(centre.get("home_collection"))}
+        driver = next((d for d in drivers if d.can_serve(centre)), drivers[0])
+
+        # Recorded BEFORE the attempt. An instance that dies mid-booking must
+        # leave evidence that something was tried, or a retry double-books.
+        service.append_receipt(
+            case_id, kind="booking.attempted", actor="booking",
+            payload={"order_id": order_id, "place_id": centre.get("place_id"),
+                     "channel": driver.name,
+                     "note": ("An attempt to hold an appointment is starting. "
+                              "Recorded before it runs so a crash cannot hide "
+                              "it and a retry cannot double-book.")})
+
+        result = driver.attempt(centre=centre, payload=this_payload)
+
+        # A channel that never reached the centre has nothing to enforce
+        # against, and running the guards anyway made the lane lie: with no
+        # driver configured every attempt came back "no way to cancel was
+        # found", which is true of a request that was never made and is not the
+        # reason. The reason a family is given has to be the real one.
+        if result.outcome == channel_registry.UNAVAILABLE:
+            attempts.append({"place_id": centre.get("place_id"),
+                             "name": centre.get("name"), "channel": driver.name,
+                             "outcome": result.outcome, "detail": result.detail})
+            continue
+
+        verdict = enforcer.decide(
+            order=order, mandate=mandate, centre=centre, options=options,
+            existing=existing, case_id=case_id,
+            cancel_url=result.cancel_url, cancel_phone=result.cancel_phone,
+            page_text=result.page_text, payload=this_payload)
+
+        if not verdict.allowed:
+            attempts.append({"place_id": centre.get("place_id"),
+                             "name": centre.get("name"), "channel": driver.name,
+                             "outcome": "refused",
+                             "failed_check": verdict.failed_check,
+                             "detail": verdict.reason})
+            logger.info("booking refused at %s: %s", centre.get("name"),
+                        verdict.failed_check)
+            continue
+
+        if not result.landed:
+            attempts.append({"place_id": centre.get("place_id"),
+                             "name": centre.get("name"), "channel": driver.name,
+                             "outcome": result.outcome, "detail": result.detail})
+            continue
+
+        return _record(case_id, order, mandate, centre, driver, result,
+                       verdict, attempts)
+
+    return _escalate(case_id, order, mandate, attempts,
+                     "every centre this system was allowed to try has been tried")
+
+
+def _number_for(profile) -> str:
+    """The number a centre would ring. Hers, not the family's.
+
+    A centre calling back to confirm needs to reach the person attending. Giving
+    them a number in Nashville would mean a confirmation call at 3am to somebody
+    who cannot answer a question about her.
+    """
+    return getattr(profile, "whatsapp_e164", "") or ""
+
+
+def _record(case_id, order, mandate, centre, driver, result, verdict,
+            attempts) -> dict:
+    appointment = Appointment(
+        appointment_id=service.new_id("appt"), case_id=case_id,
+        parent_id=order.parent_id, order_id=order.order_id,
+        status=result.outcome, place_id=str(centre.get("place_id") or ""),
+        centre_name=str(centre.get("name") or ""),
+        centre_address=str(centre.get("address") or ""),
+        distance_km=float(centre.get("distance_km") or 0.0),
+        home_collection=bool(centre.get("home_collection")),
+        channel=driver.name, cancel_url=result.cancel_url,
+        cancel_phone=result.cancel_phone, slot_text=result.slot_text,
+        provider_ref=result.provider_ref, mandate_id=mandate.mandate_id,
+        guards_passed=verdict.passed, attempts=attempts,
+        why_this_centre=why(centre, mandate),
+        confirmed_at=(datetime.now(UTC)
+                      if result.outcome == channel_registry.CONFIRMED else None),
+    )
+    service.save_appointment(appointment)
+
+    service.append_receipt(
+        case_id, kind=f"booking.{result.outcome}", actor="booking",
+        payload={
+            "appointment_id": appointment.appointment_id,
+            "order_id": order.order_id,
+            # A public Google identifier, not a fact about her. The TEST NAME is
+            # not here, for the same reason it is not on the referral receipt:
+            # /verify is public.
+            "place_id": appointment.place_id,
+            "channel": driver.name,
+            "guards_passed": verdict.passed,
+            "attempts_before_this": len(attempts),
+            "cancellable": bool(result.cancel_url or result.cancel_phone),
+            "note": ("An appointment was REQUESTED and the centre has not "
+                     "confirmed it. That is not an appointment yet."
+                     if result.outcome == channel_registry.REQUESTED else
+                     "The centre confirmed a slot. Anbu Care did not choose "
+                     "that she needs this test and did not pay for it."),
+        })
+    return {"outcome": result.outcome, "appointment_id": appointment.appointment_id,
+            "centre": appointment.centre_name, "why": appointment.why_this_centre,
+            "attempts": attempts, "cancel_url": result.cancel_url,
+            "cancel_phone": result.cancel_phone}
+
+
+def _escalate(case_id, order, mandate, attempts, detail) -> dict:
+    """Hand it to a person, with an account of everything that was tried."""
+    service.append_receipt(
+        case_id, kind="booking.escalated", actor="booking",
+        payload={
+            "order_id": getattr(order, "order_id", ""),
+            "attempts": [{k: v for k, v in a.items() if k != "detail"}
+                         for a in attempts],
+            "attempt_count": len(attempts),
+            "detail": detail,
+            "note": ("Nothing was arranged and a person needs to ring. Every "
+                     "centre tried is listed with what stopped it, so the "
+                     "person picking this up starts where this left off."),
+        })
+    return {"outcome": "escalated", "detail": detail, "attempts": attempts}
+
+
+def cancel(*, case_id: str, appointment_id: str, cancelled_by: str = "") -> dict:
+    """Withdraw one. Records the path, because a person may have to use it.
+
+    Phase 0 cannot cancel through a centre's own system, so this marks the
+    record and hands back the way to do it. Saying an appointment is cancelled
+    when only our row changed would be the exact lie this lane exists to avoid.
+    """
+    appointment = next((a for a in service.list_appointments(case_id)
+                        if a.appointment_id == appointment_id), None)
+    if appointment is None:
+        raise BookingRefused(f"no appointment {appointment_id} on this case")
+    if appointment.cancelled_at is not None:
+        return {"outcome": "already_cancelled", "appointment_id": appointment_id}
+
+    appointment.cancelled_at = datetime.now(UTC)
+    appointment.status = "cancelled"
+    service.save_appointment(appointment)
+
+    service.append_receipt(
+        case_id, kind="booking.cancelled", actor="family",
+        payload={"appointment_id": appointment_id,
+                 "place_id": appointment.place_id,
+                 "cancelled_by": cancelled_by,
+                 "note": ("Withdrawn on Anbu Care's record. The centre is told "
+                          "by whoever holds the cancellation path below; this "
+                          "system has not contacted them.")})
+    return {"outcome": "cancelled", "appointment_id": appointment_id,
+            "cancel_url": appointment.cancel_url,
+            "cancel_phone": appointment.cancel_phone,
+            "still_to_do": ("Ring or open the cancellation link to tell the "
+                            "centre. Anbu Care has not done that.")}

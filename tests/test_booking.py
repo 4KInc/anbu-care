@@ -1,0 +1,611 @@
+"""Booking: what the agent is allowed to do on her behalf, and to whom.
+
+This is the first lane where being wrong reaches a third party who never agreed
+to any of it. A wrong payment can be refunded; a wrong booking wastes a real
+clinic's slot and sends a seventy-one year old across a city under her own name.
+
+So, like the payment tests, almost everything below is about a REFUSAL. The two
+that matter most are `test_a_page_can_never_choose_where_she_goes` — which is
+`test_a_bill_can_never_set_the_destination` pointed at a different noun — and
+`test_it_will_not_book_anywhere_it_cannot_unbook`.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from anbu_care import service
+from anbu_care.booking import channels, disclosure, enforcer
+from anbu_care.booking import mandate as mandates
+from anbu_care.booking import run
+from anbu_care.diagnostics import referral
+from anbu_care.schemas import Appointment, DiagnosticOrder
+from anbu_care.tools import onboarding_tools, triage_tools
+
+NEAR = {"place_id": "place-near", "name": "Anbu Diagnostics", "distance_km": 2.1,
+        "score": 0.71, "home_collection": False, "address": "Palayamkottai Rd"}
+FAR = {"place_id": "place-far", "name": "Far Labs", "distance_km": 21.0,
+       "score": 0.95, "home_collection": False, "address": "Tirunelveli"}
+HOME = {"place_id": "place-home", "name": "Home Collect Labs", "distance_km": 4.0,
+        "score": 0.60, "home_collection": True, "address": "Bryant Nagar"}
+OFF_LIST = {"place_id": "place-sponsored", "name": "Partner Centre",
+            "distance_km": 1.0, "score": 0.99, "home_collection": False}
+
+
+@pytest.fixture
+def case():
+    pid = onboarding_tools.create_parent_profile(
+        name="Ashanthi Machado", age=71, city="Thoothukudi", lat=8.7, lon=78.1,
+        chronic_conditions=["Hypertension"], allergies=["Penicillin"],
+    )["profile"]["parent_id"]
+    onboarding_tools.record_booking_disclosure_consent(pid)
+    cid = triage_tools.run_triage(
+        parent_id=pid, symptoms=["chest pain"], free_text="",
+        reported_by="caregiver", lat=0.0, lon=0.0, case_id="")["case_id"]
+    return pid, cid
+
+
+def _order(parent_id, case_id, *, mobility="unknown", options=None):
+    order = DiagnosticOrder(
+        order_id=service.new_id("dxorder"), case_id=case_id, parent_id=parent_id,
+        test_label="blood test", mobility=mobility,
+        ordered_by="the treating team (unverified)",
+        options=options if options is not None else [NEAR, FAR, HOME])
+    service.save_diagnostic_order(order)
+    return order
+
+
+def _mandate(parent_id, **kw):
+    return mandates.grant_standing(parent_id=parent_id, granted_by="Heartlin", **kw)
+
+
+class Landing:
+    """A driver that takes the request, with a way to cancel."""
+
+    name = "test-web"
+
+    def __init__(self, outcome=channels.REQUESTED, cancel_url="https://x/cancel",
+                 cancel_phone="", page_text=""):
+        self.outcome, self.cancel_url = outcome, cancel_url
+        self.cancel_phone, self.page_text = cancel_phone, page_text
+        self.seen = []
+
+    def can_serve(self, centre):
+        return True
+
+    def attempt(self, *, centre, payload):
+        self.seen.append((centre["place_id"], dict(payload)))
+        return channels.AttemptResult(
+            outcome=self.outcome, cancel_url=self.cancel_url,
+            cancel_phone=self.cancel_phone, page_text=self.page_text,
+            detail="stub", fields_sent=dict(payload))
+
+
+class Failing(Landing):
+    """A driver that cannot serve anything, so the lane must fall through."""
+
+    name = "test-failing"
+
+    def attempt(self, *, centre, payload):
+        self.seen.append((centre["place_id"], dict(payload)))
+        return channels.AttemptResult(outcome=channels.UNAVAILABLE,
+                                      detail="this centre has no online form")
+
+
+def _drive(monkeypatch, driver):
+    monkeypatch.setattr(channels, "available", lambda: [driver])
+    monkeypatch.setattr(run.channel_registry, "available", lambda: [driver])
+
+
+# =========================================================================
+# THE PAGE NEVER CHOOSES
+# =========================================================================
+
+
+def test_a_page_can_never_choose_where_she_goes(case):
+    """The one that matters most, and it is `payee_from_mandate` again.
+
+    An interstitial offering "book at our partner centre instead", a redirect, a
+    sponsored result read as an answer. The centre comes from the ranked list
+    this system produced from its own search; a page may only fill in that
+    choice.
+    """
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    mandate = _mandate(parent_id)
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id) or mandate,
+        centre=OFF_LIST, options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/cancel")
+
+    assert verdict.allowed is False
+    assert verdict.failed_check == "centre_from_options"
+    assert "cannot choose where she goes" in verdict.reason
+
+
+def test_the_enforcer_matches_on_place_id_not_on_a_name(case):
+    """A name is a string a page can print. A place id is ours."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+    impostor = {**OFF_LIST, "name": NEAR["name"]}
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=impostor,
+        options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/cancel")
+    assert verdict.failed_check == "centre_from_options"
+
+
+# =========================================================================
+# THE REFUSALS
+# =========================================================================
+
+
+def test_it_will_not_book_anywhere_it_cannot_unbook(case):
+    """An agent that can create an obligation and cannot undo it is worse than
+    one that does nothing."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=order.options, existing=[], case_id=case_id)
+
+    assert verdict.failed_check == "cancellable"
+    assert "cannot be withdrawn" in verdict.reason
+
+
+def test_booking_never_becomes_spending(case):
+    """The payment lane has its own mandate, its own guards and its own
+    destination lock. A browser filling a card field routes around all of it."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/cancel",
+        page_text="Please pay now to confirm your slot")
+
+    assert verdict.failed_check == "no_payment"
+    assert "no authority to spend" in verdict.reason
+
+
+def test_the_booking_mandate_has_nowhere_a_cap_could_live():
+    """Not a promise about behaviour - a fact about the schema."""
+    from anbu_care.schemas import BookingMandate
+
+    fields = set(BookingMandate.model_fields)
+    for money in ("per_bill_cap_inr", "total_cap_inr", "cap_inr", "amount_inr",
+                  "payee_vpa", "method_ref"):
+        assert money not in fields, f"the booking mandate grew {money}"
+
+
+def test_one_order_never_gets_two_appointments(case):
+    """This lane's version of paying the same bill twice, except the injured
+    party is a clinic that never agreed to any of this."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+    existing = [Appointment(
+        appointment_id="appt-1", case_id=case_id, parent_id=parent_id,
+        order_id=order.order_id, status="requested", place_id=NEAR["place_id"])]
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=order.options, existing=existing, case_id=case_id,
+        cancel_url="https://x/cancel")
+
+    assert verdict.failed_check == "not_duplicate"
+    assert "somebody else needs" in verdict.reason
+
+
+def test_a_cancelled_appointment_does_not_block_a_new_one(case):
+    """Withdrawing one has to leave the test bookable again."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+    existing = [Appointment(
+        appointment_id="appt-1", case_id=case_id, parent_id=parent_id,
+        order_id=order.order_id, status="cancelled", place_id=NEAR["place_id"],
+        cancelled_at=datetime.now(UTC))]
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=order.options, existing=existing, case_id=case_id,
+        cancel_url="https://x/cancel")
+    assert verdict.allowed is True
+
+
+def test_nothing_is_booked_without_an_order_from_a_clinician(case):
+    """Anbu Care has never originated an order and this does not either."""
+    parent_id, case_id = case
+    _mandate(parent_id)
+
+    verdict = enforcer.decide(
+        order=None, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=[NEAR], existing=[], case_id=case_id, cancel_url="https://x/c")
+    assert verdict.failed_check == "order_live"
+
+
+def test_a_clinician_who_said_she_cannot_travel_is_not_second_guessed(case):
+    """Never inferred, and never quietly softened into "probably fine"."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, mobility=referral.NON_AMBULATORY)
+    _mandate(parent_id)
+
+    travel = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/c")
+    assert travel.failed_check == "mobility_ok"
+
+    home = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=HOME,
+        options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/c")
+    assert home.allowed is True
+
+
+def test_a_centre_beyond_the_authorised_distance_is_refused(case):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id, max_distance_km=15.0)
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=FAR,
+        options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/c")
+    assert verdict.failed_check == "within_distance"
+
+
+def test_revoking_the_standing_grant_stops_admissions_carrying_it(case):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+    adopted = mandates.live_for_case(case_id)
+    assert adopted is not None
+
+    mandates.revoke_standing(parent_id, revoked_by="Heartlin")
+    verdict = enforcer.decide(
+        order=order, mandate=adopted, centre=NEAR, options=order.options,
+        existing=[], case_id=case_id, cancel_url="https://x/c")
+
+    assert verdict.failed_check == "standing_live"
+    assert "has been withdrawn" in verdict.reason
+
+
+def test_declining_it_on_one_admission_is_not_undone_by_the_next_question(case):
+    parent_id, case_id = case
+    _mandate(parent_id)
+    assert mandates.live_for_case(case_id) is not None
+
+    mandates.revoke(case_id, revoked_by="Heartlin")
+    assert mandates.live_for_case(case_id) is None, "it re-adopted itself"
+
+
+def test_an_expired_window_books_nothing(case):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    mandate = _mandate(parent_id)
+    adopted = mandates.live_for_case(case_id)
+
+    verdict = enforcer.decide(
+        order=order, mandate=adopted, centre=NEAR, options=order.options,
+        existing=[], case_id=case_id, cancel_url="https://x/c",
+        now=datetime.now(UTC) + timedelta(hours=1000))
+    assert verdict.failed_check == "within_window"
+    assert mandate.mandate_id
+
+
+# =========================================================================
+# WHAT LEAVES, AND WHAT NEVER DOES
+# =========================================================================
+
+
+def test_a_centre_is_told_the_narrowest_thing_that_does_the_job():
+    payload = disclosure.payload_for(name="Ashanthi Machado", age=71,
+                                     phone="+919000000000",
+                                     test_label="blood test",
+                                     home_collection=False)
+    assert set(payload) == disclosure.ALLOWED_FIELDS
+
+
+@pytest.mark.parametrize("leak", ["allergies", "conditions", "medications",
+                                  "policy_number", "insurer", "case_id",
+                                  "diagnosis", "dob", "son_phone"])
+def test_her_record_never_leaves_with_the_booking(leak):
+    """A whitelist checked against the payload, not a blacklist of things we
+    remembered to strip. This fails closed."""
+    with pytest.raises(disclosure.DisclosureRefused):
+        disclosure.check({"name": "A", "age": "71", "phone": "+91",
+                          "test_label": "blood test", "home_collection": False,
+                          leak: "should never go"})
+
+
+def test_a_refused_disclosure_sends_nothing_rather_than_filtering():
+    """Silently dropping a field lets a caller believe it was sent and the next
+    reader believe the whitelist is advisory."""
+    with pytest.raises(disclosure.DisclosureRefused, match="allergies"):
+        disclosure.check({"name": "A", "allergies": "Penicillin"})
+
+
+def test_the_enforcer_checks_the_payload_that_is_actually_going(case):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id)
+    _mandate(parent_id)
+
+    verdict = enforcer.decide(
+        order=order, mandate=mandates.live_for_case(case_id), centre=NEAR,
+        options=order.options, existing=[], case_id=case_id,
+        cancel_url="https://x/c",
+        payload={"name": "A", "allergies": "Penicillin"})
+    assert verdict.failed_check == "disclosure_minimal"
+
+
+def test_the_test_label_goes_out_exactly_as_the_clinician_wrote_it():
+    """Rewriting it into something a form parses more easily would be this
+    system deciding what was ordered."""
+    payload = disclosure.payload_for(name="A", age=71, phone="+91",
+                                     test_label="blood test",
+                                     home_collection=False)
+    assert payload["test_label"] == "blood test"
+    assert "complete blood count" not in payload["test_label"]
+
+
+# =========================================================================
+# DECIDING, AND FALLING THROUGH
+# =========================================================================
+
+
+def test_it_chooses_and_says_why(case):
+    parent_id, case_id = case
+    _mandate(parent_id, prefer="nearest")
+    mandate = mandates.live_for_case(case_id)
+
+    queue = run.choose([FAR, NEAR, HOME], mandate)
+    assert [c["place_id"] for c in queue] == ["place-near", "place-home"], \
+        "the far centre was offered, or the order ignored the preference"
+    assert "nearest" in run.why(queue[0], mandate)
+    assert "no page suggested it" in run.why(queue[0], mandate)
+
+
+def test_highest_score_and_nearest_are_different_choices(case):
+    parent_id, case_id = case
+    _mandate(parent_id, prefer="highest_score", max_distance_km=30.0)
+    mandate = mandates.live_for_case(case_id)
+    assert run.choose([NEAR, FAR, HOME], mandate)[0]["place_id"] == "place-far"
+
+    mandates.revoke_standing(parent_id)
+    _mandate(parent_id, prefer="nearest", max_distance_km=30.0)
+    fresh = mandates.live_standing_for(parent_id)
+    assert run.choose([NEAR, FAR, HOME], fresh)[0]["place_id"] == "place-near"
+
+
+def test_it_tries_the_next_centre_when_one_fails(case, monkeypatch):
+    """The agentic part. A lane that tries one centre and gives up is a script."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR, HOME])
+    _mandate(parent_id, max_attempts=3)
+    driver = Failing()
+    _drive(monkeypatch, driver)
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert out["outcome"] == "escalated"
+    assert [p for p, _ in driver.seen] == ["place-near", "place-home"], \
+        "it stopped after the first centre"
+    assert len(out["attempts"]) == 2
+
+
+def test_it_stops_at_the_number_of_attempts_the_family_allowed(case, monkeypatch):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR, HOME])
+    _mandate(parent_id, max_attempts=1)
+    driver = Failing()
+    _drive(monkeypatch, driver)
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    assert len(driver.seen) == 1
+
+
+def test_an_escalation_says_what_was_tried(case, monkeypatch):
+    """The person picking this up starts where the system left off."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR, HOME])
+    _mandate(parent_id)
+    _drive(monkeypatch, Failing())
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "booking.escalated")
+    assert receipt.payload["attempt_count"] == 2
+    assert "a person needs to ring" in receipt.payload["note"]
+
+
+def test_an_attempt_is_recorded_before_it_runs(case, monkeypatch):
+    """An instance that dies mid-booking must leave evidence, or a retry
+    double-books."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Failing())
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    kinds = [r.kind for r in service.get_chain(case_id).receipts]
+    assert kinds.index("booking.attempted") < kinds.index("booking.escalated")
+
+
+def test_a_request_is_not_an_appointment(case, monkeypatch):
+    """Same discipline as an initiated payment that is not a settled one."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Landing(outcome=channels.REQUESTED))
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert out["outcome"] == "requested"
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "booking.requested")
+    assert "not an appointment yet" in receipt.payload["note"]
+    assert service.list_appointments(case_id)[0].confirmed_at is None
+
+
+def test_a_confirmed_booking_records_when(case, monkeypatch):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Landing(outcome=channels.CONFIRMED))
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    appointment = service.list_appointments(case_id)[0]
+    assert appointment.status == "confirmed"
+    assert appointment.confirmed_at is not None
+
+
+def test_the_receipt_never_names_the_test(case, monkeypatch):
+    """/verify is public. Same rule the referral receipt already holds."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Landing())
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    for receipt in service.get_chain(case_id).receipts:
+        if receipt.kind.startswith("booking."):
+            blob = str(receipt.payload).lower()
+            assert "blood test" not in blob, f"{receipt.kind} named the test"
+            assert "ashanthi" not in blob
+            assert "+9190" not in blob
+
+
+def test_nothing_is_arranged_without_her_own_agreement(case, monkeypatch):
+    """The son may authorise Anbu Care to act; he cannot agree on her behalf to
+    be entered into a lab's database."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    onboarding_tools.record_booking_disclosure_consent(parent_id, granted=False)
+    driver = Landing()
+    _drive(monkeypatch, driver)
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert out["outcome"] == "escalated"
+    assert "has not agreed" in out["detail"]
+    assert driver.seen == [], "a centre was contacted without her consent"
+
+
+def test_booking_disclosure_is_not_the_bedside_consent(case):
+    """Two disclosures, deliberately disjoint. Showing a treating team her
+    record ends when the browser closes; a centre keeps her details."""
+    from anbu_care.comms import consent
+
+    parent_id, _case_id = case
+    onboarding_tools.record_emergency_disclosure_consent(parent_id, granted=False)
+    profile = service.load_profile(parent_id)
+
+    assert consent.BOOKING_DISCLOSURE in profile.disclosure_consents
+    assert consent.EMERGENCY_CLINICAL_SHARE not in profile.disclosure_consents
+
+
+# =========================================================================
+# THE STANDING GRANT
+# =========================================================================
+
+
+def test_a_case_opened_after_the_grant_carries_it(case):
+    parent_id, case_id = case
+    standing = _mandate(parent_id)
+    adopted = mandates.live_for_case(case_id)
+
+    assert adopted.standing_id == standing.mandate_id
+    applied = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "booking.standing_applied")
+    assert "NOBODY AUTHORISED ANYTHING FOR THIS ADMISSION" in applied.payload["note"]
+    assert "no authority to spend" in applied.payload["note"]
+
+
+def test_a_preference_this_system_cannot_honour_is_refused(case):
+    """It has no price for a test, and ordering by one it cannot see would be
+    worse than offering fewer."""
+    parent_id, _case_id = case
+    with pytest.raises(mandates.BookingMandateRejected, match="no price"):
+        _mandate(parent_id, prefer="cheapest")
+
+
+def test_a_second_standing_grant_is_refused_while_one_is_live(case):
+    parent_id, _case_id = case
+    _mandate(parent_id)
+    with pytest.raises(mandates.BookingMandateRejected, match="already live"):
+        _mandate(parent_id)
+
+
+# =========================================================================
+# PHASE 0 IS HONEST ABOUT REACHING NOTHING
+# =========================================================================
+
+
+def test_with_no_driver_configured_it_says_so_rather_than_pretending(case):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+    assert out["outcome"] == "escalated"
+    assert service.list_appointments(case_id) == []
+
+
+def test_a_channel_never_switches_itself_on(monkeypatch):
+    """A driver that can act on her behalf should not be something that
+    enabled itself."""
+    monkeypatch.delenv("ANBU_BOOKING_CHANNELS", raising=False)
+    assert [d.name for d in channels.available()] == ["none"]
+
+
+def test_cancelling_does_not_claim_the_centre_was_told(case, monkeypatch):
+    """Saying an appointment is cancelled when only our row changed would be
+    the exact lie this lane exists to avoid."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Landing(cancel_phone="+914612000000"))
+
+    booked = run.arrange(case_id=case_id, order_id=order.order_id)
+    out = run.cancel(case_id=case_id,
+                     appointment_id=booked["appointment_id"],
+                     cancelled_by="Heartlin")
+
+    assert out["cancel_phone"] == "+914612000000"
+    assert "Anbu Care has not done that" in out["still_to_do"]
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "booking.cancelled")
+    assert "has not contacted them" in receipt.payload["note"]
+
+
+def test_an_unreachable_centre_is_not_reported_as_uncancellable(case, monkeypatch):
+    """The reason a family is given has to be the real one.
+
+    With no driver configured every attempt came back "no way to cancel was
+    found", which is true of a request that was never made and is not why it
+    did not happen.
+    """
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Failing())
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    attempt = out["attempts"][0]
+    assert attempt["outcome"] == channels.UNAVAILABLE
+    assert attempt.get("failed_check") is None, "a guard was blamed for a request never made"
+    assert "no online form" in attempt["detail"]

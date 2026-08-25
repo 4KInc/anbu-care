@@ -896,6 +896,96 @@ class DiagnosticOrder(BaseModel):
     surfaced_at: datetime | None = None
 
 
+class BookingMandate(BaseModel):
+    """Authority to hold an appointment on her behalf. Never to spend.
+
+    Parallel to `PaymentMandate` and standing by the same reasoning: a test gets
+    ordered at 3am while the son is asleep, and an authority that needs him
+    awake is an authority that fails exactly when it is needed.
+
+    What it deliberately has NO field for is money. There is no cap, because
+    this lane may not pay - a prepaid slot stops it and escalates. The payment
+    lane has its own mandate, its own nine guards and its own destination lock,
+    and a browser session filling in a card field would route around all of it.
+    The two authorities are not fungible and the schema is where that is made
+    true rather than promised.
+    """
+
+    mandate_id: str
+    parent_id: str
+    # "" on a standing grant. Set on the copy a case adopts.
+    case_id: str = ""
+    standing_id: str = ""
+    window_opens_at: datetime
+    window_closes_at: datetime
+    # Never send her farther than this, whatever the search ranked first.
+    max_distance_km: float = 15.0
+    home_collection_only: bool = False
+    # "nearest" | "highest_score". Not "cheapest": this system has no price for
+    # a test and inventing an ordering it cannot support would be worse than
+    # offering fewer.
+    prefer: str = "highest_score"
+    # How many centres to try before handing it to a person. A lane that tries
+    # one and stops is a script.
+    max_attempts: int = 3
+    # Refuse to book anywhere that offers no way to cancel. Default on, and
+    # turning it off is a deliberate act somebody has to take.
+    requires_cancellable: bool = True
+    granted_by: str = ""
+    granted_at: datetime = Field(default_factory=utcnow)
+    revoked_at: datetime | None = None
+
+    @property
+    def is_live(self) -> bool:
+        return self.revoked_at is None
+
+
+class Appointment(BaseModel):
+    """What this system did about one ordered test. Never proof she attended.
+
+    `status` is the honest distinction the whole lane turns on:
+
+      requested  a form was submitted and the centre has not answered. This is
+                 what an unauthenticated callback form can truthfully produce.
+      confirmed  the centre returned a slot or a reference.
+      escalated  every permitted attempt failed and a person is needed.
+      cancelled  withdrawn.
+
+    A `requested` appointment is NOT an appointment, and nothing downstream may
+    render it as one. The same discipline as an initiated payment that is not a
+    settled one.
+    """
+
+    appointment_id: str
+    case_id: str
+    parent_id: str
+    order_id: str
+    status: str
+    # A public Google identifier, not a fact about her, so it is safe on the
+    # chain. The test label is not.
+    place_id: str = ""
+    centre_name: str = ""
+    centre_address: str = ""
+    distance_km: float = 0.0
+    home_collection: bool = False
+    channel: str = ""
+    # Captured BEFORE committing. An agent that can create an obligation and
+    # cannot undo it is worse than one that does nothing.
+    cancel_url: str = ""
+    cancel_phone: str = ""
+    slot_text: str = ""
+    provider_ref: str = ""
+    mandate_id: str = ""
+    guards_passed: list[str] = Field(default_factory=list)
+    # Every centre tried and what stopped it, in order. The falling through is
+    # the part worth recording: "tried three, the fourth needs a phone call".
+    attempts: list[dict] = Field(default_factory=list)
+    why_this_centre: str = ""
+    requested_at: datetime = Field(default_factory=utcnow)
+    confirmed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+
+
 class PaymentRecord(BaseModel):
     """A payment this system prepared. Never proof that money moved.
 

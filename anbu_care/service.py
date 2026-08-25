@@ -22,6 +22,8 @@ from anbu_care.provenance.store import (
 )
 from anbu_care.schemas import (
     Adjudication,
+    Appointment,
+    BookingMandate,
     Case,
     ClaimPacket,
     ClaimStage,
@@ -131,6 +133,50 @@ def cases_adopting(standing_id: str, store: Store | None = None) -> list[str]:
             if row["case_id"] not in seen:
                 seen.append(row["case_id"])
     return seen
+
+
+def save_standing_booking_mandate(mandate: BookingMandate,
+                                 store: Store | None = None) -> None:
+    """A standing booking grant lives on the parent, like the payment one."""
+    store = store or get_store()
+    store.put(f"PARENT#{mandate.parent_id}", f"BSTANDING#{mandate.mandate_id}",
+              mandate.model_dump(mode="json"))
+
+
+def list_standing_booking_mandates(parent_id: str,
+                                   store: Store | None = None) -> list[BookingMandate]:
+    store = store or get_store()
+    rows = store.query_prefix(f"PARENT#{parent_id}", "BSTANDING#")
+    return [BookingMandate.model_validate(_clean(r)) for r in rows]
+
+
+def save_booking_mandate(mandate: BookingMandate,
+                         store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{mandate.case_id}", f"BMANDATE#{mandate.mandate_id}",
+              mandate.model_dump(mode="json"))
+
+
+def list_booking_mandates(case_id: str,
+                          store: Store | None = None) -> list[BookingMandate]:
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "BMANDATE#")
+    return [BookingMandate.model_validate(_clean(r)) for r in rows]
+
+
+def save_appointment(appointment: Appointment, store: Store | None = None) -> None:
+    store = store or get_store()
+    store.put(f"CASE#{appointment.case_id}", f"APPT#{appointment.appointment_id}",
+              appointment.model_dump(mode="json"))
+
+
+def list_appointments(case_id: str, store: Store | None = None) -> list[Appointment]:
+    """Oldest first. Includes cancelled ones, because the duplicate guard needs
+    to see what was already tried on this order."""
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "APPT#")
+    return sorted((Appointment.model_validate(_clean(r)) for r in rows),
+                  key=lambda a: a.requested_at)
 
 
 def save_payment(payment: PaymentRecord, store: Store | None = None) -> None:
