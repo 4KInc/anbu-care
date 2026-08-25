@@ -70,7 +70,7 @@ MAX_PAGE_TEXT = 6_000
 # The fields we know how to supply. A map naming anything else is rejected
 # rather than ignored, because a model inventing "aadhaar" is a model that has
 # stopped answering the question it was asked.
-KNOWN_FIELDS = ("name", "age", "phone", "test_label")
+KNOWN_FIELDS = ("name", "age", "phone", "test_label", "gender", "pincode")
 
 # What a submit control may say. Deliberately short, and deliberately missing
 # every word that means money.
@@ -99,6 +99,10 @@ Report ONLY which form inputs correspond to these fields:
   age        the patient's age in years
   phone      a contact telephone number
   test_label the test being requested, if there is a field for it
+  gender     the patient's gender. For a group of radio buttons give a selector
+             matching the WHOLE GROUP, e.g. input[name="gender"]. For a dropdown
+             give the select element.
+  pincode    a postal or PIN code. NOT a one-time password or verification code
 
 Return ONLY a JSON object, no prose and no code fence:
 
@@ -111,7 +115,8 @@ Return ONLY a JSON object, no prose and no code fence:
 
 Rules you must not break:
 - Use CSS selectors that match EXACTLY ONE element on this page. Prefer #id,
-  then [name="..."], then a specific attribute selector.
+  then [name="..."], then a specific attribute selector. The ONE exception is
+  gender as a radio group, where the selector should match every option in it.
 - Only include a field you can actually see an input for. Omitting one is a
   correct answer; guessing a selector is not.
 - Never invent a field name. Only the four listed above.
@@ -325,10 +330,15 @@ def _validate(page, proposal: dict) -> tuple[dict, str]:
             continue
         try:
             found = page.locator(selector)
-            if found.count() != 1:
-                continue
-            tag = (found.first.evaluate("e => e.tagName") or "").lower()
-            if tag not in {"input", "textarea", "select"}:
+            count = found.count()
+            tag = (found.first.evaluate("e => e.tagName") or "").lower() if count else ""
+            kind = (found.first.get_attribute("type") or "").lower() if count else ""
+            # A gender radio group is the one field that is SUPPOSED to resolve
+            # to several elements - one per option. Everything else matching
+            # more than one means the selector was too loose to trust.
+            allowed = (count == 1) or (name == "gender" and kind == "radio"
+                                       and 1 < count <= 6)
+            if not allowed or tag not in {"input", "textarea", "select"}:
                 continue
         except Exception:  # noqa: BLE001
             continue
@@ -498,6 +508,20 @@ def _fill(page, fields: dict, payload: dict) -> dict:
             continue
         if name == "phone":
             value = _phone_for(page, selector, value)
+
+        # A radio group or a dropdown is CHOSEN from, not typed into, and the
+        # option has to be the one that means what we hold. Picking the wrong
+        # one is worse than picking none: a form submitted with the wrong gender
+        # is a wrong booking that looks like a right one.
+        if name == "gender":
+            chosen = _choose_option(page, selector, value)
+            if chosen:
+                filled[name] = chosen
+                continue
+            raise DriverError(
+                f"this form offers no option matching {value!r} for gender, so "
+                f"nothing was chosen")
+
         try:
             page.fill(selector, value, timeout=8_000)
         except Exception:  # noqa: BLE001
@@ -520,6 +544,60 @@ def _fill(page, fields: dict, payload: dict) -> dict:
             f"{kept!r} of {value!r}, so what would be submitted is not what "
             f"this system meant to send")
     return filled
+
+
+def _choose_option(page, selector: str, value: str) -> str:
+    """Tick the radio, or select the option, that means what we hold.
+
+    Matched on the option's OWN words - its value, id, or the label text beside
+    it - and only on an exact match or a clean first-letter one ("f" for
+    female). Never on "closest": a form with Male / Female / Other must not have
+    "other" chosen because it was the last thing left.
+
+    Returns what was actually chosen, or "" if nothing matched, and the caller
+    refuses rather than submitting a form with an empty required field.
+    """
+    wanted = (value or "").strip().lower()
+    if not wanted:
+        return ""
+
+    try:
+        found = page.locator(selector)
+        tag = (found.first.evaluate("e => e.tagName") or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+    if tag == "select":
+        try:
+            page.select_option(selector, label=value, timeout=8_000)
+            return value
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            page.select_option(selector, value=wanted, timeout=8_000)
+            return value
+        except Exception:  # noqa: BLE001
+            return ""
+
+    try:
+        for i in range(min(found.count(), 6)):
+            option = found.nth(i)
+            words = [str(option.get_attribute(a) or "").strip().lower()
+                     for a in ("value", "id", "aria-label")]
+            try:
+                label = option.evaluate(
+                    "e => (e.labels && e.labels[0] && e.labels[0].innerText)"
+                    " || e.parentElement.innerText || ''")
+                words.append(str(label).strip().lower())
+            except Exception:  # noqa: BLE001
+                pass
+
+            if any(w == wanted or w == wanted[0] for w in words if w):
+                option.check(timeout=8_000)
+                return wanted
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
 
 
 def _phone_for(page, selector: str, number: str) -> str:
@@ -700,6 +778,27 @@ def commit(*, url: str, payload: dict, handle: dict,
             # later would mean re-navigating, which triggers a fresh code and
             # invalidates the one she is reading out.
             field = _otp_field(page)
+
+            # A CODE WE WERE NOT EXPECTING. Whether a form will ask is decided
+            # before submitting, from what the page says and what it asked for -
+            # and that guess can be wrong in the direction that matters. If a
+            # code box appears and nobody was warned to expect one, waiting is
+            # pointless: the person holding the phone has been told nothing, so
+            # nothing will arrive.
+            #
+            # It must NOT be reported as submitted. The form is sitting on a
+            # verification step, and calling that "requested" would put an
+            # appointment on her record that no centre has heard of.
+            if field and not (session_id and otp_wait_seconds > 0):
+                return {
+                    "outcome": "unavailable",
+                    "detail": ("this centre asked for a one-time code that "
+                               "nobody had been warned to expect, so the "
+                               "booking was not completed"),
+                    "cancel_url": cancel_url, "cancel_phone": cancel_phone,
+                    "evidence": _shot(page, "otp-unexpected"),
+                }
+
             if field and session_id and otp_wait_seconds > 0:
                 logger.info("waiting for a code on session %s", session_id[:8])
                 code = _await_code(session_id, otp_wait_seconds)
@@ -861,9 +960,14 @@ def _rejected(text: str) -> bool:
 
 def _slot_from(text: str) -> str:
     """Anything the page said back that looks like a reference or a time."""
-    match = re.search(r"(reference|booking|order)\s*(id|no\.?|number)?\s*[:#]?\s*"
-                      r"([A-Z0-9-]{4,20})", text, re.I)
-    return match.group(0).strip() if match else ""
+    # The reference must contain a DIGIT. Without that the pattern matched
+    # "Booking Info" off Aarthi's page and recorded it as a booking reference,
+    # which is a made-up fact on somebody's medical record.
+    for match in re.finditer(r"(reference|booking|order)\s*(id|no\.?|number)?"
+                             r"\s*[:#]\s*([A-Za-z0-9-]{4,20})", text, re.I):
+        if any(ch.isdigit() for ch in match.group(3)):
+            return match.group(0).strip()
+    return ""
 
 
 def _shot(page, label: str) -> str:

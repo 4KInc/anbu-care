@@ -14,7 +14,9 @@ closed, and the test that guards it reads the payload rather than the intention.
 The line is drawn at what is needed to hold a slot:
 
   PERMITTED   her name, her age, a contact number, the test as the clinician
-              worded it, and whether it is a home collection.
+              worded it, whether it is a home collection, and - because real
+              booking forms will not proceed without them - her gender and the
+              pincode of the address a home collection would come to.
 
   REFUSED     allergies, conditions, medications, the policy number, the
               insurer, the case id, the son's number, the hospital she was
@@ -24,6 +26,15 @@ The line is drawn at what is needed to hold a slot:
 Age is in and date of birth is out, deliberately: a centre needs to know she is
 seventy-one because some tests are prepared differently for the elderly, and it
 never needs the day she was born. The narrowest thing that does the job.
+
+Gender and pincode were added for the same reason and only after a real centre
+refused without them - Aarthi Scans in Thoothukudi will not take a booking with
+the gender radio empty. They are not comfortable fields to hand over and they
+are here because the alternative is a lane that cannot book anywhere, not
+because they seemed harmless. Both are a genuine part of holding a slot: a
+gender because some tests are prepared differently, a pincode because a home
+collection has to find the house. Neither is ever inferred - an unset value
+means the form is refused and the refusal names the field.
 
 The test label is the uncomfortable one, and it is permitted because it has to
 be - you cannot book a test without naming it. It is the single piece of
@@ -40,6 +51,8 @@ ALLOWED_FIELDS = frozenset({
     "phone",
     "test_label",
     "home_collection",
+    "gender",
+    "pincode",
 })
 
 # Named individually rather than caught by a rule, so that adding a field to the
@@ -73,7 +86,8 @@ def check(payload: dict) -> None:
 
 
 def payload_for(*, name: str, age: int | str, phone: str, test_label: str,
-                home_collection: bool) -> dict:
+                home_collection: bool, gender: str = "",
+                pincode: str = "") -> dict:
     """The only way this lane builds what it sends.
 
     A single constructor because the guarantee is about the payload's shape, and
@@ -89,6 +103,10 @@ def payload_for(*, name: str, age: int | str, phone: str, test_label: str,
         # was ordered, which is the wall the whole diagnostics lane stands on.
         "test_label": (test_label or "").strip(),
         "home_collection": bool(home_collection),
+        # Empty when unrecorded, and empty is meaningful: the driver refuses a
+        # form that requires one rather than putting a guess on her record.
+        "gender": (gender or "").strip().lower(),
+        "pincode": (pincode or "").strip(),
     }
     check(payload)
     return payload

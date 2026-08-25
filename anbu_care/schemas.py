@@ -92,6 +92,17 @@ class ParentProfile(BaseModel):
     # is about showing her record to somebody else, and this one is about
     # putting a message on her phone. Same shape, different agreement.
     contact_consents: dict[str, datetime] = Field(default_factory=dict)
+    # Held ONLY because booking forms require them, and stored so nobody has to
+    # guess. A diagnostic centre asking for a gender before it will hold a slot
+    # is asking a real question - some tests are prepared differently - and a
+    # pincode is how a home collection finds the house.
+    #
+    # Neither is inferred. Reading a gender off a name is wrong often enough to
+    # matter, and a pincode guessed from a city is a van at the wrong door. An
+    # unset value means a form that requires one is REFUSED, which is the
+    # correct outcome and says so.
+    gender: str = ""          # "female" | "male" | "other" | "" (unstated)
+    pincode: str = ""
     # What language to render messages TO HER in. Per-person, never global: her
     # son reads English and she reads Tamil, and one setting cannot serve both.
     # Defaults to English so nothing starts translating without somebody

@@ -1043,3 +1043,126 @@ def test_the_code_is_asked_of_the_neighbour_not_the_son(case, monkeypatch):
     assert asked, "nobody was asked"
     assert asked[0]["to_e164"] == "+919000055555", \
         "the son was asked for a code he cannot possibly read"
+
+
+# =========================================================================
+# GENDER AND PINCODE: SENT BECAUSE REAL FORMS DEMAND THEM
+# =========================================================================
+
+
+def test_a_centre_may_be_told_a_gender_and_a_pincode():
+    """Added only after a real centre refused without them. Aarthi Scans in
+    Thoothukudi will not take a booking with the gender radio empty."""
+    payload = disclosure.payload_for(
+        name="Ashanthi Machado", age=71, phone="+919488581822",
+        test_label="blood test", home_collection=True,
+        gender="female", pincode="628002")
+    assert payload["gender"] == "female"
+    assert payload["pincode"] == "628002"
+    assert set(payload) == disclosure.ALLOWED_FIELDS
+
+
+def test_widening_the_whitelist_did_not_widen_it_further():
+    """The two new fields are the two new fields. Everything else that was
+    refused before is still refused."""
+    for leak in ("allergies", "conditions", "medications", "policy_number",
+                 "insurer", "case_id", "diagnosis", "dob", "son_phone",
+                 "aadhaar", "email"):
+        with pytest.raises(disclosure.DisclosureRefused):
+            disclosure.check({"name": "A", "gender": "female", leak: "no"})
+
+
+def test_an_unrecorded_gender_is_sent_as_empty_rather_than_guessed(case):
+    """A gender read off a name is wrong often enough to matter."""
+    payload = disclosure.payload_for(
+        name="A. Machado", age=71, phone="+919488581822",
+        test_label="blood test", home_collection=False)
+    assert payload["gender"] == ""
+    assert payload["pincode"] == ""
+
+
+def test_the_profile_refuses_a_gender_it_does_not_understand(case):
+    from anbu_care.tools import onboarding_tools
+
+    parent_id, _case_id = case
+    assert onboarding_tools.record_booking_details(
+        parent_id, gender="f")["status"] == "rejected"
+    assert onboarding_tools.record_booking_details(
+        parent_id, gender="female")["gender"] == "female"
+
+
+def test_nothing_infers_a_gender_or_a_pincode():
+    """Read the code, not the behaviour. An inference added later would still
+    pass a test that only checked today's output."""
+    import inspect
+
+    from anbu_care.booking import run as booking_run
+
+    source = inspect.getsource(booking_run.arrange)
+    assert 'gender=getattr(profile, "gender", "")' in source
+    assert 'pincode=getattr(profile, "pincode", "")' in source
+
+    # Statements only. The comment beside these lines explains why nothing is
+    # guessed, and scanning prose for the word "guess" fails on the sentence
+    # promising not to.
+    code = "\n".join(line.split("#")[0] for line in source.splitlines())
+    for derived in ("Mrs", "female if", '"female"', "'female'",
+                    "startswith", "in name"):
+        assert derived not in code, f"a gender is being derived: {derived}"
+
+
+def test_a_booking_that_happened_is_told_to_somebody(case, monkeypatch):
+    """The template was written and never wired, so the lane made a real
+    enquiry at a real clinic and nobody was told. An agent that acts without
+    saying so is not autonomous, it is unaccountable."""
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, role="family",
+        consent_purposes=["outbound_notify", "status_updates"])
+    _with_a_neighbour(parent_id)
+
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    _drive(monkeypatch, Landing(cancel_phone="+917550075500"))
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+    assert out["outcome"] == "requested"
+
+    done = [k for k in sent if k["template_name"] == "booking_done"]
+    assert done, "a real booking was made and nobody was told"
+    # the person who takes her, and the son who should know it happened
+    assert {k["to_e164"] for k in done} == {"+919000055555", "+16692167706"}
+    assert done[0]["template_params"]["cancel"] == "+917550075500"
+
+
+def test_the_booking_message_says_how_to_undo_it():
+    from anbu_care.comms import policy
+
+    body = policy.TEMPLATES["booking_done"]["body"]
+    assert "{cancel}" in body
+    assert "not confirmed a time" in body
+    assert "Nothing was paid" in body
+
+
+def test_a_reference_without_a_digit_is_not_a_reference():
+    """The pattern matched "Booking Info" off Aarthi's page and recorded it as
+    a booking reference, which is a made-up fact on a medical record."""
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "booker_driver3", pathlib.Path("booker/driver.py"))
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+
+    assert driver._slot_from("Booking Info | About us") == ""
+    assert driver._slot_from("Your booking") == ""
+    assert "AB12345" in driver._slot_from("Booking No: AB12345")
+    assert "998877" in driver._slot_from("Reference #998877")

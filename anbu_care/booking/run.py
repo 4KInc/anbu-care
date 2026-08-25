@@ -126,6 +126,13 @@ def arrange(*, case_id: str, order_id: str) -> dict:
         phone=_number_for(profile),
         test_label=order.test_label,
         home_collection=False,
+        # Sent only because real forms will not proceed without them, and only
+        # from what is recorded. Never inferred: a gender read off a name is
+        # wrong often enough to matter, and a pincode guessed from a city is a
+        # collection van at the wrong door. Unset stays unset, and a form that
+        # requires one refuses and says which.
+        gender=getattr(profile, "gender", "") if profile else "",
+        pincode=getattr(profile, "pincode", "") if profile else "",
     )
 
     queue = choose(options, mandate)
@@ -323,10 +330,58 @@ def _record(case_id, order, mandate, centre, driver, result, verdict,
                      "The centre confirmed a slot. Anbu Care did not choose "
                      "that she needs this test and did not pay for it."),
         })
+    _tell_them_it_is_arranged(appointment)
     return {"outcome": result.outcome, "appointment_id": appointment.appointment_id,
             "centre": appointment.centre_name, "why": appointment.why_this_centre,
             "attempts": attempts, "cancel_url": result.cancel_url,
             "cancel_phone": result.cancel_phone}
+
+
+def _tell_them_it_is_arranged(appointment) -> None:
+    """Say that a booking exists, and how to undo it.
+
+    The template was written and never wired, so the lane made a real enquiry
+    at a real clinic and nobody was told - the same shape as a payment that
+    settles in silence. An agent that acts without saying so is not autonomous,
+    it is unaccountable.
+
+    Two people, for two different reasons. The person who is with her needs to
+    know where to take her; the son needs to know it happened. He is told, not
+    asked, which is his whole role in this lane.
+
+    Never raises. The appointment is already made either way.
+    """
+    from anbu_care.care_circle import notify as care_notify
+
+    profile = service.load_profile(appointment.parent_id)
+    first = profile.name.split()[0] if profile and profile.name else "your parent"
+    circle = care_notify.care_circle(appointment.parent_id)
+    primary = next((c for c in (profile.family_contacts if profile else [])
+                    if c.is_primary), None)
+
+    told: set[str] = set()
+    for contact, purpose in (
+            (next((c for c in circle
+                   if getattr(c, "role", "") == "care_circle"), None),
+             consent.OUTBOUND_NOTIFY),
+            (primary, consent.STATUS_UPDATES)):
+        if contact is None or contact.name in told:
+            continue
+        told.add(contact.name)
+        try:
+            whatsapp_tools.send_family_update(
+                case_id=appointment.case_id, parent_id=appointment.parent_id,
+                to_e164=contact.whatsapp_e164, template_name="booking_done",
+                template_params={
+                    "parent_name": first,
+                    "centre": appointment.centre_name,
+                    "distance": f"{appointment.distance_km:.1f}",
+                    "cancel": appointment.cancel_phone or appointment.cancel_url
+                              or "the centre",
+                },
+                message_class="logistics", purpose_override=purpose)
+        except Exception:  # noqa: BLE001 - the send has its own receipts
+            logger.exception("could not say that a booking was made")
 
 
 def _escalate(case_id, order, mandate, attempts, detail) -> dict:

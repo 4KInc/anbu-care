@@ -345,6 +345,46 @@ def record_emergency_disclosure_consent(parent_id: str, granted: bool = True) ->
     }
 
 
+def record_booking_details(parent_id: str, gender: str = "",
+                           pincode: str = "") -> dict[str, Any]:
+    """Record the two things a diagnostic centre will not book without.
+
+    Kept on the profile rather than asked for at booking time, because a lane
+    that has to stop and ask is a lane that needs somebody awake - which is the
+    thing this system exists to avoid.
+
+    Neither is inferred anywhere. A gender read off a name is wrong often enough
+    to matter and a pincode guessed from a city sends a collection van to the
+    wrong door, so an unrecorded value stays unrecorded and the booking refuses
+    with the field named.
+
+    Args:
+        parent_id: Whose details these are.
+        gender: "female", "male", "other", or "" to leave unstated.
+        pincode: The postal code a home collection would come to.
+
+    Returns:
+        What is now on file.
+    """
+    profile = service.load_profile(parent_id)
+    if profile is None:
+        return {"status": "unknown_parent", "parent_id": parent_id}
+
+    allowed = {"female", "male", "other", ""}
+    value = (gender or "").strip().lower()
+    if value not in allowed:
+        return {"status": "rejected",
+                "detail": f"{gender!r} is not one of {sorted(allowed - {''})}"}
+
+    if value:
+        profile.gender = value
+    if pincode.strip():
+        profile.pincode = pincode.strip()
+    service.save_profile(profile)
+    return {"status": "recorded", "gender": profile.gender,
+            "pincode": profile.pincode}
+
+
 def record_booking_disclosure_consent(parent_id: str,
                                      granted: bool = True) -> dict[str, Any]:
     """Record whether the PARENT agrees her details may be given to a centre.
