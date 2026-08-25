@@ -1012,3 +1012,34 @@ def test_an_indian_number_is_offered_in_the_shape_the_field_holds():
     # foreign numbers are left exactly as they are, and the read-back refuses
     for foreign in ("+14155550143", "+16692167706", "+442071234567"):
         assert driver._phone_for(_Page("10"), "#p", foreign) == foreign
+
+
+def test_the_code_is_asked_of_the_neighbour_not_the_son(case, monkeypatch):
+    """He is asleep eleven time zones away and cannot read a text sent to a
+    phone in Thoothukudi. Taking the first name on the care-circle list asked
+    HIM, because he is listed first and holds outbound_notify like everyone
+    else on it - the mechanism was right and the ordering made it a no-op."""
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    # the son first, as he is in the real family
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, role="family",
+        consent_purposes=["outbound_notify", "status_updates"])
+    _with_a_neighbour(parent_id)
+
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    _drive(monkeypatch, OtpNeeded())
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+
+    asked = [k for k in sent if k["template_name"] == "booking_code_needed"]
+    assert asked, "nobody was asked"
+    assert asked[0]["to_e164"] == "+919000055555", \
+        "the son was asked for a code he cannot possibly read"

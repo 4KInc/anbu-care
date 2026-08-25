@@ -238,7 +238,14 @@ def _ask_for_a_code(case_id, order, centre, prepared):
     case = service.load_case(case_id)
     profile = service.load_profile(case.parent_id) if case else None
     circle = care_notify.care_circle(case.parent_id) if case else []
-    contact = next(iter(circle), None)
+    # THE NEIGHBOUR, NOT THE SON. He is asleep eleven time zones away and
+    # cannot read a text sent to a phone in Thoothukudi; she is in the room.
+    # Taking the first name in the list asked him, because he is listed first
+    # and holds outbound_notify like everybody else on it - the mechanism was
+    # right and the ordering made it a no-op, which is the failure mode this
+    # project keeps meeting.
+    contact = next((c for c in circle if getattr(c, "role", "") == "care_circle"),
+                   None) or next(iter(circle), None)
 
     request = otp.open_request(
         parent_id=case.parent_id, case_id=case_id, order_id=order.order_id,

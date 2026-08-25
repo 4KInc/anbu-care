@@ -202,6 +202,37 @@ def _find_booking_page(page) -> str:
     return ""
 
 
+def _open_a_modal(page) -> bool:
+    """Click the thing that reveals a booking form, if the form is behind one.
+
+    Deterministic and bounded to a single click on an element that DECLARES
+    itself a modal trigger. The model is not asked which link to press - that
+    would be a page choosing what this system does, which is the one thing the
+    whole lane is built to prevent.
+
+    The money check still applies. A trigger that says anything about paying is
+    left alone whatever it claims to open.
+    """
+    for selector in ("[data-bs-toggle='modal']", "[data-toggle='modal']"):
+        try:
+            triggers = page.locator(selector).filter(visible=True)
+            if triggers.count() == 0:
+                continue
+            trigger = triggers.first
+            label = ((trigger.inner_text() or "")
+                     or (trigger.get_attribute("value") or "")).strip().lower()
+            if any(w in label for w in NEVER_CLICK):
+                logger.info("not opening a modal labelled %r", label)
+                continue
+            trigger.click(timeout=8_000)
+            page.wait_for_timeout(SETTLE_MS)
+            logger.info("opened a modal from %r", label or selector)
+            return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
 def _cancel_path(page, fallback_phone: str) -> tuple[str, str]:
     """How a person undoes this, captured BEFORE anything is committed.
 
@@ -308,8 +339,47 @@ def _validate(page, proposal: dict) -> tuple[dict, str]:
         raise DriverError("that form has no name or telephone field, so it is "
                           "probably not a booking form")
 
+    # A REQUIRED FIELD WE CANNOT FILL MEANS THIS SUBMISSION WILL FAIL.
+    #
+    # Aarthi Scans' booking modal requires a gender and a pincode. The driver
+    # filled the phone, pressed Save, and the form failed validation - so no
+    # code was ever sent, while a message had already gone to the neighbour
+    # asking her for one. A doomed submission is worse than a refusal: it
+    # bothers a person for nothing and it teaches them to ignore the next ask.
+    missing = _required_but_unfillable(page, fields)
+    if missing:
+        raise DriverError(
+            "this form requires " + ", ".join(missing) + ", which Anbu Care "
+            "does not hold, so submitting it would fail")
+
     submit = _validate_submit(page, proposal.get("submit"))
     return fields, submit
+
+
+def _required_but_unfillable(page, fields: dict) -> list[str]:
+    """Required controls on this page that our field map does not cover.
+
+    Named by whatever the page calls them, so the refusal says which one - a
+    person reading "this form requires pincode" knows immediately why a centre
+    could not be booked, and what would have to change for it to be.
+    """
+    known = {fields.get(name) for name in fields}
+    missing: list[str] = []
+    try:
+        required = page.locator("input[required], select[required], "
+                                "textarea[required]").filter(visible=True)
+        for i in range(min(required.count(), 20)):
+            element = required.nth(i)
+            label = (element.get_attribute("name")
+                     or element.get_attribute("id") or "a field")
+            if label in missing:
+                continue
+            if any(k and label in k for k in known if k):
+                continue
+            missing.append(label)
+    except Exception:  # noqa: BLE001
+        return []
+    return missing
 
 
 def _validate_submit(page, selector) -> str:
@@ -332,6 +402,16 @@ def _validate_submit(page, selector) -> str:
 
     if tag not in {"button", "input", "a"}:
         raise DriverError("the submit control is not a button")
+    try:
+        visible = element.is_visible()
+    except Exception:  # noqa: BLE001
+        visible = False
+    if not visible:
+        # Aarthi Scans keeps its booking form in a modal. The button is in the
+        # DOM from the first byte and cannot be clicked until the modal opens,
+        # and Playwright spent fifteen seconds retrying an invisible element
+        # before giving up. A control nobody can see is not one to click.
+        raise DriverError("the submit control is not visible on this page")
     money = next((w for w in NEVER_CLICK if w in label), "")
     if money:
         raise DriverError(f"that button says {money!r}, and this lane may not spend")
@@ -501,6 +581,11 @@ def _navigate_and_fill(playwright, url: str, payload: dict):
             proposal = _read_form(page)
             fields, submit = _validate(page, proposal)
         except DriverError:
+            if _open_a_modal(page):
+                proposal = _read_form(page)
+                fields, submit = _validate(page, proposal)
+                filled = _fill(page, fields, payload)
+                return browser, context, page, fields, submit, filled
             hop = _find_booking_page(page)
             if not hop:
                 raise
@@ -718,15 +803,34 @@ def _otp_field(page) -> str:
     for selector in ("input[autocomplete='one-time-code']",
                      "input[name*='otp' i]", "input[id*='otp' i]",
                      "input[placeholder*='OTP' i]",
-                     "input[name*='code' i]", "input[id*='code' i]",
-                     "input[placeholder*='code' i]"):
+                     "input[name*='verification' i]",
+                     "input[placeholder*='verification code' i]"):
         try:
             found = page.locator(selector).filter(visible=True)
-            if found.count() >= 1:
+            if found.count() >= 1 and not _false_friend(found.first):
                 return selector
         except Exception:  # noqa: BLE001
             continue
     return ""
+
+
+# Boxes whose name contains "code" and which are emphatically not one-time
+# codes. A bare `name*='code'` match cost a real attempt: Aarthi Scans' booking
+# modal has `name="pincode"`, so the driver parked waiting for somebody to send
+# a code that the site had never been asked to issue.
+_NOT_A_CODE = ("pincode", "pin code", "postcode", "post code", "zip",
+               "areacode", "area code", "country", "std", "isd", "promo",
+               "coupon", "referral", "discount")
+
+
+def _false_friend(element) -> bool:
+    """Whether this box is something else that happens to say "code"."""
+    try:
+        blob = " ".join(str(element.get_attribute(a) or "").lower()
+                        for a in ("name", "id", "placeholder", "aria-label"))
+    except Exception:  # noqa: BLE001
+        return False
+    return any(word in blob for word in _NOT_A_CODE)
 
 
 def _otp_submit(page) -> str:
