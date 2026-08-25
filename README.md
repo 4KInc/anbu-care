@@ -150,13 +150,32 @@ This matters more than any feature list, so it comes first.
   The words are kept **behind the case credential** now. They never were: the
   chain carried a hash and nothing kept the text, so a note was write-only and
   the family could see one had been left without ever reading it. The chain is
-  unchanged and still carries only the hash, because `/verify` is public. The
-  WhatsApp message says an update exists and does not repeat it, because a
-  status update is clinical detail and that is not where it goes.
+  unchanged and still carries only the hash, because `/verify` is public.
 
   And the family reads it in their own language. A Tamil note shows the English
   above and the clinician's own words underneath, labelled as translated from
   them, the same way a Tamil test label does.
+
+  **The message now carries the sentence.** It used to say only that an update
+  existed, on the reasoning that clinical detail has no business on WhatsApp.
+  The reasoning was sound and the result was not: a son eleven time zones away
+  got "an update was left, go and read it" at 4am, which is a notification
+  about a notification — and the sentence is the only part that tells him
+  whether to get on a plane.
+
+  So the words go, under an exception the gate knows **by name** rather than by
+  weakening the rule. `CLINICAL_EXCEPTIONS` is one template wide, and every
+  part of it is load-bearing: the treating team's own words, one direction,
+  about the reader's own parent, on a case they hold a credential for, to a
+  contact who consented to status updates — and **recorded as an exception** on
+  the receipt, so a message carrying clinical detail is never indistinguishable
+  from one that did not. Any other message with the same words is still
+  refused, whatever it declares. The English rendering is what is sent, labelled
+  as rendered rather than spoken.
+
+  This is a real trade and it is worth stating plainly: Meta's healthcare policy
+  and DPDP both restrict health data over WhatsApp, and this crosses that line
+  deliberately, narrowly, and on the record.
 
 - **Clinician notes, typed or spoken.** A voice note is transcribed by Gemini
   and shown back for confirmation; **an unconfirmed transcript writes nothing**.
@@ -190,13 +209,50 @@ This matters more than any feature list, so it comes first.
   wants money on day two, before any insurer has decided anything. The family
   authorises a destination, a per-bill cap, a total cap and a window; after that
   a photographed bill is paid without waking anyone, or it is refused and it
-  says which check stopped it. Eight deterministic guards run in order —
+  says which check stopped it. Nine deterministic guards run in order —
   `mandate_live`, `within_window`, `case_scope`, `not_duplicate`,
-  `per_bill_cap`, `total_cap`, `payee_from_mandate`, `no_anomaly` — and the
-  eighth is a set of named signals rather than a judgement: an amount spike
-  against the running mean, a payee or vendor disagreeing with the mandate,
-  spend velocity, sitting just under a cap, or arriving in the last tenth of
-  the window.
+  `per_bill_cap`, `standing_live`, `total_cap`, `payee_from_mandate`,
+  `no_anomaly` — and the last is a set of named signals rather than a
+  judgement: an amount spike against the running mean, a payee or vendor
+  disagreeing with the mandate, spend velocity, sitting just under a cap, or
+  arriving in the last tenth of the window.
+
+  **The authority is granted before the admission exists.** Scoped to one
+  admission it put the son back in the loop at the exact moment he cannot be in
+  it: a case opens at 3am in Thoothukudi while he is asleep in Nashville, and
+  until he wakes and grants something a bill cannot be paid — the system meant
+  to stand in for him waiting on him. Deciding how much may be spent is his
+  job. Being conscious when an ambulance arrives is not.
+
+  So a **standing** mandate lives on the parent and each case *adopts* it as it
+  opens, writing a `mandate.standing_applied` receipt that says in as many
+  words that nobody authorised anything for this admission. A case whose bills
+  were paid under an authority its own record never mentions would be
+  unauditable.
+
+  One rule makes that safe, and it is the whole of the design: **the total cap
+  is a ceiling across every case the grant covers, not a fresh allowance for
+  each.** Copying the cap onto each new admission turns one signature into as
+  many as there are admissions — INR 400,000 authorised, INR 1,200,000 gone
+  across three, every individual decision looking correct. The enforcer counts
+  spend across all adopting cases, and the burst window is widened the same way
+  for the same reason.
+
+  Two further guards, both about revocation meaning revocation. An adopted copy
+  can outlive the grant it came from, so `standing_live` re-checks the grant on
+  **every** decision — revoke once and admissions already carrying it stop too.
+  And declining it on one admission is recorded, because otherwise the next
+  question re-adopts the grant it was just told to stop. An explicit per-case
+  grant still wins: a narrower, later human act, and the way to cap a single
+  admission without withdrawing the arrangement.
+
+  **The family is told what happened to the money.** The bill message says the
+  payment was sent and "is not confirmed as settled yet" — a promise of a
+  second message, and for a long time there was none: the rail confirmed, a
+  receipt was written, and the person whose money it was found out by opening a
+  dashboard if they thought to. Settled, failed and wrong-amount now each send,
+  from the webhook handler where the news actually arrives. The failure matters
+  most: nobody has to act on money that arrived.
 
   **A bill can never set where money goes.** The destination comes from the
   mandate, always. A UPI ID printed on a bill is read as *evidence* — a bill
@@ -253,6 +309,66 @@ This matters more than any feature list, so it comes first.
 
   The `diagnostic.referral` receipt carries counts, place ids and the source
   label, never the test name, so `/verify` stays public and leaks nothing.
+
+- **The treating team gets a WhatsApp channel, bound by the credential they
+  already hold.** "How does Anbu Care know that is the doctor" has two obvious
+  answers and both are wrong. You cannot register them in advance, because a
+  treating clinician is whoever is on shift when your mother is admitted. And
+  you cannot read it off the message, because "Dr Kumar here, she needs an MRI"
+  is a sentence anybody can say — if that grants ordering rights on a woman's
+  record it grants them to everyone.
+
+  So the answer is the one the handoff link already uses: a **capability**. The
+  care circle shows the doctor a QR at the bedside; he opens it, taps once, and
+  sends a WhatsApp message carrying a one-time code only that link could have
+  produced. The handset is bound by the credential, not by a claim. It is
+  scoped to one case, dies with the grant that made it, is revoked in the same
+  act as the family's links, and the binding is on the chain. What it
+  deliberately does **not** do is identify a human — an order carries "as
+  recorded by", never "verified as".
+
+  After that the doctor just talks. A Tamil voice note becomes an attributed
+  note on the record with the English derived from it, a test order fans out
+  into a live Places search, and `STOP` hands the handset back. On one phone
+  that handback is load-bearing: while it is connected as the treating team a
+  photograph from it is refused with the reason and the way out, because a
+  photo from a handset holding a clinical grant could as easily be a lab report
+  as an invoice, and choosing between those is a guess this system does not
+  make.
+
+- **The neighbour can hand the system a bill; she cannot read the family's
+  money.** Doctors do not photograph bills — the person standing in the
+  corridor holding the paper does. Meena held only `outbound_notify`, so she
+  could be told things and send nothing: her photograph was dropped with a 204
+  and no error anywhere. On a shared handset that was invisible, because the
+  index gets to the parent and `resolve_sender` finds the son on the same
+  number and uses **his** consent. Give her her own phone and the bill lane was
+  dead.
+
+  She holds `inbound_wellbeing` now and deliberately not `billing_updates`. The
+  amount, what was claimable and what was refused go to the son's thread, not
+  hers. Helping is not the same as being entitled to look — and because the
+  sender of a bill is now routinely not the person its outcome is for, the
+  acknowledgement stopped promising everybody that the answer would follow in a
+  moment. She is told he is being told.
+
+- **Links a frightened person will actually tap.** Every URL carries a signed
+  credential, which is what makes it openable without an account and also what
+  made it wrap to four lines on a phone — reading at 4am as exactly the sort of
+  thing you are told never to tap. The credential has to be there; it does not
+  have to be on screen. A twelve-character alias stands in front, minted at the
+  point of sending so every template gets it without being changed, and *after*
+  rendering, because a translator handed a URL will happily rewrite the
+  characters inside a signature.
+
+  It is a bearer token like the URL it hides and is sized for that: sixty bits
+  of randomness and never sequential, since anything enumerable turns one
+  leaked link into all of them; it **inherits the expiry of the token inside
+  it** and may not outlive it; and it only ever wraps this deployment's own base
+  URL, because a shortener that redirects anywhere is an open redirect, and one
+  on a domain people have been told to trust is worth more to an attacker than
+  anything else here. The alphabet drops `0 O 1 l I` — these get read aloud down
+  a phone line between Thoothukudi and Nashville.
 
 - **Sign in with Google, with identity kept apart from permission.** The ID
   token is verified server-side against Google's published keys with the client
@@ -409,7 +525,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 913 tests, no GCP or model access needed
+make test             # 945 tests, no GCP or model access needed
 make demo             # the full spine, end to end, with no model in the loop
 ```
 
@@ -533,10 +649,19 @@ talk their way past the boundary:
    severity. The agent relays it and is instructed never to soften it. "She says
    it's probably just gas" does not downgrade chest pain.
 
-2. **Clinical detail never leaves over WhatsApp.** `anbu_care/comms/policy.py`
-   classifies the *content*, not the caller's claim about it. A message declared
-   as `logistics` that carries a troponin value is blocked anyway — and the block
-   is written to the receipt chain as evidence the boundary held.
+2. **Clinical detail leaves over WhatsApp only where a named exception says
+   so.** `anbu_care/comms/policy.py` classifies the *content*, not the caller's
+   claim about it. A message declared as `logistics` that carries a troponin
+   value is blocked anyway — and the block is written to the receipt chain as
+   evidence the boundary held.
+
+   There is exactly one exception and it is a **frozen set of template names**,
+   not a flag a caller can pass: the treating team's own update, to the family,
+   about their own parent. It is allowed by name, its detection is not
+   suppressed, and the receipt records that an exception was applied and what
+   it found. The distinction worth stealing is that the exception is as
+   auditable as the rule — a message carrying clinical detail is never
+   indistinguishable from one that did not.
 
 3. **A decision cannot be silently rewritten.** Every consequential action
    appends a signed receipt whose hash covers the previous one. Editing an
@@ -555,14 +680,15 @@ anbu_care/
   agents/               five sub-agents, one file each
   tools/                one tool module per agent — isolated scopes
   triage/               severity rules + hospital ranking (deterministic)
-  comms/                WhatsApp message policy (deterministic) + outbound translation
+  comms/                WhatsApp message policy (deterministic), outbound translation, link aliasing
   recovery/             the fortnight after discharge: window, cadence, stop conditions
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
   diagnostics/          live Places search, ranking, and reading an order from dictation
-  payments/             the mandate, the eight guards, the settlement rails
+  payments/             standing and per-case mandates, the nine guards, the settlement rails
   intake.py             photographs kept until they have actually been read
   docvision/            the other four document kinds: classify, extract, apply
   brief/                the arrival brief, composed from receipts and the record
+  handoff/              scoped clinician links, and binding a handset to one case
   webauth.py            credentials: demo token, signed link, Google identity
   provenance/           hash chain, Ed25519 signing, Firestore/memory store
   kb/                   seeded Thoothukudi hospital knowledge base
@@ -577,7 +703,7 @@ scripts/
   backfill_document_details.py  re-read stored photographs into `details`
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
-tests/                  913 tests, no GCP or model access needed
+tests/                  945 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 ```
 
@@ -615,7 +741,9 @@ Beyond ADK's own agent API:
 | `POST /api/cases/{id}/diagnostics/{order_id}/options` | Live Places search near the hospital. Refuses if no clinician ordered anything |
 | `POST /api/cases/{id}/diagnostics/{order_id}/notify` | Tell the family, logistics only, without naming the test |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
-| `POST /api/cases/{id}/payment-mandate` | Authorise automatic payment: destination, per-bill cap, total cap, window |
+| `POST /api/parents/{id}/payment-mandate` | Authorise **standing**, ahead of any admission. Every case opened while it is live adopts it and they share the total cap |
+| `DELETE /api/parents/{id}/payment-mandate` | Withdraw it, including from admissions already carrying it |
+| `POST /api/cases/{id}/payment-mandate` | Authorise for one admission: destination, per-bill cap, total cap, window. Wins over the standing grant |
 | `DELETE /api/cases/{id}/payment-mandate` | Revoke it. Every further bill needs approval |
 | `GET /api/cases/{id}/payments` | What is paid, what is merely initiated, what authority remains, and every refusal with the check that caused it |
 | `POST /api/cases/{id}/bills/{bill_id}/consider` | Put a bill already on file to the guards |
@@ -627,6 +755,7 @@ Beyond ADK's own agent API:
 | `GET /api/parents/{id}/documents/{doc_id}/image` | The same, for a photographed document |
 | `GET /api/auth-config` | Which sign-in methods this deployment offers |
 | `GET /api/whoami` | Who the presented credential says you are. Never 401s |
+| `GET /s/{code}` | Follow a short alias to the link it stands for. Unauthenticated, like the long URL it hides; unknown and expired answer the same **410** |
 | `GET /handoff/{token}` | The clinician's read-only summary. No login, by design |
 | `POST /handoff/{token}/note/draft` | Transcribe a spoken note for review. Writes nothing |
 | `POST /handoff/{token}/note/confirm` | Record a confirmed note |
@@ -837,6 +966,17 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   Model Garden to a dedicated GPU-backed endpoint, billed per hour rather than
   per token. Deferred as infra cost out of proportion to a component that by
   design cannot change any decision.
+- **Voice calls are decided but not placed.** An escalation rings the care
+  circle as well as messaging them, and with no voice transport configured the
+  call is recorded as `voice.not_placed` with the reason and the words it would
+  have spoken. That is the system declining to claim something it did not do,
+  which is the right failure — but it is still a lane that has never carried a
+  call. Wiring a provider is configuration, not design work.
+- **The dashboard grants per-case, the API grants standing.** The mandate form
+  in `webui/index.html` posts to `/api/cases/{id}/payment-mandate`, so granting
+  from the UI narrows authority to that one admission — correct behaviour for
+  that route, and the wrong default now that standing grants exist. The parent
+  route has no control in front of it yet.
 - **Per-analyte reference change values.** A repeat lab reading drifts for
   reasons that are not clinical, so changes inside a flat 10% band are narrated
   as "within normal variation" rather than "new and abnormal" — which is what
