@@ -231,11 +231,19 @@ TEMPLATES: dict[str, dict[str, object]] = {
 
     "booking_done": {
         "message_class": MessageClass.LOGISTICS,
+        # The address sits on its OWN LINES, unbroken by anything else, because
+        # that is what makes a phone offer to open it in maps and what makes it
+        # copyable in one gesture. A postal address folded into a sentence is a
+        # postal address nobody can use.
         "body": "Anbu Care: {parent_name}'s test is requested at {centre}, "
-                "{distance} km away. The centre has not confirmed a time yet.\n"
-                "To change or cancel it, ring {cancel}.\n\n"
+                "{distance} km away. The centre has not confirmed a time yet.\n\n"
+                "{centre}\n"
+                "{address}\n"
+                "{map_line}"
+                "\nTo change or cancel it, ring {cancel}.\n\n"
                 "Nothing was paid.",
-        "params": ["parent_name", "centre", "distance", "cancel"],
+        "params": ["parent_name", "centre", "address", "map_line", "distance",
+                   "cancel"],
     },
 
     "clinician_note_text": {

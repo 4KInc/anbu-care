@@ -337,6 +337,44 @@ def _record(case_id, order, mandate, centre, driver, result, verdict,
             "cancel_phone": result.cancel_phone}
 
 
+def map_link(appointment) -> str:
+    """Google's own link to the place, built from the place id.
+
+    The id came from the Places search this system ran, so the link points at
+    the centre it chose - not at whatever a page claimed to be. Same rule as
+    the cancellation number: the counterparty does not get to say where this
+    goes, even when "where" is a map pin.
+    """
+    if not appointment.place_id:
+        return ""
+    from urllib.parse import quote
+
+    return ("https://www.google.com/maps/search/?api=1"
+            f"&query={quote(appointment.centre_name or 'diagnostic centre')}"
+            f"&query_place_id={appointment.place_id}")
+
+
+def readable(name: str) -> str:
+    """A centre's name as a person would say it.
+
+    Google returns "AARTHI SCANS & LABS | TUTICORIN | DIAGNOSTIC CENTER",
+    which is a database row with pipes in it. Nothing is dropped - a branch
+    name matters when a chain has four in one town - it is just punctuated so
+    somebody can read it aloud.
+    """
+    # Only a SPACED pipe is a separator. "Apollo 24|7" is a brand, and
+    # splitting on every pipe turned it into "Apollo 24, 7" - a made-up name
+    # for a real company, in a message telling somebody where to take their
+    # mother.
+    import re as _re
+
+    parts = [p.strip() for p in _re.split(r"\s+\|\s+", name or "") if p.strip()]
+    if not parts:
+        return name or "the centre"
+    tidy = [p.title() if p.isupper() else p for p in parts]
+    return ", ".join(tidy)
+
+
 def _tell_them_it_is_arranged(appointment) -> None:
     """Say that a booking exists, and how to undo it.
 
@@ -374,7 +412,10 @@ def _tell_them_it_is_arranged(appointment) -> None:
                 to_e164=contact.whatsapp_e164, template_name="booking_done",
                 template_params={
                     "parent_name": first,
-                    "centre": appointment.centre_name,
+                    "centre": readable(appointment.centre_name),
+                    "address": appointment.centre_address or "",
+                    "map_line": (f"On the map: {map_link(appointment)}\n"
+                                 if map_link(appointment) else ""),
                     "distance": f"{appointment.distance_km:.1f}",
                     "cancel": appointment.cancel_phone or appointment.cancel_url
                               or "the centre",

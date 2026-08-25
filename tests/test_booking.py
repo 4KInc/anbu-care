@@ -1166,3 +1166,72 @@ def test_a_reference_without_a_digit_is_not_a_reference():
     assert driver._slot_from("Your booking") == ""
     assert "AB12345" in driver._slot_from("Booking No: AB12345")
     assert "998877" in driver._slot_from("Reference #998877")
+
+
+# =========================================================================
+# A MESSAGE SOMEBODY CAN ACTUALLY GET TO THE PLACE WITH
+# =========================================================================
+
+
+def test_the_centre_name_reads_like_a_name(case):
+    """Google returns "AARTHI SCANS & LABS | TUTICORIN | DIAGNOSTIC CENTER",
+    which is a database row with pipes in it."""
+    assert run.readable("AARTHI SCANS & LABS | TUTICORIN | DIAGNOSTIC CENTER") \
+        == "Aarthi Scans & Labs, Tuticorin, Diagnostic Center"
+    assert run.readable("") == "the centre"
+    # nothing is dropped: a branch matters when a chain has four in one town
+    assert "Tuticorin" in run.readable("AARTHI | TUTICORIN")
+
+
+def test_a_pipe_inside_a_brand_is_not_a_separator():
+    """Splitting on every pipe turned "Apollo 24|7" into "Apollo 24, 7" - a
+    made-up name for a real company, in a message telling somebody where to
+    take their mother."""
+    assert run.readable("Apollo 24|7 Lab Test | Eral | Thoothukudi") \
+        == "Apollo 24|7 Lab Test, Eral, Thoothukudi"
+
+
+def test_the_map_link_points_at_the_place_google_named(case):
+    """The id came from the search this system ran, so the pin is the centre it
+    chose - not whatever a page claimed to be."""
+    from anbu_care.schemas import Appointment
+
+    parent_id, case_id = case
+    appt = Appointment(appointment_id="a", case_id=case_id, parent_id=parent_id,
+                       order_id="o", status="requested",
+                       place_id="ChIJpS-F-MPvAzsRAYdm2Uf2K3k",
+                       centre_name="AARTHI SCANS & LABS")
+    link = run.map_link(appt)
+    assert link.startswith("https://www.google.com/maps/search/?api=1")
+    assert "query_place_id=ChIJpS-F-MPvAzsRAYdm2Uf2K3k" in link
+
+    appt.place_id = ""
+    assert run.map_link(appt) == "", "a link was invented with no place id"
+
+
+def test_the_address_sits_on_its_own_line(case):
+    """A postal address folded into a sentence is one nobody can tap or copy."""
+    from anbu_care.comms import policy
+
+    body = policy.TEMPLATES["booking_done"]["body"]
+    lines = [ln.strip() for ln in body.splitlines()]
+    assert "{address}" in lines, "the address is buried in a sentence"
+    assert lines.index("{address}") == lines.index("{centre}", 1) + 1
+
+
+def test_a_map_link_is_shortened_but_a_stranger_is_not(monkeypatch):
+    """One external destination is worth hiding behind an alias. The allowlist
+    is a literal in that file and never anything a caller passes."""
+    from anbu_care.comms import shortlinks
+
+    monkeypatch.setenv("ANBU_PUBLIC_BASE_URL", "https://anbu.example.run.app")
+    maps = ("https://www.google.com/maps/search/?api=1&query=AARTHI+SCANS"
+            "&query_place_id=ChIJpS-F-MPvAzsRAYdm2Uf2K3k")
+    short = shortlinks.shorten(maps)
+    assert short.startswith("https://anbu.example.run.app/s/")
+    assert shortlinks.resolve(short.rsplit("/", 1)[-1]) == maps
+
+    for hostile in ("https://www.google.com.evil.example/maps/" + "x" * 90,
+                    "https://maps.google.com/" + "y" * 90,
+                    "https://evil.example/maps/" + "z" * 90):
+        assert shortlinks.shorten(hostile) == hostile

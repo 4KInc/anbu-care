@@ -21,10 +21,13 @@ sized for that:
                 outlive it. A short link that still worked after the token
                 inside it died would be a credential nobody knew they still
                 held.
-  OURS ONLY     it only ever wraps this deployment's own base URL. A shortener
+  OURS ONLY     it wraps this deployment's own base URL, plus a hard-coded
+                allowlist of one: a Google Maps link to a place id. A shortener
                 that will redirect anywhere is an open redirect, and an open
                 redirect on a domain people have been told to trust is worth
-                more to an attacker than anything else here.
+                more to an attacker than anything else here - so the allowlist
+                is a literal in this file, never anything a caller passes, and
+                the only URLs ever stored are ones this system built itself.
   NO CONTENT    the stored row is a URL and an expiry. Nothing about her.
 
 The alphabet omits 0/O/1/l/I. These get read aloud down a phone line between
@@ -56,6 +59,11 @@ _PK = "SHORTLINK"
 # Trailing punctuation belongs to the sentence, not the URL.
 _URL = re.compile(r"https?://[^\s<>\"]+")
 
+# The one external destination worth hiding behind an alias: a map link carries
+# a place id and a url-encoded name and runs well past a hundred characters,
+# which is the wall of text this module exists to remove.
+ALLOWED_EXTERNAL = ("https://www.google.com/maps/",)
+
 
 def _base() -> str:
     return os.getenv("ANBU_PUBLIC_BASE_URL", "").rstrip("/")
@@ -72,7 +80,10 @@ def shorten(url: str, expires_at: int | None = None) -> str:
     link: the family would get nothing rather than something ugly.
     """
     base = _base()
-    if not base or not url.startswith(base + "/"):
+    ours = bool(base) and url.startswith(base + "/")
+    if not ours and not url.startswith(ALLOWED_EXTERNAL):
+        return url
+    if not base:
         return url
     if len(url) < WORTH_SHORTENING:
         return url
