@@ -184,17 +184,29 @@ def _find_booking_page(page) -> str:
 def _cancel_path(page, fallback_phone: str) -> tuple[str, str]:
     """How a person undoes this, captured BEFORE anything is committed.
 
-    A tel: link on the page first, then the number Google holds for the centre.
-    The guard upstream refuses to book without one of these, so this is the
-    function that decides whether most centres are bookable at all.
+    GOOGLE'S NUMBER FIRST, and a tel: link on the page only if there is none.
+    This was the other way round and it produced a real wrong answer on the
+    first live booking: DLABS was reached and the cancellation number captured
+    was +91 8590992702, scraped off the page, while the number Google holds for
+    that business is +91 88707 20883. A tel: link can belong to a chat vendor, a
+    different branch, or a franchise desk.
+
+    It is the same rule as everywhere else in this lane. The page is data
+    written by somebody else; it does not get to choose where she goes and it
+    does not get to decide who she rings to undo it.
+
+    The guard upstream refuses to book without one of these, so this function is
+    also what decides whether most centres are bookable at all.
     """
-    url = phone = ""
-    try:
-        tel = page.locator("a[href^='tel:']").first
-        if tel.count():
-            phone = (tel.get_attribute("href") or "").replace("tel:", "").strip()
-    except Exception:  # noqa: BLE001
-        pass
+    url = ""
+    phone = (fallback_phone or "").strip()
+    if not phone:
+        try:
+            tel = page.locator("a[href^='tel:']").first
+            if tel.count():
+                phone = (tel.get_attribute("href") or "").replace("tel:", "").strip()
+        except Exception:  # noqa: BLE001
+            pass
     for word in ("cancel", "reschedule"):
         try:
             link = page.locator(f"a:has-text('{word}')").first
@@ -205,7 +217,7 @@ def _cancel_path(page, fallback_phone: str) -> tuple[str, str]:
                     break
         except Exception:  # noqa: BLE001
             continue
-    return url, (phone or fallback_phone or "")
+    return url, phone
 
 
 # ----------------------------------------------------------------- model ----
