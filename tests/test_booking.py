@@ -1428,3 +1428,64 @@ def test_a_spoken_order_books_as_well_as_a_typed_one(case, monkeypatch):
     told_at = source.rindex("_tell_about_order")
     assert booked_at < told_at, \
         "it sends an options list before it knows whether it booked"
+
+
+# =========================================================================
+# THE TIMELINE IS READ BY A FAMILY, NOT BY AN OPERATOR
+# =========================================================================
+
+
+def test_every_receipt_kind_has_a_sentence():
+    """The timeline fell back to printing the raw kind, so a family read
+    "voice.not_placed" and "booking.standing_applied" - a database name where a
+    sentence should be. A kind with no sentence is a bug, not something to
+    print at somebody."""
+    import pathlib
+    import re
+
+    page = pathlib.Path("anbu_care/webui/index.html").read_text()
+    described = set(re.findall(r'case "([a-z_]+\.[a-z_]+)":', page))
+
+    emitted = set()
+    for path in pathlib.Path("anbu_care").rglob("*.py"):
+        emitted |= set(re.findall(r'kind="([a-z_]+\.[a-z_]+)"', path.read_text()))
+    # written as f"booking.{outcome}" where outcome is requested or confirmed
+    emitted |= {"booking.requested", "booking.confirmed"}
+
+    missing = sorted(emitted - described)
+    assert not missing, f"these would print their database name: {missing}"
+
+
+def test_the_timeline_never_prints_a_raw_kind_as_the_sentence():
+    import pathlib
+
+    page = pathlib.Path("anbu_care/webui/index.html").read_text()
+    body = page[page.index("function describe(r){"):]
+    body = body[:body.index("\n}\n")]
+    assert "default: return r.kind" not in body, \
+        "an unknown kind is shown to a family as its database name"
+    assert "Something was recorded on this case." in body
+
+
+def test_the_transport_caveat_is_said_once_not_on_every_line():
+    """Eighteen words of transport caveat, repeated nine times down one screen,
+    never once saying what was sent."""
+    import pathlib
+
+    page = pathlib.Path("anbu_care/webui/index.html").read_text()
+    assert page.count("acceptance, not a handset receipt") <= 1
+    assert "Said once here rather than" in page
+
+
+def test_a_sent_message_says_what_it_was_about():
+    import pathlib
+    import re
+
+    page = pathlib.Path("anbu_care/webui/index.html").read_text()
+    block = page[page.index("const SENT = {"):]
+    block = block[:block.index("};")]
+    named = set(re.findall(r"^\s*([a-z_]+):", block, re.M))
+    for template in ("urgent_family_alert", "clinician_handoff_link",
+                     "booking_done", "booking_code_needed", "bill_recorded",
+                     "payment_settled", "clinician_note_text"):
+        assert template in named, f"{template} has no plain-English line"

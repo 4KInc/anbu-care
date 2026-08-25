@@ -442,35 +442,116 @@ function hospitalName(t){
   const h=(t.payload.ranked||[]).find(x=>x.hospital_id===id);
   return h?h.name:(id||"not known");
 }
+// What each message was ABOUT, rather than how it travelled.
+//
+// Every comms.sent line read "Family message accepted by WhatsApp for delivery
+// (sandbox, real delivery to opted-in test numbers; acceptance, not handset
+// receipt)" - eighteen words of transport caveat, repeated nine times down one
+// screen, never once saying what was sent. The caveat is true and it belongs
+// once, under the timeline, not on every row.
+const SENT = {
+  urgent_family_alert: "The family was told, urgently, what she reported and where she is being sent.",
+  care_circle_notice: "The care circle was told where she was taken.",
+  care_circle_unclear: "The care circle was told a message arrived that could not be made out.",
+  clinician_handoff_link: "A write-scoped link and a QR went to the people who are with her, for the treating team.",
+  clinician_note_left: "The family was told the treating team had left an update.",
+  clinician_note_text: "The treating team's update was sent to the family, in their language.",
+  diagnostic_options_ready: "The family was told where the ordered test can be done.",
+  diagnostic_options_none: "The family was told nowhere nearby could be found for the ordered test.",
+  booking_code_needed: "The person with her was asked for the one-time code the centre had just texted.",
+  booking_done: "The family was told the appointment, with the address and the number to cancel.",
+  bill_recorded: "The family was told what the bill says and what it changes.",
+  payment_settled: "The family was told the payment settled.",
+  payment_failed: "The family was told the payment did NOT go through.",
+  payment_amount_mismatch: "The family was told the rail reported a different amount.",
+  payment_auto_initiated: "The family was told a bill had been paid inside the limits they set.",
+  payment_escalated: "The family was told a bill was refused and needs them.",
+  recovery_check_in: "A recovery check-in went to her, in her language.",
+  status_update: "A status update went to the family.",
+  admission_alert: "The family was told she had been admitted.",
+  claim_stage: "The family was told the claim had moved.",
+  billing_summary: "The family was told what the stay has come to.",
+  doctor_assigned: "The family was told who is looking after her.",
+  document_recorded: "The family was told a document had been read onto her record.",
+};
+
 function describe(r){
   const p=r.payload||{};
+  const n=(x)=>Number(x||0).toLocaleString("en-IN");
   switch(r.kind){
     case "case.opened": return "Case opened.";
     case "intake.signal_received": return "Intake signal received from an external channel.";
     case "triage.decision": return `Triage assessed severity ${p.severity}.`;
-    case "comms.sent": return "Family message accepted by WhatsApp for delivery (sandbox, real delivery to opted-in test numbers; acceptance, not handset receipt)."
+
+    case "comms.sent": return (SENT[p.template_name] || "A message went to the family.")
       + (p.translated ? ` Sent in ${p.rendered_language==="ta"?"Tamil":p.rendered_language}, translated from the recorded ${p.translated_from}.` : "");
+    case "comms.not_delivered": return "Message permitted by the gate, but no transport was configured, so nothing was sent.";
+    case "comms.blocked": return "Message blocked before sending. Clinical detail may not go over WhatsApp.";
+
+    case "voice.placed": return "A call was placed. Whether anybody answered is not known here.";
+    case "voice.not_placed": return "No call was placed: no voice transport is configured. The message that went with it is real; the call is not.";
+
     case "recovery.window_opened": return `Recovery check-ins began. ${p.days} days from ${p.starts_on}, counted from `
       + (p.starts_on_source==="document" ? "the discharge date on the document." : "when the document was recorded. No discharge date could be read, and none was inferred.");
     case "recovery.prompt_sent": return `Recovery check-in sent, day ${p.day} of ${p.of_days}. It asks how she is; it gives no advice and names no medicine.`;
     case "recovery.prompt_not_delivered": return `Recovery check-in for day ${p.day} was permitted but no transport accepted it, so nothing reached her.`;
     case "recovery.stopped": return `Recovery check-ins stopped: ${p.reason}. ${p.detail||""}`;
+
     case "wellbeing.recorded": return p.phase==="recovery"
       ? "Recovery check-in recorded. Self-reported, not a clinical assessment."
       : "Check-in recorded. Self-reported, not a clinical assessment.";
+    case "wellbeing.unclear": return "A message arrived that could not be made out. Nothing was guessed at.";
     case "wellbeing.escalated": return (p.phase==="recovery"
       ? "A recovery check-in answer matched the deterministic severity table"
       : "A check-in matched the deterministic severity table")
       + ` at ${p.severity}. That is a routing decision, not a clinical assessment.`;
-    case "comms.not_delivered": return "Message permitted by the gate, but no transport was configured, so nothing was sent.";
-    case "comms.blocked": return "Message blocked before sending. Clinical detail may not go over WhatsApp.";
+
+    case "emergency.access": return "Somebody holding the shared link opened her summary. Anbu Care cannot verify who they are and does not claim to.";
+    case "clinician.channel_bound": return "A handset connected itself as the treating team, by holding a link the family issued. That proves the credential, not the person.";
+    case "clinician.channel_ended": return "That handset disconnected. Nothing further from it is recorded against this case.";
+    case "clinician.note": return "The treating team left an update. The words are kept behind the credential; only their hash is on this chain.";
+
+    case "diagnostic.referral": return `${n(p.option_count)} place${p.option_count===1?"":"s"} the ordered test could be done were found. None of them was contacted.`;
+
+    case "document.ingested": return "A photographed document was read onto her record.";
+    case "bill.ingested": return "A bill was photographed and read.";
+
+    case "mandate.standing_granted": return `The family authorised automatic payment ahead of any admission: at most INR ${n(p.per_bill_cap_inr)} a bill, INR ${n(p.total_cap_inr)} in total.`;
+    case "mandate.standing_applied": return "NOBODY AUTHORISED ANYTHING FOR THIS ADMISSION. The standing payment authority granted earlier was applied to it, and the total is shared with every other admission it covers.";
+    case "mandate.standing_revoked": return "Standing payment authority withdrawn. Admissions already carrying it stop paying automatically too.";
+    case "mandate.granted": return `The family authorised automatic payment on this admission: at most INR ${n(p.per_bill_cap_inr)} a bill, INR ${n(p.total_cap_inr)} in total.`;
+    case "mandate.revoked": return "Automatic payment stopped. Every further bill escalates for explicit approval.";
+
+    case "payment.auto_initiated": return `INR ${n(p.amount_inr)} sent automatically, inside the limits the family set. Not settled until the rail says so.`;
+    case "payment.confirmed": return `The rail confirmed INR ${n(p.amount_inr)} settled. This receipt is never written by the code that initiates a payment.`;
+    case "payment.failed": return `INR ${n(p.amount_inr)} did NOT go through. Nothing was retried automatically.`;
+    case "payment.partial": return `The rail reported INR ${n(p.received_inr)} against a bill for INR ${n(p.expected_inr)}. That is not a settlement.`;
+    case "payment.escalated": return `A payment was refused by the ${p.failed_check||"guards"} check and needs a person. ${p.reason||""}`;
+
+    case "booking.standing_granted": return `The family authorised Anbu Care to hold an appointment: within ${p.max_distance_km} km, ${p.max_attempts} centres tried at most. No authority to spend.`;
+    case "booking.standing_applied": return "NOBODY AUTHORISED ANYTHING FOR THIS ADMISSION. The standing booking authority granted earlier was applied to it. It still carries no authority to spend.";
+    case "booking.standing_revoked": return "Booking authority withdrawn. A test a clinician orders is surfaced for a person to arrange.";
+    case "booking.revoked": return "Booking stopped for this admission. Options are still surfaced; nothing is arranged.";
+    case "booking.attempted": return "An attempt to hold an appointment started. Recorded before it ran, so a crash cannot hide it and a retry cannot double-book.";
+    case "booking.requested": return `An appointment was REQUESTED and the centre has not confirmed it. ${n(p.attempts_before_this)} other centre${p.attempts_before_this===1?"":"s"} were tried first.`;
+    case "booking.confirmed": return "The centre confirmed the appointment. Anbu Care did not decide she needs this test and did not pay for it.";
+    case "booking.escalated": return `Nothing could be arranged after ${n(p.attempt_count)} centre${p.attempt_count===1?"":"s"}. A person needs to ring, and each one is listed with what stopped it.`;
+    case "booking.cancelled": return "The appointment was withdrawn on this record. The centre is told by whoever rings them; Anbu Care has not contacted them.";
+    case "booking.otp_requested": return "The centre texted a one-time code to a phone, and the person with her was asked for it. The code itself is never recorded.";
+    case "booking.otp_closed": return `The code request was closed (${p.outcome||"done"}) and cannot be answered again.`;
+
     case "claim.packet_assembled": return "Claim packet assembled.";
     case "evidence.assessed": return `Evidence assessed: ${p.gate}.`;
     case "evidence.enriched": return "Evidence enriched before submission.";
     case "claim.submitted": return "Claim submitted to the SIMULATED insurer endpoint.";
     case "claim.adjudicated": return `SIMULATED adjudication returned ${p.outcome}.`;
+    case "claim.query_answered": return "A counterparty query was answered.";
     case "claim.stage_changed": return `Claim stage moved ${p.from} → ${p.to}.`;
-    default: return r.kind;
+
+    // A kind with no sentence yet is a bug, not a thing to print raw at a
+    // family. Say what little is honestly known and keep the name for the
+    // provenance line underneath, where an identifier belongs.
+    default: return "Something was recorded on this case.";
   }
 }
 const inr = n => "₹" + Number(n).toLocaleString("en-IN");
@@ -528,16 +609,26 @@ function vNow(){
     <div class="tl">
       ${(S.trail.receipts||[]).map(r=>{
         const alert=r.kind==="comms.blocked";
+        // The TIME, then the sentence, then the provenance. An identifier is
+        // not the headline of an entry a family reads; it is what they can
+        // check the headline against, and it belongs underneath in the quiet.
         return `<div class="ev ${alert?"alert":"on"}">
-          <div class="t">${esc(new Date(r.created_at).toLocaleString())}</div>
+          <div class="t">${esc(new Date(r.created_at).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}))}
+            <span class="mute" style="font-weight:500">${esc(new Date(r.created_at).toLocaleDateString())}</span></div>
           <div class="d">${esc(describe(r))}</div>
-          <div class="a">${esc(r.actor)} · seq ${r.seq} <span class="hash">${esc(r.hash)}</span></div>
+          <div class="a">${esc(String(r.kind))} · ${esc(r.actor)} · seq ${r.seq}
+            <span class="hash">${esc(r.hash)}</span></div>
         </div>`;}).join("")}
     </div>
     <div class="pills" style="margin-top:14px">
       <span class="pill ${S.trail.verified?"p-teal":"p-red"}">chain ${S.trail.verified?"verified ✓":"BROKEN"}</span>
       <span class="pill p-slate">${(S.trail.receipts||[]).length} receipts</span>
     </div>
+    <p class="mute" style="margin-top:12px;font-size:13px">
+      A message recorded as sent was accepted by WhatsApp for delivery. That is
+      acceptance, not a handset receipt, and this deployment sends through a
+      sandbox that only reaches opted-in numbers. Said once here rather than on
+      every line it applies to.</p>
   </div>`;
 }
 
