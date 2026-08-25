@@ -29,3 +29,7 @@ verify-stack:  ## Confirm Vertex, Firestore, and the model are actually reachabl
 
 deploy:  ## Deploy to Cloud Run
 	./infra/deploy_cloud_run.sh
+
+preflight:  ## Check the state that silently ruins a recording (add FIX=1 to clear what is safe)
+	@ANBU_URL=$${ANBU_URL:-https://anbu-care-37j4eofpwq-el.a.run.app} \
+	 ./.venv/bin/python scripts/preflight.py $(if $(FIX),--fix,)

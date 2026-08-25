@@ -1436,6 +1436,159 @@ def follow_shortlink(code: str) -> Response:
     return RedirectResponse(target, status_code=302)
 
 
+# The canonical pair a judge is invited to re-verify from the video. Named
+# here because the pre-flight has to check the SAME two every time - a check
+# that reads whichever cases happen to exist is a check that passes on an
+# empty database.
+CANONICAL_VALID = "case-da1c2cb6db"
+CANONICAL_TAMPERED = "case-a7cf9fa613"
+
+
+@app.get("/api/preflight")
+def preflight(_session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Everything that has silently ruined a take, checked in one round trip.
+
+    This exists because of one failure mode this system produces repeatedly:
+    correct code turned into a no-op by DATA, with nothing visibly broken. None
+    of these throw. No error, no failed request, no red log - the system simply
+    does nothing, and a recording is one continuous take in which the only
+    symptom is an absence nobody can see.
+
+    Gathered SERVER-SIDE deliberately. Every one of these is a Firestore read
+    that costs a millisecond here and a round trip from a laptop, and a
+    pre-flight nobody runs because it takes a minute is worse than none.
+
+    READ ONLY. A check that repairs what it is checking cannot be trusted to
+    report on it; the script that calls this fixes things, and only when asked.
+    """
+    import os
+
+    from anbu_care.booking import mandate as booking_mandate
+    from anbu_care.booking import otp as booking_otp
+    from anbu_care.care_circle import notify as care_notify
+    from anbu_care.comms import consent as consent_purposes
+    from anbu_care.comms.inbound import WELLBEING_PURPOSE
+    from anbu_care.handoff import channel as clinician_channel
+    from anbu_care.payments import live_standing_for
+
+    checks: list[dict[str, Any]] = []
+
+    def check(name: str, ok: bool, detail: str, fatal: bool = True) -> None:
+        checks.append({"name": name, "ok": bool(ok), "detail": detail,
+                       "fatal": fatal})
+
+    check("signing key", not load_signer().ephemeral,
+          "an ephemeral key means every receipt written before the last "
+          "restart no longer verifies")
+
+    # The two cases the video points at. receipt_count, NOT just `verified`:
+    # a DELETED case answers 200 with verified true and zero receipts, because
+    # an empty chain is a valid chain - so the tampered one silently stops
+    # being tampered and the beat that proves detection proves nothing.
+    for case_id, want_verified, want_count in (
+            (CANONICAL_VALID, True, 8), (CANONICAL_TAMPERED, False, 2)):
+        result = provenance_tools.verify_case_chain(case_id)
+        count = int(result.get("receipt_count") or 0)
+        check(f"canonical {case_id}",
+              result.get("verified") is want_verified and count == want_count,
+              f"verified={result.get('verified')} receipts={count}, "
+              f"expected verified={want_verified} receipts={want_count}")
+
+    handset = os.getenv("ANBU_DEMO_CIRCLE_E164", "")
+    if not handset:
+        check("demo handset", False,
+              "ANBU_DEMO_CIRCLE_E164 is not set, so nothing else can be checked")
+        return {"ok": False, "checks": checks}
+
+    sender = inbound.resolve_sender(handset)
+    check("inbound resolves", sender is not None,
+          f"{handset} -> {sender.source if sender else 'DROPPED'}"
+          + (f" on {sender.parent_id}" if sender else ""))
+    if sender is None:
+        return {"ok": False, "checks": checks}
+
+    parent_id = sender.parent_id
+    profile = service.load_profile(parent_id)
+    check("parent on file", profile is not None, f"{parent_id}")
+    if profile is None:
+        return {"ok": False, "checks": checks}
+
+    circle = care_notify.care_circle(parent_id)
+    check("care circle", len(circle) >= 2,
+          ", ".join(f"{c.name} ({getattr(c, 'role', '') or 'family'})"
+                    for c in circle) or "nobody")
+
+    neighbour = next((c for c in profile.family_contacts
+                      if getattr(c, "role", "") == "care_circle"), None)
+    check("care circle can send in", bool(neighbour)
+          and WELLBEING_PURPOSE in neighbour.consents,
+          f"{neighbour.name if neighbour else 'nobody'} may photograph a bill")
+    check("care circle cannot read the money", bool(neighbour)
+          and "billing_updates" not in neighbour.consents,
+          "helping is not being entitled to look", fatal=False)
+
+    bound = clinician_channel.for_number(service.number_key(handset))
+    check("handset not bound as clinician", bound is None,
+          f"bound to {bound.case_id}" if bound else "free")
+
+    pending = booking_otp.live_for(parent_id)
+    check("no code request outstanding", pending is None,
+          f"{pending.request_id} would eat any digits sent" if pending else "none")
+
+    money = live_standing_for(parent_id)
+    check("payment authority", money is not None,
+          f"{money.mandate_id}: INR {group(money.per_bill_cap_inr)}/bill, "
+          f"INR {group(money.total_cap_inr)} total" if money else "none granted")
+
+    booking = booking_mandate.live_standing_for(parent_id)
+    check("booking authority", booking is not None,
+          f"{booking.mandate_id}: {booking.max_distance_km:.0f} km, "
+          f"{booking.prefer}, {booking.max_attempts} attempts"
+          if booking else "none granted", fatal=False)
+
+    check("she agreed to be given out", consent_purposes.BOOKING_DISCLOSURE
+          in (profile.disclosure_consents or {}),
+          "booking_disclosure", fatal=False)
+    check("booking details", bool(profile.gender),
+          f"gender={profile.gender or 'unset'} pincode={profile.pincode or 'unset'}",
+          fatal=False)
+
+    dry, why = _booker_state()
+    check("booker is dry", dry is True, why, fatal=False)
+
+    return {"ok": all(c["ok"] for c in checks if c["fatal"]), "checks": checks}
+
+
+def _booker_state() -> tuple[bool | None, str]:
+    """Whether the browser service would submit for real, and how we know.
+
+    Asked of the BOOKER rather than of a deploy flag, because the flag is reset
+    by every deploy of that service and the only truth is what the container is
+    actually running.
+
+    Three states, kept apart on purpose. "Dry", "would reach a real clinic" and
+    "could not be asked" are different facts, and reporting the third as the
+    second is the pre-flight doing the thing it exists to prevent: stating
+    something it does not know.
+    """
+    import os
+
+    base = os.getenv("ANBU_BOOKER_URL", "").rstrip("/")
+    if not base:
+        return True, "no booker is wired, so nothing can be submitted anywhere"
+    from anbu_care.booking.web import WebChannel
+
+    body = WebChannel()._call("/state", {}, 8)
+    if body is None:
+        return None, ("the booker did not answer, so whether a booking would "
+                      "reach a real clinic is unknown")
+
+    if body.get("dry_run"):
+        return True, "forms are filled and never submitted"
+    return False, ("LIVE - a booking during the take would reach a real clinic "
+                   "and need cancelling")
+
+
 @app.get("/api/cases/{case_id}/verify")
 def case_verify(case_id: str) -> dict[str, Any]:
     """Independently verify a case's chain.

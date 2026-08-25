@@ -42,6 +42,19 @@ def healthz() -> dict:
 # an async endpoint here failed every attempt with "you are using Playwright
 # Sync API inside the asyncio loop". A plain def is run by FastAPI in a
 # threadpool, which is where a blocking browser belongs anyway.
+@app.post("/state")
+def state(body: dict = Body(default_factory=dict)) -> dict:
+    """The same answer as /healthz, over the door the caller already uses.
+
+    The API reaches /prepare and /commit with a Google-signed identity token
+    and they work; a GET to /healthz from the same service answered 404, which
+    is Cloud Run's way of refusing an unauthorised caller without admitting the
+    service exists. Rather than keep two auth paths and debug the one nobody
+    depends on, the pre-flight asks the way the booking lane asks.
+    """
+    return healthz()
+
+
 @app.post("/prepare")
 def prepare(body: dict = Body(default_factory=dict)) -> dict:
     url = str(body.get("url") or "")
