@@ -459,7 +459,8 @@ def test_a_message_opens_on_the_tab_it_is_about():
     """
     ON_CLAIM = {"bill_recorded", "bill_unreadable", "bill_already_recorded",
                 "bill_already_recorded_retake",
-                "payment_auto_initiated", "payment_escalated"}
+                "payment_auto_initiated", "payment_escalated",
+                "payment_settled", "payment_failed", "payment_amount_mismatch"}
     ON_RECORD = {"document_recorded", "document_recorded_withheld",
                  "document_unreadable", "document_already_recorded",
                  "diagnostic_options_ready", "diagnostic_options_none",

@@ -1489,3 +1489,76 @@ def test_a_sent_message_says_what_it_was_about():
                      "booking_done", "booking_code_needed", "bill_recorded",
                      "payment_settled", "clinician_note_text"):
         assert template in named, f"{template} has no plain-English line"
+
+
+def test_a_shared_handset_gets_one_booking_message_not_two(case, monkeypatch):
+    """Two people are told for two reasons and on a shared phone that arrived
+    as the same message twice, a minute apart, with two different short links
+    to the same map pin.
+
+    Deduping by NAME was the bug: they are different names. A person is a name;
+    a place a message lands is a number.
+    """
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    shared = "+16692167706"
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164=shared, timezone_name="America/Chicago", is_primary=True,
+        role="family", consent_purposes=["outbound_notify", "status_updates"])
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Meena", relationship="neighbour",
+        whatsapp_e164=shared, timezone_name="Asia/Kolkata", is_primary=False,
+        role="care_circle", consent_purposes=["outbound_notify", "inbound_wellbeing"])
+
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    _drive(monkeypatch, Landing(cancel_phone="+917550075500"))
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+
+    done = [k for k in sent if k["template_name"] == "booking_done"]
+    assert len(done) == 1, f"one handset got {len(done)} identical messages"
+
+
+def test_two_handsets_still_both_get_told(case, monkeypatch):
+    """Deduping must not silence the person who is actually with her."""
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, role="family",
+        consent_purposes=["outbound_notify", "status_updates"])
+    _with_a_neighbour(parent_id)          # her own +919000055555
+
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+    _drive(monkeypatch, Landing(cancel_phone="+917550075500"))
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    done = [k for k in sent if k["template_name"] == "booking_done"]
+    assert {k["to_e164"] for k in done} == {"+16692167706", "+919000055555"}
+
+
+def test_a_message_that_names_a_page_opens_that_page():
+    """It said "the receipt for it" and linked to the default view, which is
+    the case timeline - so the sentence named a page that does not exist and
+    the link went somewhere else again."""
+    from anbu_care.comms import policy
+
+    settled = policy.TEMPLATES["payment_settled"]
+    assert settled["view"] == "claim"
+    assert "receipt for it" not in settled["body"]
+    assert "The money on her record" in settled["body"]
+
+    for name in ("payment_failed", "payment_amount_mismatch"):
+        assert policy.TEMPLATES[name]["view"] == "claim"

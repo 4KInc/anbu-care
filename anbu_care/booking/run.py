@@ -412,15 +412,29 @@ def _tell_them_it_is_arranged(appointment) -> None:
     primary = next((c for c in (profile.family_contacts if profile else [])
                     if c.is_primary), None)
 
+    # ONE MESSAGE PER HANDSET, not per person.
+    #
+    # Two people are told for two reasons - the one who is with her needs the
+    # address, the son needs to know it happened - and on a shared phone that
+    # arrived as the same message twice, a minute apart, with two different
+    # short links to the same map pin.
+    #
+    # Deduping by NAME was the bug: they are different names. It is the same
+    # lesson the handoff link learned in the opposite direction, where skipping
+    # by number silenced a neighbour who shared the son's phone. A person is a
+    # name; a place a message lands is a number.
     told: set[str] = set()
     for contact, purpose in (
             (next((c for c in circle
                    if getattr(c, "role", "") == "care_circle"), None),
              consent.OUTBOUND_NOTIFY),
             (primary, consent.STATUS_UPDATES)):
-        if contact is None or contact.name in told:
+        if contact is None:
             continue
-        told.add(contact.name)
+        handset = service.number_key(contact.whatsapp_e164)
+        if handset in told:
+            continue
+        told.add(handset)
         try:
             whatsapp_tools.send_family_update(
                 case_id=appointment.case_id, parent_id=appointment.parent_id,

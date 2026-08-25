@@ -86,10 +86,15 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # The rail confirmed, a receipt was written, and the person whose money
         # it was heard nothing.
         "message_class": MessageClass.BILLING,
+        # Opens the CLAIM tab, where the payment actually appears. It said
+        # "the receipt for it" and linked to the default view, which is the
+        # case timeline - so the sentence named a page that does not exist and
+        # the link went somewhere else again.
+        "view": "claim",
         "body": "Anbu Care: the INR {amount} for {parent_name}'s bill has been "
                 "confirmed as settled by {payee_label}.\n"
                 "This is the rail confirming it, not Anbu Care assuming it.\n\n"
-                "The receipt for it: {dashboard_url}",
+                "The money on her record: {dashboard_url}",
         "params": ["amount", "parent_name", "payee_label"],
     },
     "payment_failed": {
@@ -100,6 +105,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "through. The hospital has not been paid.\n"
                 "Nothing was retried automatically. This one needs you.\n\n"
                 "The bill and what happened: {dashboard_url}",
+        "view": "claim",
         "params": ["amount", "parent_name"],
     },
     "payment_amount_mismatch": {
@@ -109,6 +115,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "settlement and nothing has been marked paid.\n"
                 "This needs a person to look at it.\n\n"
                 "The bill: {dashboard_url}",
+        "view": "claim",
         "params": ["received", "expected", "parent_name"],
     },
     "bill_recorded": {
