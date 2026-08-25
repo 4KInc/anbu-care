@@ -945,3 +945,70 @@ def test_a_delivered_code_leaves_the_request_open_for_the_lane_to_close(case, mo
 
     assert "finishing the booking" in said
     assert otp.live_for(parent_id) is not None, "closed before the lane finished"
+
+
+# =========================================================================
+# WHAT A FORM KEPT IS NOT ALWAYS WHAT WAS TYPED
+# =========================================================================
+
+
+def test_a_truncated_foreign_number_is_never_submitted():
+    """The one that would have texted a stranger.
+
+    Aarthi Scans' booking field is maxlength=10, sized for an Indian mobile.
+    Typing +14155550143 into it keeps ten characters, and ten digits of a
+    truncated foreign number is a well-formed Indian mobile belonging to
+    SOMEBODY ELSE - who is then sent a verification code for an appointment in
+    a woman's name they have never heard of.
+    """
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "booker_driver", pathlib.Path("booker/driver.py"))
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+
+    # what the field kept  vs  what was typed
+    assert driver._same("1415555014", "+14155550143") is False
+    assert driver._same("Ashanthi Mac", "Ashanthi Machado") is False
+    # presentation is not alteration
+    assert driver._same("+91 88707 20883", "+918870720883") is True
+    assert driver._same("8870720883", "8870720883") is True
+
+
+def test_an_indian_number_is_offered_in_the_shape_the_field_holds():
+    """A lab form wants ten digits with the country code implied, which is what
+    a person filling the same form would type. A number from anywhere else is
+    never adapted - trimming one to fit is how a code reaches a stranger."""
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "booker_driver2", pathlib.Path("booker/driver.py"))
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+
+    class _Field:
+        def __init__(self, maxlength):
+            self.maxlength = maxlength
+
+        def get_attribute(self, _name):
+            return self.maxlength
+
+    class _Locator:
+        def __init__(self, maxlength):
+            self.first = _Field(maxlength)
+
+    class _Page:
+        def __init__(self, maxlength):
+            self.maxlength = maxlength
+
+        def locator(self, _selector):
+            return _Locator(self.maxlength)
+
+    assert driver._phone_for(_Page("10"), "#p", "+918870720883") == "8870720883"
+    assert driver._phone_for(_Page(None), "#p", "+918870720883") == "+918870720883"
+    # foreign numbers are left exactly as they are, and the read-back refuses
+    for foreign in ("+14155550143", "+16692167706", "+442071234567"):
+        assert driver._phone_for(_Page("10"), "#p", foreign) == foreign

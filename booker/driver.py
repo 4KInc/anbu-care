@@ -395,18 +395,92 @@ def _open(playwright, url: str):
 
 
 def _fill(page, fields: dict, payload: dict) -> dict:
-    """Type our values into the elements the map named. Deterministic."""
+    """Type our values in, then READ THEM BACK and refuse if they changed.
+
+    A form is allowed to alter what you type. Input masks reformat, maxlength
+    truncates, and neither says a word about it.
+
+    That is not cosmetic here. Aarthi Scans' booking field is `maxlength=10`,
+    sized for an Indian mobile. Typing a foreign number into it keeps the first
+    ten characters, and ten digits of a truncated foreign number is a
+    well-formed Indian mobile belonging to SOMEBODY ELSE - who would then be
+    texted a verification code for an appointment they have never heard of, in
+    a woman's name they do not know.
+
+    So the value is read back. If the field is not holding what was typed, the
+    whole attempt is refused, because there is no safe way to guess which
+    half of a number a form decided to keep.
+    """
     filled = {}
     for name, selector in fields.items():
         value = str(payload.get(name, "") or "")
         if not value:
             continue
+        if name == "phone":
+            value = _phone_for(page, selector, value)
         try:
             page.fill(selector, value, timeout=8_000)
-            filled[name] = value
         except Exception:  # noqa: BLE001
             logger.info("could not fill %s", name)
+            continue
+
+        try:
+            kept = page.input_value(selector, timeout=5_000)
+        except Exception:  # noqa: BLE001
+            kept = value      # cannot read it back; do not invent a mismatch
+
+        if _same(kept, value):
+            filled[name] = value
+            continue
+
+        # A phone or a name that the form quietly rewrote is the dangerous
+        # case; anything else is refused too, on the same reasoning.
+        raise DriverError(
+            f"this form altered the {name} that was typed - it kept "
+            f"{kept!r} of {value!r}, so what would be submitted is not what "
+            f"this system meant to send")
     return filled
+
+
+def _phone_for(page, selector: str, number: str) -> str:
+    """The number in the shape this field can hold, or unchanged.
+
+    Indian booking forms overwhelmingly want ten digits with the country code
+    implied, and typing +91XXXXXXXXXX into a maxlength=10 box loses the last
+    two. So an INDIAN number is offered in its local form when the field is
+    that size, which is what a person filling the same form would type.
+
+    A number from anywhere else is NEVER adapted. Trimming a foreign number to
+    fit an Indian field is precisely how a code ends up on a stranger's phone,
+    and the read-back check will refuse it - which is the correct outcome,
+    because a lab in Thoothukudi texting a US mobile was not going to work
+    either.
+    """
+    digits = "".join(ch for ch in number if ch.isdigit())
+    if not number.startswith("+91") or len(digits) != 12:
+        return number
+    try:
+        limit = int(page.locator(selector).first.get_attribute("maxlength") or 0)
+    except Exception:  # noqa: BLE001
+        limit = 0
+    return digits[-10:] if 0 < limit < len(number) else number
+
+
+def _same(kept: str, typed: str) -> bool:
+    """Whether the field is holding what we meant, allowing for presentation.
+
+    A form that displays "+91 88707 20883" as "8870720883" has not changed the
+    number, and refusing that would refuse almost every real site. A form that
+    kept ten of twelve digits HAS changed it, and that is the case this exists
+    to catch.
+    """
+    a = "".join(ch for ch in (kept or "") if ch.isalnum()).lower()
+    b = "".join(ch for ch in (typed or "") if ch.isalnum()).lower()
+    if a == b:
+        return True
+    # A leading country code the field dropped is fine only if everything the
+    # form kept is still a tail of what was typed AND nothing was lost from it.
+    return bool(a) and b.endswith(a) and len(a) == len(b)
 
 
 def _navigate_and_fill(playwright, url: str, payload: dict):
