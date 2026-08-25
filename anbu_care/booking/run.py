@@ -143,39 +143,58 @@ def arrange(*, case_id: str, order_id: str) -> dict:
                               "Recorded before it runs so a crash cannot hide "
                               "it and a retry cannot double-book.")})
 
-        result = driver.attempt(centre=centre, payload=this_payload)
+        def note(outcome, detail, failed_check=None):
+            row = {"place_id": centre.get("place_id"), "name": centre.get("name"),
+                   "channel": driver.name, "outcome": outcome, "detail": detail}
+            if failed_check:
+                row["failed_check"] = failed_check
+            attempts.append(row)
+
+        # PREPARE. Navigates, fills, reads - and submits nothing.
+        try:
+            prepared = driver.prepare(centre=centre, payload=this_payload)
+        except Exception as exc:  # noqa: BLE001 - a driver fault is an outcome
+            logger.exception("booking driver failed preparing %s", centre.get("name"))
+            note(channel_registry.UNAVAILABLE,
+                 f"the booking driver could not prepare this centre "
+                 f"({type(exc).__name__})")
+            continue
 
         # A channel that never reached the centre has nothing to enforce
         # against, and running the guards anyway made the lane lie: with no
         # driver configured every attempt came back "no way to cancel was
         # found", which is true of a request that was never made and is not the
         # reason. The reason a family is given has to be the real one.
-        if result.outcome == channel_registry.UNAVAILABLE:
-            attempts.append({"place_id": centre.get("place_id"),
-                             "name": centre.get("name"), "channel": driver.name,
-                             "outcome": result.outcome, "detail": result.detail})
+        if not prepared.ready:
+            note(prepared.outcome or channel_registry.UNAVAILABLE, prepared.detail)
             continue
 
+        # DECIDE, on what prepare actually saw, while nothing has been sent.
         verdict = enforcer.decide(
             order=order, mandate=mandate, centre=centre, options=options,
             existing=existing, case_id=case_id,
-            cancel_url=result.cancel_url, cancel_phone=result.cancel_phone,
-            page_text=result.page_text, payload=this_payload)
+            cancel_url=prepared.cancel_url, cancel_phone=prepared.cancel_phone,
+            page_text=prepared.page_text, payload=this_payload)
 
         if not verdict.allowed:
-            attempts.append({"place_id": centre.get("place_id"),
-                             "name": centre.get("name"), "channel": driver.name,
-                             "outcome": "refused",
-                             "failed_check": verdict.failed_check,
-                             "detail": verdict.reason})
+            note("refused", verdict.reason, verdict.failed_check)
             logger.info("booking refused at %s: %s", centre.get("name"),
                         verdict.failed_check)
             continue
 
+        # COMMIT. Only now, and only because the guards allowed it.
+        try:
+            result = driver.commit(centre=centre, payload=this_payload,
+                                   prepared=prepared)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("booking driver failed committing %s", centre.get("name"))
+            note(channel_registry.UNAVAILABLE,
+                 f"the booking driver could not complete this centre "
+                 f"({type(exc).__name__})")
+            continue
+
         if not result.landed:
-            attempts.append({"place_id": centre.get("place_id"),
-                             "name": centre.get("name"), "channel": driver.name,
-                             "outcome": result.outcome, "detail": result.detail})
+            note(result.outcome, result.detail)
             continue
 
         return _record(case_id, order, mandate, centre, driver, result,
@@ -207,6 +226,7 @@ def _record(case_id, order, mandate, centre, driver, result, verdict,
         home_collection=bool(centre.get("home_collection")),
         channel=driver.name, cancel_url=result.cancel_url,
         cancel_phone=result.cancel_phone, slot_text=result.slot_text,
+        evidence=result.evidence,
         provider_ref=result.provider_ref, mandate_id=mandate.mandate_id,
         guards_passed=verdict.passed, attempts=attempts,
         why_this_centre=why(centre, mandate),

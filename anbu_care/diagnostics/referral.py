@@ -169,6 +169,10 @@ def options_for(*, test_label: str, lat: float, lon: float,
             "in_network_listed": in_network,
             "network_note": network_note,
             "home_collection": centre.home_collection,
+            # Carried through so the booking lane has somewhere to go and a way
+            # to undo it. Both are Google's, never a page's.
+            "website": centre.website,
+            "phone": centre.phone,
             "score": _score(distance, offers, in_network),
             "why": (f"{distance:.1f} km from the hospital. {offers_note} "
                     f"{network_note}"),

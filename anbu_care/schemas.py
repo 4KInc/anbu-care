@@ -975,6 +975,9 @@ class Appointment(BaseModel):
     cancel_phone: str = ""
     slot_text: str = ""
     provider_ref: str = ""
+    # Where the screenshot of the submitted page is kept, so a family can look
+    # at what was sent rather than take this system's word for it.
+    evidence: str = ""
     mandate_id: str = ""
     guards_passed: list[str] = Field(default_factory=list)
     # Every centre tried and what stopped it, in order. The falling through is

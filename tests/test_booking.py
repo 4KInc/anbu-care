@@ -62,7 +62,7 @@ def _mandate(parent_id, **kw):
 
 
 class Landing:
-    """A driver that takes the request, with a way to cancel."""
+    """A driver that prepares, then takes the request, with a way to cancel."""
 
     name = "test-web"
 
@@ -70,17 +70,24 @@ class Landing:
                  cancel_phone="", page_text=""):
         self.outcome, self.cancel_url = outcome, cancel_url
         self.cancel_phone, self.page_text = cancel_phone, page_text
-        self.seen = []
+        self.seen = []          # everything prepared
+        self.committed = []     # everything actually sent
 
     def can_serve(self, centre):
         return True
 
-    def attempt(self, *, centre, payload):
+    def prepare(self, *, centre, payload):
         self.seen.append((centre["place_id"], dict(payload)))
-        return channels.AttemptResult(
-            outcome=self.outcome, cancel_url=self.cancel_url,
+        return channels.Preparation(
+            outcome=channels.READY, detail="filled", cancel_url=self.cancel_url,
             cancel_phone=self.cancel_phone, page_text=self.page_text,
-            detail="stub", fields_sent=dict(payload))
+            handle={"page_url": "https://x/book"})
+
+    def commit(self, *, centre, payload, prepared):
+        self.committed.append((centre["place_id"], dict(payload)))
+        return channels.AttemptResult(
+            outcome=self.outcome, detail="stub", cancel_url=prepared.cancel_url,
+            cancel_phone=prepared.cancel_phone)
 
 
 class Failing(Landing):
@@ -88,10 +95,20 @@ class Failing(Landing):
 
     name = "test-failing"
 
-    def attempt(self, *, centre, payload):
+    def prepare(self, *, centre, payload):
         self.seen.append((centre["place_id"], dict(payload)))
-        return channels.AttemptResult(outcome=channels.UNAVAILABLE,
-                                      detail="this centre has no online form")
+        return channels.Preparation(outcome=channels.UNAVAILABLE,
+                                    detail="this centre has no online form")
+
+
+class Exploding(Landing):
+    """A driver that raises. Must never reach a person waiting on WhatsApp."""
+
+    name = "test-exploding"
+
+    def prepare(self, *, centre, payload):
+        self.seen.append((centre["place_id"], dict(payload)))
+        raise RuntimeError("chromium died")
 
 
 def _drive(monkeypatch, driver):
@@ -609,3 +626,106 @@ def test_an_unreachable_centre_is_not_reported_as_uncancellable(case, monkeypatc
     assert attempt["outcome"] == channels.UNAVAILABLE
     assert attempt.get("failed_check") is None, "a guard was blamed for a request never made"
     assert "no online form" in attempt["detail"]
+
+
+# =========================================================================
+# NOTHING IS SENT BEFORE THE GUARDS HAVE RULED
+# =========================================================================
+
+
+def test_a_refused_booking_is_prepared_but_never_submitted(case, monkeypatch):
+    """The reason prepare and commit are two halves.
+
+    The first version had one attempt() that navigated, filled and submitted,
+    with the enforcer ruling afterwards on what it saw - so `no_payment` and
+    `cancellable` were reporting on a form that had already gone.
+    """
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    driver = Landing(page_text="Please pay now to confirm your slot")
+    _drive(monkeypatch, driver)
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert out["outcome"] == "escalated"
+    assert driver.seen, "it never even prepared"
+    assert driver.committed == [], "a form was submitted before the guards ruled"
+    assert out["attempts"][0]["failed_check"] == "no_payment"
+
+
+def test_a_centre_with_no_cancellation_path_is_prepared_and_dropped(case, monkeypatch):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    driver = Landing(cancel_url="", cancel_phone="")
+    _drive(monkeypatch, driver)
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    assert driver.committed == [], "it booked somewhere it cannot unbook"
+
+
+def test_an_allowed_booking_commits_exactly_once(case, monkeypatch):
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR, HOME])
+    _mandate(parent_id)
+    driver = Landing()
+    _drive(monkeypatch, driver)
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    assert len(driver.committed) == 1
+    assert driver.committed[0][0] == "place-near"
+
+
+def test_a_driver_that_crashes_never_reaches_the_family(case, monkeypatch):
+    """A browser fault is an outcome for this lane, not an exception for
+    somebody waiting on WhatsApp."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR, HOME])
+    _mandate(parent_id)
+    _drive(monkeypatch, Exploding())
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert out["outcome"] == "escalated"
+    assert len(out["attempts"]) == 2, "it stopped falling through after a crash"
+    assert "could not prepare" in out["attempts"][0]["detail"]
+
+
+def test_the_web_channel_only_drives_a_site_google_named(monkeypatch):
+    """The URL comes from Places, never from a page and never from a model.
+    Same rule as the destination on a payment."""
+    from anbu_care.booking.web import WebChannel
+
+    monkeypatch.setenv("ANBU_BOOKER_URL", "https://booker.example")
+    channel = WebChannel()
+    assert channel.can_serve({"website": "https://lab.example/book"}) is True
+    assert channel.can_serve({"website": ""}) is False
+    assert channel.can_serve({"website": "javascript:alert(1)"}) is False
+    assert channel.can_serve({}) is False
+
+
+def test_a_booker_that_is_down_is_unavailable_not_an_error(monkeypatch):
+    """Every failure comes back as unavailable so the lane moves on."""
+    from anbu_care.booking import web
+
+    monkeypatch.setenv("ANBU_BOOKER_URL", "https://booker.invalid")
+    monkeypatch.setattr(web.WebChannel, "_call", lambda *a, **k: None)
+
+    prepared = web.WebChannel().prepare(centre={"website": "https://x"}, payload={})
+    assert prepared.outcome == channels.UNAVAILABLE
+    assert prepared.ready is False
+
+    result = web.WebChannel().commit(centre={"website": "https://x"}, payload={},
+                                     prepared=prepared)
+    assert result.outcome == channels.UNAVAILABLE
+    assert "not known" in result.detail, "it claimed to know what happened"
+
+
+def test_the_web_channel_is_off_unless_it_is_configured(monkeypatch):
+    from anbu_care.booking.web import WebChannel
+
+    monkeypatch.delenv("ANBU_BOOKER_URL", raising=False)
+    assert WebChannel.configured() is False
+    monkeypatch.setenv("ANBU_BOOKING_CHANNELS", "web")
+    assert [d.name for d in channels.available()] == ["none"]

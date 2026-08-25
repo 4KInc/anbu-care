@@ -43,8 +43,15 @@ TIMEOUT_SECONDS = 20
 SEARCH_RADIUS_M = 12_000.0
 MAX_RESULTS = 8
 
+# The website and the phone number are not decoration. A booking lane needs
+# somewhere to drive to, and a cancellation path it can capture BEFORE it
+# commits - without the number, every centre fails the guard that refuses to
+# book anywhere it cannot unbook, which is correct behaviour and makes the
+# whole lane inert.
 FIELD_MASK = ("places.id,places.displayName,places.formattedAddress,"
-              "places.location,places.primaryType,places.businessStatus")
+              "places.location,places.primaryType,places.businessStatus,"
+              "places.websiteUri,places.nationalPhoneNumber,"
+              "places.internationalPhoneNumber")
 
 LIVE_LABEL = ("Found by a live Google Places search near the hospital, at the "
               "time this was recorded.")
@@ -63,6 +70,11 @@ class Centre:
     lat: float
     lon: float
     primary_type: str = ""
+    # Where a booking could be attempted, and how a person cancels one. Both
+    # come from Google rather than from anything a page told us, for the same
+    # reason the destination on a payment comes from the mandate.
+    website: str = ""
+    phone: str = ""
     # Whether this centre offers HOME COLLECTION, when that is knowable. Places
     # does not carry it, so it stays None rather than being guessed: a guess
     # here decides whether somebody who cannot travel is offered anything, and
@@ -199,4 +211,7 @@ def _centre_from(place: dict) -> Centre | None:
     return Centre(place_id=place_id, name=name,
                   address=str(place.get("formattedAddress") or "").strip(),
                   lat=lat, lon=lon,
-                  primary_type=str(place.get("primaryType") or ""))
+                  primary_type=str(place.get("primaryType") or ""),
+                  website=str(place.get("websiteUri") or "").strip(),
+                  phone=str(place.get("internationalPhoneNumber")
+                            or place.get("nationalPhoneNumber") or "").strip())
