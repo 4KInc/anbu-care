@@ -235,12 +235,17 @@ TEMPLATES: dict[str, dict[str, object]] = {
         # that is what makes a phone offer to open it in maps and what makes it
         # copyable in one gesture. A postal address folded into a sentence is a
         # postal address nobody can use.
-        "body": "Anbu Care: {parent_name}'s test is requested at {centre}, "
-                "{distance} km away. The centre has not confirmed a time yet.\n\n"
+        # The centre is NAMED ONCE, at the top of the address block where it
+        # acts as the header a person reads before the street. Naming it in the
+        # sentence as well read like a form letter with a merge field in it
+        # twice, and pushed the address further down the screen.
+        "body": "Anbu Care: {parent_name}'s test is requested. The centre has "
+                "not confirmed a time yet.\n\n"
                 "{centre}\n"
                 "{address}\n"
                 "{map_line}"
-                "\nTo change or cancel it, ring {cancel}.\n\n"
+                "{distance} km from the hospital.\n\n"
+                "To change or cancel it, ring {cancel}.\n\n"
                 "Nothing was paid.",
         "params": ["parent_name", "centre", "address", "map_line", "distance",
                    "cancel"],

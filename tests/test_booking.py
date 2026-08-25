@@ -1216,7 +1216,10 @@ def test_the_address_sits_on_its_own_line(case):
     body = policy.TEMPLATES["booking_done"]["body"]
     lines = [ln.strip() for ln in body.splitlines()]
     assert "{address}" in lines, "the address is buried in a sentence"
-    assert lines.index("{address}") == lines.index("{centre}", 1) + 1
+    assert lines.index("{address}") == lines.index("{centre}") + 1
+    # Named ONCE. Twice read like a form letter with a merge field in it twice,
+    # and pushed the address further down the screen.
+    assert body.count("{centre}") == 1
 
 
 def test_a_map_link_is_shortened_but_a_stranger_is_not(monkeypatch):
