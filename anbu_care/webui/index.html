@@ -862,8 +862,79 @@ function dxOption(x, i){
   </div>`;
 }
 
+// What was arranged for one ordered test, and - more to the point - what was
+// tried and refused on the way there.
+//
+// The appointment is the smaller half of this. Any booking site can show you a
+// confirmation; almost none can show you that it tried three other places
+// first, why each one failed, and which of twelve checks it had to pass before
+// it was allowed to submit anything. That is the difference between a lane
+// that looked something up and one that decided, and it is the part worth
+// putting on screen.
+function apptCard(a){
+  const requested = a.status === "requested";
+  const done = a.status === "confirmed";
+  const dead = a.status === "cancelled";
+  const pill = dead ? `<span class="pill p-slate">cancelled</span>`
+    : done ? `<span class="pill p-teal">confirmed by the centre</span>`
+    : `<span class="pill p-amber">requested, not yet confirmed</span>`;
+  const cancel = a.cancel_phone || a.cancel_url || "";
+  const when = new Date(a.requested_at);
+  const tried = (a.attempts||[]).length;
+
+  return `<div class="card" style="margin-top:14px">
+    <h2 class="mini">Arranged by Anbu Care</h2>
+    <div class="pills" style="margin:-4px 0 12px">${pill}
+      <span class="pill p-slate">${esc(String(a.channel||"web"))}</span></div>
+
+    <div style="font-weight:700;font-size:15px">${esc(a.centre_name||"")}</div>
+    ${a.centre_address?`<div class="mute" style="font-size:13.5px;margin-top:2px">
+      ${esc(a.centre_address)}</div>`:""}
+    <div class="mute" style="font-size:13px;margin-top:6px">
+      ${Number(a.distance_km||0).toFixed(1)} km from the hospital ·
+      ${esc(when.toLocaleDateString())}
+      ${esc(when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}))}</div>
+
+    ${a.why_this_centre?`<div class="strip note" style="margin-top:12px">
+      ${esc(a.why_this_centre)}</div>`:""}
+
+    ${tried?`<div style="margin-top:14px">
+      <div class="mute" style="font-size:12px;font-weight:800;letter-spacing:.06em;
+        text-transform:uppercase;margin-bottom:8px">Tried first, and why not</div>
+      ${(a.attempts||[]).map(t=>`<div class="dxrow">
+        <div class="dxbody">
+          <div class="dxname" style="font-size:14px">${esc(t.name||"")}</div>
+          <div class="mute" style="font-size:13px;margin-top:3px">${esc(t.detail||"")}</div>
+          ${t.failed_check?`<div class="pills" style="margin-top:6px">
+            <span class="pill p-amber">${esc(t.failed_check)}</span></div>`:""}
+        </div></div>`).join("")}
+    </div>`:""}
+
+    ${(a.guards_passed||[]).length?`<div style="margin-top:14px">
+      <div class="mute" style="font-size:12px;font-weight:800;letter-spacing:.06em;
+        text-transform:uppercase;margin-bottom:8px">
+        ${(a.guards_passed||[]).length} checks passed before anything was sent</div>
+      <div class="pills">${(a.guards_passed||[]).map(g=>
+        `<span class="pill p-teal">${esc(g)}</span>`).join("")}</div>
+    </div>`:""}
+
+    <div class="strip note" style="margin-top:14px">
+      ${requested?`This is a request. The centre has not confirmed a time, and
+        nothing here says it has.`:""}
+      ${done?`The centre confirmed this.`:""}
+      Anbu Care did not decide she needs this test and did not pay for anything.
+      ${cancel?`To change or cancel it, ring ${esc(cancel)}.`:""}
+    </div>
+  </div>`;
+}
+
 function dxCard(o){
   const opts=o.options||[];
+  // "Nothing here is booked" was true of every order and is now true of only
+  // some, so it is said only where it still holds. A standing caveat that has
+  // quietly stopped being true is worse than no caveat.
+  const booked=((S.appointments&&S.appointments.appointments)||[])
+    .filter(a=>a.order_id===o.order_id);
   const when=new Date(o.recorded_at);
   // Where the clinician dictated in another language, the English reading
   // leads and the words they actually said sit under it. The dictation is the
@@ -889,9 +960,10 @@ function dxCard(o){
            go, and ring ahead to check they run this test.</p>
          <p class="mute" style="font-size:13px">
            ${esc(o.options_source_label||"")}
-           Nothing here is booked: Anbu Care is not connected to any of these
-           centres and has not contacted them.</p>`}
-  </div>`;
+           ${booked ? "" : `Nothing here is booked: Anbu Care is not connected
+           to any of these centres and has not contacted them.`}</p>`}
+  </div>
+  ${booked.map(apptCard).join("")}`;
 }
 
 function vRecord(){
@@ -2023,6 +2095,7 @@ async function load(){
     S.bills=await api(`/api/cases/${S.caseId}/bills`,{auth:true});
     S.pay=await api(`/api/cases/${S.caseId}/payments`,{auth:true});
     S.dx=await api(`/api/cases/${S.caseId}/diagnostics`,{auth:true});
+    S.appointments=await api(`/api/cases/${S.caseId}/appointments`,{auth:true});
     if(!S.parentId && S.brief?.brief) S.parentId=S.brief.brief.parent_id;
   }
   if(S.parentId && (S.token || S.linkToken)){
