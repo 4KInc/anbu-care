@@ -1325,3 +1325,87 @@ def test_a_confirmed_booking_is_recorded_as_confirmed(case, monkeypatch):
     assert out["outcome"] == "confirmed"
     appt = service.list_appointments(case_id)[0]
     assert appt.status == "confirmed" and appt.confirmed_at is not None
+
+
+# =========================================================================
+# THE ORDER RUNS ALL THE WAY THROUGH, WITHOUT ANYBODY ASKING
+# =========================================================================
+
+
+def test_recording_an_order_tries_to_book_it(case, monkeypatch):
+    """It was reachable only through an endpoint, which meant the doctor spoke,
+    the family got a list of eight labs, and a seventy-one year old was left to
+    ring round - the exact half-a-job the lane was built to stop."""
+    from anbu_care import server
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    tried, told = [], []
+    monkeypatch.setattr(server, "_surface_options",
+                        lambda c, o: {"options": [NEAR]})
+    monkeypatch.setattr(server, "_tell_about_order",
+                        lambda c, o, option_count: told.append(option_count))
+    monkeypatch.setattr(server, "_tried_to_book",
+                        lambda c, o: tried.append((c, o)) or True)
+
+    server._refer_and_tell(case_id, order.order_id)
+
+    assert tried == [(case_id, order.order_id)], "the order never reached the booking lane"
+    assert told == [], "it sent an options list about a test it had just booked"
+
+
+def test_a_test_it_could_not_book_still_gets_the_options_message(case, monkeypatch):
+    """A lane that cannot book must not also swallow the message saying where
+    the test can be done."""
+    from anbu_care import server
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+
+    told = []
+    monkeypatch.setattr(server, "_surface_options",
+                        lambda c, o: {"options": [NEAR, HOME]})
+    monkeypatch.setattr(server, "_tell_about_order",
+                        lambda c, o, option_count: told.append(option_count))
+    monkeypatch.setattr(server, "_tried_to_book", lambda c, o: False)
+
+    server._refer_and_tell(case_id, order.order_id)
+    assert told == [2], "nobody was told anything about an unbooked test"
+
+
+def test_a_booking_lane_that_explodes_does_not_silence_the_options(case, monkeypatch):
+    """A lane that falls over must not also swallow the message telling the
+    family where the test can be done. The browser is the least reliable thing
+    in this system and it sits upstream of the only message they get."""
+    from anbu_care import server
+    from anbu_care.booking import run as booking_run
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    def boom(*, case_id, order_id):
+        raise RuntimeError("the booker fell over")
+
+    monkeypatch.setattr(booking_run, "arrange", boom)
+    assert server._tried_to_book(case_id, order.order_id) is False
+
+    told = []
+    monkeypatch.setattr(server, "_surface_options", lambda c, o: {"options": [NEAR]})
+    monkeypatch.setattr(server, "_tell_about_order",
+                        lambda c, o, option_count: told.append(option_count))
+    server._refer_and_tell(case_id, order.order_id)
+    assert told == [1], "a browser crash silenced the family"
+
+
+def test_nothing_is_booked_without_the_authority_to(case, monkeypatch):
+    """No mandate, no consent, no drivable centre - each returns False and the
+    family is told what was found instead."""
+    from anbu_care import server
+
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    # no booking mandate granted at all
+    assert server._tried_to_book(case_id, order.order_id) is False

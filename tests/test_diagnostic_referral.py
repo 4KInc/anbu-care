@@ -1102,7 +1102,12 @@ def test_a_clinician_order_is_acted_on_without_a_confirmation_round_trip(case, m
     reply = inspect.getsource(server._clinician_options_reply)
     assert "If that is not the test, send the right name" in reply, \
         "there is no correction path"
-    assert "Nothing is booked" in reply
+    # It books now, so it may not say it does not. What must survive is that it
+    # never spends: the booking lane has nowhere a cap could live and the reply
+    # says so to the person who ordered the test.
+    assert "Nothing is paid for" in reply
+    assert "Nothing is booked" not in reply, \
+        "the reply still promises something the lane no longer honours"
 
 
 def test_the_clinician_reply_still_goes_through_the_content_gate(case):

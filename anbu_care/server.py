@@ -1848,19 +1848,31 @@ def handoff_note_confirm(token: str, body: NoteConfirmRequest,
 
     if result.get("order_id"):
         background.add_task(_refer_and_tell, grant.case_id, result["order_id"])
-        result["next"] = ("Anbu Care is looking up where this can be done and "
-                          "will tell the family. Nothing is being booked.")
+        result["next"] = ("Anbu Care is looking up where this can be done, will "
+                          "try to book it, and will tell the family either way. "
+                          "Nothing is paid for.")
     return result
 
 
 def _refer_and_tell(case_id: str, order_id: str) -> None:
-    """Find the options and tell the family. Never raises.
+    """Find where the test can be done, try to book it, and tell the family.
 
     Runs after the clinician's form has already returned, so an exception here
     reaches no caller — which means every outcome has to end somewhere a person
     will see it. A failed search is still told, because the family knowing that
     a test was ordered and Anbu Care could not find anywhere is worth far more
     than silence they cannot distinguish from nothing having happened.
+
+    **The booking is part of this, not a separate thing somebody triggers.**
+    It was reachable only through an endpoint, which meant the doctor spoke, the
+    family got a list of eight labs, and a seventy-one year old was left to ring
+    round — the exact half-a-job the whole lane was built to stop. A present son
+    does not send his mother a list.
+
+    The order matters. Booking is attempted BEFORE anybody is told, because the
+    two messages say different things and only one of them is true: "here are
+    eight places, nothing is booked" and "it is booked, here is the address" are
+    not both sendable about the same order.
     """
     try:
         surfaced = _surface_options(case_id, order_id)
@@ -1868,8 +1880,40 @@ def _refer_and_tell(case_id: str, order_id: str) -> None:
         logger.exception("could not surface diagnostic options")
         _tell_about_order(case_id, order_id, option_count=None)
         return
+
+    if _tried_to_book(case_id, order_id):
+        # The booking lane tells them itself, with the address and the number to
+        # ring. Sending the options list as well would be two messages about one
+        # test, the first of which says nothing was booked.
+        return
+
     _tell_about_order(case_id, order_id,
                       option_count=len(surfaced.get("options", [])))
+
+
+def _tried_to_book(case_id: str, order_id: str) -> bool:
+    """Attempt a booking. True only if one was actually made.
+
+    Every other outcome — no authority, no consent, no centre that could be
+    driven, a guard refusing — returns False and lets the family be told what
+    was found instead. Never raises: a lane that cannot book must not also
+    swallow the message saying where the test can be done.
+    """
+    try:
+        from anbu_care.booking import BookingRefused, arrange
+
+        try:
+            result = arrange(case_id=case_id, order_id=order_id)
+        except BookingRefused as refused:
+            logger.info("nothing booked for %s: %s", order_id, refused)
+            return False
+    except Exception:  # noqa: BLE001
+        logger.exception("the booking lane failed for %s", order_id)
+        return False
+
+    booked = result.get("outcome") in {"requested", "confirmed"}
+    logger.info("booking for %s: %s", order_id, result.get("outcome"))
+    return booked
 
 
 def _tell_about_order(case_id: str, order_id: str, option_count: int | None) -> None:
@@ -2555,7 +2599,8 @@ def _bind_clinician(from_number: str, body: str) -> Response:
     return _twiml(
         f"Anbu Care: connected for {first}. Send a voice note or a message with "
         f"an update, or with a test you are ordering. Updates go on her record; "
-        f"an order is looked up nearby and the family told. Nothing is booked.\n\n"
+        f"an order is looked up nearby, booked where a centre can be, and the "
+        f"family told either way. Nothing is paid for.\n\n"
         f"While this handset is connected as the treating team, messages from it "
         f"are recorded as clinical notes and NOT as her check-ins. Send STOP to "
         f"hand it back.\n"
@@ -2761,7 +2806,11 @@ def _clinician_options_reply(proposal: Any, surfaced: dict) -> str:
     for option in surfaced["options"][:5]:
         lines.append(f"{option['distance_km']:.1f} km  {option['name']}")
     lines.append("")
-    lines.append("Nothing is booked and no centre has been contacted. "
+    # Said in the future tense on purpose. This reply goes out the moment the
+    # order is recorded, before the booking runs, and "nothing is booked" was
+    # true when it was written and false a minute later.
+    lines.append("Anbu Care will try to book the first of these and tell the "
+                 "family what happened. Nothing is paid for. "
                  "If that is not the test, send the right name.")
     return "\n".join(lines)
 
