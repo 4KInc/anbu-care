@@ -16,7 +16,7 @@ import logging
 import os
 import time
 
-from fastapi import FastAPI, Request
+from fastapi import Body, FastAPI
 
 import driver
 
@@ -38,9 +38,12 @@ def healthz() -> dict:
             "reader": os.getenv("ANBU_BOOKING_READER", "gemini")}
 
 
+# NOT async. Playwright's sync API refuses to run inside an asyncio loop, and
+# an async endpoint here failed every attempt with "you are using Playwright
+# Sync API inside the asyncio loop". A plain def is run by FastAPI in a
+# threadpool, which is where a blocking browser belongs anyway.
 @app.post("/prepare")
-async def prepare(request: Request) -> dict:
-    body = await request.json()
+def prepare(body: dict = Body(default_factory=dict)) -> dict:
     url = str(body.get("url") or "")
     if not url.startswith(("http://", "https://")):
         return {"outcome": "unavailable", "detail": "no usable website for this centre"}
@@ -54,8 +57,7 @@ async def prepare(request: Request) -> dict:
 
 
 @app.post("/commit")
-async def commit(request: Request) -> dict:
-    body = await request.json()
+def commit(body: dict = Body(default_factory=dict)) -> dict:
     url = str(body.get("url") or "")
     key = str(body.get("idempotency_key") or "")
 

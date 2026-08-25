@@ -53,8 +53,14 @@ KNOWN_FIELDS = ("name", "age", "phone", "test_label")
 
 # What a submit control may say. Deliberately short, and deliberately missing
 # every word that means money.
+# Widened from real sites rather than from imagination: a Thoothukudi lab's
+# booking form submits with a button that says "save", and refusing it meant
+# refusing the one centre in eight that actually had a usable form. NEVER_CLICK
+# is checked BEFORE this, so "proceed to pay" is still stopped by "pay" no
+# matter what is added here.
 SUBMIT_WORDS = ("book", "submit", "request", "send", "schedule", "appointment",
-                "callback", "call back", "enquire", "enquiry", "continue")
+                "callback", "call back", "enquire", "enquiry", "continue",
+                "save", "register", "confirm", "proceed", "get a call")
 
 NEVER_CLICK = ("pay", "payment", "buy", "checkout", "order now", "proceed to pay",
                "razorpay", "upi", "card")
@@ -220,7 +226,7 @@ def _read_form(page) -> dict:
 
     client = genai.Client()
     response = client.models.generate_content(
-        model=os.getenv("ANBU_MODEL", "gemini-flash-latest"),
+        model=os.getenv("ANBU_MODEL", "gemini-3.5-flash"),
         contents=[f"{_PROMPT}\n\nThe page HTML:\n{html}"],
     )
     raw = (response.text or "").strip()
@@ -229,6 +235,7 @@ def _read_form(page) -> dict:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
+        logger.warning("form reading was not JSON: %s", raw[:200])
         raise DriverError("the form reading could not be used") from None
     if not isinstance(parsed, dict):
         raise DriverError("the form reading could not be used")
@@ -304,6 +311,39 @@ def _validate_submit(page, selector) -> str:
 # ------------------------------------------------------------------ runs ----
 
 
+def _variants(url: str) -> list[str]:
+    """The same site, spelled the ways it might actually answer.
+
+    Places records a website as the business entered it, and businesses enter
+    stale ones. Of eight real Thoothukudi centres, three failed on the URL
+    alone: http://www.aarthiscan.com had an invalid certificate while
+    https://aarthiscan.com served the booking flow perfectly, and two others
+    had www hostnames that no longer resolve. Trying the obvious spellings
+    costs a few seconds and recovers a centre that was there all along.
+
+    Order matters: the recorded URL first, because it is what the business
+    says, and this must not quietly prefer a host nobody named.
+    """
+    import urllib.parse as up
+
+    parts = up.urlsplit(url)
+    host = parts.netloc
+    hosts = [host]
+    if host.startswith("www."):
+        hosts.append(host[4:])
+    else:
+        hosts.append("www." + host)
+
+    seen, out = set(), []
+    for scheme in (parts.scheme or "https", "https", "http"):
+        for h in hosts:
+            candidate = up.urlunsplit((scheme, h, parts.path, parts.query, ""))
+            if candidate not in seen:
+                seen.add(candidate)
+                out.append(candidate)
+    return out[:4]
+
+
 def _open(playwright, url: str):
     browser = playwright.chromium.launch(
         args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -338,7 +378,17 @@ def _fill(page, fields: dict, payload: dict) -> dict:
 
 def _navigate_and_fill(playwright, url: str, payload: dict):
     """The shared half of prepare and commit."""
-    browser, context, page = _open(playwright, url)
+    last = None
+    for candidate in _variants(url):
+        try:
+            browser, context, page = _open(playwright, candidate)
+            break
+        except Exception as exc:  # noqa: BLE001 - try how else it is spelled
+            last = exc
+            logger.info("could not open %s (%s)", candidate, type(exc).__name__)
+    else:
+        raise last or DriverError("that site could not be opened")
+
     try:
         try:
             proposal = _read_form(page)
@@ -375,8 +425,10 @@ def prepare(*, url: str, payload: dict, fallback_phone: str = "") -> dict:
         except DriverError as refused:
             return {"outcome": "unavailable", "detail": str(refused)}
         except Exception as exc:  # noqa: BLE001
+            logger.exception("prepare failed for %s", url)
             return {"outcome": "unavailable",
-                    "detail": f"that site could not be used ({type(exc).__name__})"}
+                    "detail": f"that site could not be used "
+                              f"({type(exc).__name__}: {str(exc)[:160]})"}
         try:
             cancel_url, cancel_phone = _cancel_path(page, fallback_phone)
             return {
@@ -416,8 +468,10 @@ def commit(*, url: str, payload: dict, handle: dict,
         except DriverError as refused:
             return {"outcome": "unavailable", "detail": str(refused)}
         except Exception as exc:  # noqa: BLE001
+            logger.exception("commit failed for %s", url)
             return {"outcome": "unavailable",
-                    "detail": f"that site could not be used ({type(exc).__name__})"}
+                    "detail": f"that site could not be used "
+                              f"({type(exc).__name__}: {str(exc)[:160]})"}
 
         try:
             settled = _text_of(page).lower()

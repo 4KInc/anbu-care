@@ -1,7 +1,7 @@
 # The browser image. Kept away from the API container deliberately: Chromium
 # wants several times the memory the API needs, and a browser competing for a
 # gigabyte with the lane that answers her voice note loses it for both.
-FROM mcr.microsoft.com/playwright/python:v1.49.1-noble
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
