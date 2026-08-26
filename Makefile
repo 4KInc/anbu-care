@@ -33,3 +33,6 @@ deploy:  ## Deploy to Cloud Run
 preflight:  ## Check the state that silently ruins a recording (add FIX=1 to clear what is safe)
 	@ANBU_URL=$${ANBU_URL:-https://anbu-care-37j4eofpwq-el.a.run.app} \
 	 ./.venv/bin/python scripts/preflight.py $(if $(FIX),--fix,)
+
+booking-mode:  ## Show or set whether the booker submits for real (MODE=dry|live)
+	@bash .claude/skills/booking-mode/scripts/booking-mode.sh $(or $(MODE),status)
