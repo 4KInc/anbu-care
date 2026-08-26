@@ -779,6 +779,14 @@ def commit(*, url: str, payload: dict, handle: dict,
                     "evidence": _shot(page, "dryrun"),
                 }
 
+            # WHAT WE SENT, before it is sent. The after-page is the centre's
+            # answer and a good form clears itself on success, so the only
+            # picture kept showed empty boxes - which reads as "it filled
+            # nothing" to anybody who did not already know that emptiness IS
+            # the acknowledgement. Evidence that has to be explained is not
+            # doing its job.
+            sent_shot = _shot(page, "sent")
+
             page.click(submit, timeout=15_000)
             settled = _settle(page, submit=submit)
             after = _text_of(page)
@@ -862,7 +870,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                                "read, so whether the request was taken is not "
                                "known and nothing is claimed"),
                     "cancel_url": cancel_url, "cancel_phone": cancel_phone,
-                    "evidence": _shot(page, "unsettled"),
+                    "evidence": _shot(page, "unsettled"), "evidence_sent": sent_shot,
                 }
 
             # SAID NOTHING WE RECOGNISE. Not a booking. This branch used to
@@ -875,7 +883,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                                "read as having taken the request, so nothing "
                                "is claimed"),
                     "cancel_url": cancel_url, "cancel_phone": cancel_phone,
-                    "evidence": _shot(page, "unclear"),
+                    "evidence": _shot(page, "unclear"), "evidence_sent": sent_shot,
                 }
 
             if outcome == "rejected":
@@ -884,7 +892,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                     "detail": (f"the centre's form refused what was sent "
                                f"({evidence!r}), so nothing was booked there"),
                     "cancel_url": cancel_url, "cancel_phone": cancel_phone,
-                    "evidence": _shot(page, "rejected"),
+                    "evidence": _shot(page, "rejected"), "evidence_sent": sent_shot,
                 }
             return {
                 "outcome": outcome,
@@ -895,6 +903,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                 "cancel_url": cancel_url, "cancel_phone": cancel_phone,
                 "slot_text": evidence or _slot_from(after),
                 "evidence": _shot(page, outcome),
+                "evidence_sent": sent_shot,
             }
         finally:
             context.close()

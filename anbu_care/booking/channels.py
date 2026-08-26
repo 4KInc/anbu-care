@@ -77,9 +77,12 @@ class AttemptResult:
     cancel_phone: str = ""
     slot_text: str = ""
     provider_ref: str = ""
-    # Where the screenshot of what was submitted is kept, so a family can see
-    # the page rather than take this system's word for it.
+    # TWO pictures, because one of them was being read backwards. `evidence` is
+    # the centre's answer; `evidence_sent` is the form as it stood filled in,
+    # photographed a moment before the click. A good form empties itself on
+    # success, so the answer alone looks like nothing was ever typed.
     evidence: str = ""
+    evidence_sent: str = ""
 
     @property
     def landed(self) -> bool:

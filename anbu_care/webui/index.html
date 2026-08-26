@@ -965,12 +965,13 @@ function dxOption(x, i){
 // The one piece of evidence on this record that Anbu Care did not write.
 // Fetched on demand rather than rendered inline: the link is short-lived by
 // design, and minting one for a card nobody opened would waste it.
-async function showBookingEvidence(id){
+async function showBookingEvidence(id, stage){
   const slot = document.getElementById(`ev-${id}`);
   if(!slot) return;
   slot.innerHTML = `<p class="mute" style="margin:10px 0 0">Fetching it…</p>`;
   const r = await api(`/api/cases/${encodeURIComponent(S.caseId)}/appointments/`
-    + `${encodeURIComponent(id)}/evidence`, {auth:true});
+    + `${encodeURIComponent(id)}/evidence?stage=${encodeURIComponent(stage||"answer")}`,
+    {auth:true});
   if(!r || !r.url){
     slot.innerHTML = `<p class="mute" style="margin:10px 0 0">${esc(
       (r && r.detail) || "No page was photographed for this one. The appointment stands either way.")}</p>`;
@@ -1029,10 +1030,13 @@ function apptCard(a){
     </div>`:""}
 
     ${a.evidence?`<div style="margin-top:14px">
-      <button class="btn" onclick="showBookingEvidence('${esc(a.appointment_id)}')">
-        See the centre's own page</button>
+      ${a.evidence_sent?`<button class="btn"
+        onclick="showBookingEvidence('${esc(a.appointment_id)}','sent')">
+        What was sent</button>`:""}
+      <button class="btn" onclick="showBookingEvidence('${esc(a.appointment_id)}','answer')">
+        What the centre answered</button>
       <span class="mute" style="margin-left:10px;font-size:13px">
-        photographed as it was submitted</span>
+        photographed either side of the click</span>
       <div id="ev-${esc(a.appointment_id)}"></div>
     </div>`:""}
 

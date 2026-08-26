@@ -1000,7 +1000,7 @@ def list_case_appointments(case_id: str,
 
 
 @app.get("/api/cases/{case_id}/appointments/{appointment_id}/evidence")
-def appointment_evidence(case_id: str, appointment_id: str,
+def appointment_evidence(case_id: str, appointment_id: str, stage: str = "answer",
                          _session: str = Depends(require_case_access)) -> dict[str, Any]:
     """A short-lived signed link to the centre's own page, as it was submitted.
 
@@ -1020,19 +1020,25 @@ def appointment_evidence(case_id: str, appointment_id: str,
     if appointment is None:
         raise HTTPException(status_code=404,
                             detail=f"no appointment {appointment_id} on case {case_id}")
-    if not appointment.evidence:
+    wanted = (appointment.evidence_sent if stage == "sent"
+              else appointment.evidence)
+    if not wanted:
         raise HTTPException(
             status_code=404,
             detail=("no page was photographed for this appointment. It may "
                     "predate the evidence being kept, or the screenshot failed "
                     "- the appointment stands either way."))
 
-    signed = storage.signed_url(appointment.evidence)
+    signed = storage.signed_url(wanted)
     if not signed.stored or not signed.url:
         raise HTTPException(status_code=503, detail=signed.detail)
     return {"url": signed.url, "expires_in_seconds": signed.expires_in_seconds,
-            "note": ("The centre's own page at the moment the form was "
-                     "submitted. Anbu Care did not write this page.")}
+            "note": ("The form as Anbu Care filled it, a moment before it was "
+                     "sent." if stage == "sent" else
+                     "The centre's own page after the form was submitted. Anbu "
+                     "Care did not write this page - and a form that succeeded "
+                     "clears itself, so empty boxes here are the acknowledgement, "
+                     "not a sign nothing was typed.")}
 
 
 @app.get("/api/cases/{case_id}/attempts/{attempt}/evidence/view")
@@ -1074,6 +1080,7 @@ def attempt_evidence_view(case_id: str, attempt: int,
 
 @app.get("/api/cases/{case_id}/appointments/{appointment_id}/evidence/view")
 def appointment_evidence_view(case_id: str, appointment_id: str,
+                              stage: str = "answer",
                               _session: str = Depends(require_case_access)) -> Response:
     """Open the centre's own page, one tap from a WhatsApp message.
 
@@ -1090,7 +1097,12 @@ def appointment_evidence_view(case_id: str, appointment_id: str,
 
     appointment = next((a for a in service.list_appointments(case_id)
                         if a.appointment_id == appointment_id), None)
-    if appointment is None or not appointment.evidence:
+    # "sent" is the form as it stood filled in; anything else is the centre's
+    # answer. Two pictures because one of them was being read backwards: a good
+    # form clears itself on success, so the answer alone shows empty boxes.
+    wanted = (appointment.evidence_sent if appointment and stage == "sent"
+              else appointment.evidence if appointment else "")
+    if appointment is None or not wanted:
         return Response(
             content=("<!doctype html><meta charset=utf-8>"
                      "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -1102,7 +1114,7 @@ def appointment_evidence_view(case_id: str, appointment_id: str,
                      "number in the message if you need it confirmed.</p></div>"),
             media_type="text/html", status_code=404)
 
-    signed = storage.signed_url(appointment.evidence)
+    signed = storage.signed_url(wanted)
     if not signed.stored or not signed.url:
         raise HTTPException(status_code=503, detail=signed.detail)
     return RedirectResponse(signed.url, status_code=302)

@@ -1609,7 +1609,7 @@ def test_the_evidence_route_is_credentialed_and_says_what_it_is():
     assert "require_case_access" in source, \
         "the centre's page carries her name and is served without a credential"
     assert "storage.signed_url" in source
-    assert "Anbu Care did not write this page" in source
+    assert "did not write this page" in source
     # an absent photograph is a 404 that explains itself, not a lie
     assert "the appointment stands either way" in source
 
@@ -1619,8 +1619,9 @@ def test_evidence_is_offered_on_the_card_only_when_there_is_some():
 
     page = pathlib.Path("anbu_care/webui/index.html").read_text()
     assert "${a.evidence?" in page, "the button renders with nothing behind it"
-    assert "See the centre's own page" in page
-    assert "photographed as it was submitted" in page
+    assert "What the centre answered" in page
+    assert "What was sent" in page
+    assert "photographed either side of the click" in page
 
 
 def test_the_proof_travels_with_the_claim(case, monkeypatch):
@@ -2016,3 +2017,51 @@ def test_an_emptied_form_only_rescues_silence_never_a_rejection():
     assert 'outcome == "unknown" and form_cleared' in commit, \
         "an emptied form could rescue a rejected submission"
     assert guard
+
+
+def test_both_sides_of_the_click_are_photographed(case, monkeypatch):
+    """One picture was being read backwards. A form that succeeded clears
+    itself, so the centre's answer alone shows empty boxes and looks as though
+    nothing was ever typed."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    class Both(Landing):
+        name = "test-both"
+
+        def commit(self, *, centre, payload, prepared, session_id="",
+                   otp_wait_seconds=0):
+            return channels.AttemptResult(
+                outcome=channels.REQUESTED, detail="stub",
+                cancel_phone="+917550075500",
+                evidence="artifacts/bookings/requested-a-1.png",
+                evidence_sent="artifacts/bookings/sent-a-1.png")
+
+    _drive(monkeypatch, Both())
+    run.arrange(case_id=case_id, order_id=order.order_id)
+
+    appt = service.list_appointments(case_id)[0]
+    assert appt.evidence == "artifacts/bookings/requested-a-1.png"
+    assert appt.evidence_sent == "artifacts/bookings/sent-a-1.png"
+
+
+def test_the_filled_form_is_photographed_before_the_click():
+    """After the click is too late: the values are gone."""
+    import pathlib
+
+    source = pathlib.Path("booker/driver.py").read_text()
+    commit = source[source.index("def commit("):]
+    assert commit.index('_shot(page, "sent")') < commit.index("page.click(submit"), \
+        "the form is photographed after it has already cleared"
+
+
+def test_the_answer_explains_why_the_boxes_are_empty():
+    """Evidence that has to be explained in chat is not doing its job."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.appointment_evidence)
+    assert "empty boxes here are the acknowledgement" in source
+    assert "a moment before it was" in source

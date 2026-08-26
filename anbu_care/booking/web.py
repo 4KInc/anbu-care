@@ -134,6 +134,7 @@ class WebChannel:
             slot_text=str(body.get("slot_text") or ""),
             provider_ref=str(body.get("provider_ref") or ""),
             evidence=str(body.get("evidence") or ""),
+            evidence_sent=str(body.get("evidence_sent") or ""),
         )
 
     def _call(self, path: str, body: dict, timeout: int) -> dict | None:
