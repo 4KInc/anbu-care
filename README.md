@@ -489,16 +489,31 @@ This matters more than any feature list, so it comes first.
   property. `robots.txt` is consulted, and a site that has said not to has said
   not to.
 
-  **Two real bookings have been made** — DLABS Diagnostics and Aarthi Scans,
-  both in Thoothukudi, both callback-request forms, both cancelled by phone.
-  Everything about the lane is real code against real sites; only the dry-run
-  switch decides whether the last click happens.
+  **A real booking has been made and photographed**: DLABS Diagnostics in
+  Thoothukudi, whose page answered "Submission Success, Thanks for getting in
+  touch!" with every field cleared. Both sides of the click are kept — the form
+  filled in, and the centre's answer — so the claim rests on that clinic's own
+  page rather than on this system's account of itself.
 
-- **No centre found so far can confirm online.** The `confirmed` path is
-  implemented and tested and **has never fired against a real centre**, because
-  every centre in Thoothukudi that this system could drive takes a callback
-  request and nothing more. So an appointment reads `requested` honestly and
-  indefinitely, and the agreement happens in a phone call Anbu Care is not on.
+  It took five attempts, and every failed one was this lane claiming something
+  it had not verified: a form that rejected the submission on a missing email,
+  a page still spinning when it was read, a spinner it did not recognise, and
+  an acknowledgement whose wording it had never heard. Each was found by the
+  screenshot and not by the code, which is the entire argument for keeping one.
+
+- **No centre found so far can CONFIRM online.** A booking lands as
+  `requested` — the centre has the request and has agreed nothing. The
+  `confirmed` path is implemented and tested and **has never fired against a
+  real centre**, because every centre this system can drive takes a callback and
+  nothing more, so the agreement happens in a phone call Anbu Care is not on.
+  The card's pill stays amber for exactly that reason.
+
+  Of eight real Thoothukudi centres, **one** can be booked. One has no website,
+  three are React applications the driver cannot read, two have hostnames that
+  no longer resolve, and one never answers within the wait. Chennai, scouted for
+  comparison, is better built and wants MORE — Anderson requires a package
+  chosen from its own catalogue, which would be this system deciding which test
+  she has. The realistic Indian path is the call bridge, not the form.
   The OTP relay is complete and verified in every part — the parked session, the
   delivery, the narrow inbound branch, one-shot closure — and **the full loop
   has never run end to end**, for the same reason: nothing we can drive has
@@ -631,7 +646,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1029 tests, no GCP or model access needed
+make test             # 1070 tests, no GCP or model access needed
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
 ```
@@ -823,7 +838,7 @@ scripts/
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
   preflight.py          the state that silently ruins a take (`make preflight`)
-tests/                  1029 tests, no GCP or model access needed
+tests/                  1070 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 ```
