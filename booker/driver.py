@@ -778,7 +778,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                 }
 
             page.click(submit, timeout=15_000)
-            page.wait_for_timeout(SETTLE_MS * 2)
+            settled = _settle(page)
             after = _text_of(page)
 
             # A CODE WAS TEXTED TO SOMEBODY. Park here holding the session,
@@ -823,7 +823,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                     page.fill(field, code, timeout=10_000)
                     verify = _validate_submit(page, _otp_submit(page))
                     page.click(verify, timeout=15_000)
-                    page.wait_for_timeout(SETTLE_MS * 2)
+                    settled = _settle(page)
                     after = _text_of(page)
                 except DriverError as refused:
                     return {"outcome": "unavailable",
@@ -842,6 +842,34 @@ def commit(*, url: str, payload: dict, handle: dict,
                             "evidence": _shot(page, "otp-rejected")}
 
             outcome, evidence = read_outcome(after)
+
+            # STILL WORKING when we looked. A screenshot taken over a spinner is
+            # a photograph of a question, not of an answer - and Aarthi Scans
+            # was caught exactly there: the modal still open, our values still
+            # in it, the page still turning, recorded as a booking.
+            if not settled and outcome not in {"rejected", "confirmed"}:
+                return {
+                    "outcome": "unavailable",
+                    "detail": ("the centre's page was still working when it was "
+                               "read, so whether the request was taken is not "
+                               "known and nothing is claimed"),
+                    "cancel_url": cancel_url, "cancel_phone": cancel_phone,
+                    "evidence": _shot(page, "unsettled"),
+                }
+
+            # SAID NOTHING WE RECOGNISE. Not a booking. This branch used to
+            # default to "requested", which is how two real centres each
+            # produced an appointment nobody had.
+            if outcome == "unknown":
+                return {
+                    "outcome": "unavailable",
+                    "detail": ("the centre's page said nothing that could be "
+                               "read as having taken the request, so nothing "
+                               "is claimed"),
+                    "cancel_url": cancel_url, "cancel_phone": cancel_phone,
+                    "evidence": _shot(page, "unclear"),
+                }
+
             if outcome == "rejected":
                 return {
                     "outcome": "unavailable",
@@ -1005,13 +1033,21 @@ def read_outcome(text: str) -> tuple[str, str]:
     if refused:
         return "rejected", refused
 
+    # This is what a callback form says when it HAS taken the request: "thank
+    # you, our team will call you". That positive acknowledgement is what earns
+    # "requested" - not the mere absence of an error message.
     hedge = next((w for w in NOT_CONFIRMED_SIGNALS if w in lowered), "")
     if hedge:
-        return "requested", ""
+        return "requested", hedge
 
     said = next((w for w in CONFIRMED_SIGNALS if w in lowered), "")
     if not said:
-        return "requested", ""
+        # NOT "requested". Two real centres each produced a misleading
+        # requested from this branch: DLABS because its rejection wording was
+        # unmatched, and Aarthi because the page was still spinning when it was
+        # read. A page that says nothing we recognise has told us nothing, and
+        # "we submitted it" is a claim, not an absence.
+        return "unknown", ""
 
     evidence = _slot_from(text) or _when_from(text)
     if not evidence:
@@ -1042,6 +1078,42 @@ def _otp_submit(page) -> str:
         except Exception:  # noqa: BLE001
             continue
     raise DriverError("no button was found to send the code with")
+
+
+# What a page shows while it is still working. A screenshot taken over one of
+# these is a photograph of a question, not of an answer.
+_SPINNERS = (".spinner", ".loader", ".loading", "[class*='spinner' i]",
+             "[class*='loader' i]", "[aria-busy='true']")
+
+
+def _settle(page, seconds: int = 20) -> bool:
+    """Wait for the submission to actually resolve. True if it looks settled.
+
+    The click was followed by a fixed five-second pause and then a screenshot,
+    which caught Aarthi Scans mid-flight: the modal still open, our values still
+    in it, and a spinner turning in the middle of the page. That was recorded as
+    a booking.
+    """
+    try:
+        page.wait_for_load_state("networkidle", timeout=seconds * 1000)
+    except Exception:  # noqa: BLE001 - a busy page is not an error
+        pass
+
+    waited, step, deadline = 0, 500, seconds * 1000
+    while waited < deadline:
+        spinning = False
+        for selector in _SPINNERS:
+            try:
+                if page.locator(selector).filter(visible=True).count():
+                    spinning = True
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        if not spinning:
+            return True
+        page.wait_for_timeout(step)
+        waited += step
+    return False
 
 
 def _rejected(text: str) -> bool:

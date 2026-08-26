@@ -1259,10 +1259,13 @@ def _driver_module():
 
 
 def test_a_page_that_says_nothing_recognisable_confirms_nothing():
-    """Silence is requested, never confirmed."""
+    """Silence was "requested" here, and that WAS the bug: it is how two real
+    centres each produced an appointment nobody had. Silence is now unknown,
+    which the lane turns into unavailable and never into a booking."""
     driver = _driver_module()
     for quiet in ("", "Thank you for your submission!", "Booking Info | About us"):
-        assert driver.read_outcome(quiet)[0] == "requested"
+        assert driver.read_outcome(quiet)[0] == "unknown", quiet
+        assert driver.read_outcome(quiet)[0] != "confirmed"
 
 
 def test_the_words_alone_are_not_a_confirmation():
@@ -1737,3 +1740,59 @@ def test_required_is_not_only_an_html_attribute():
     guard = guard[:guard.index("\ndef ")]
     assert "aria-required" in guard, \
         "a field the site validates in JavaScript is still invisible to this"
+
+
+# =========================================================================
+# "REQUESTED" IS EARNED, NOT DEFAULTED TO
+# =========================================================================
+
+
+def test_a_page_that_says_nothing_is_not_a_booking():
+    """The branch that produced two false appointments. DLABS because its
+    rejection wording was unmatched, Aarthi because the page was still spinning
+    when it was read - both fell through to a default of "requested", which is
+    a claim, not an absence."""
+    driver = _driver_module()
+
+    for silent in ("", "Booking Info +91 9488581822 628001 Gender: Male Female Save",
+                   "AARTHI SCANS & LABS About us"):
+        outcome, _ = driver.read_outcome(silent)
+        assert outcome == "unknown", f"{silent[:40]!r} was read as an outcome"
+
+
+def test_requested_needs_the_centre_to_have_acknowledged_it():
+    """"Thank you, our team will call you" is what a callback form says when it
+    HAS taken the request. That is what earns requested."""
+    driver = _driver_module()
+
+    for taken in ("Thank you. Our team will call you shortly.",
+                  "We have received your request.",
+                  "Our team will contact you"):
+        assert driver.read_outcome(taken)[0] == "requested", taken
+
+
+def test_a_page_still_working_is_never_reported_as_taken():
+    """A screenshot taken over a spinner is a photograph of a question, not of
+    an answer."""
+    import pathlib
+
+    source = pathlib.Path("booker/driver.py").read_text()
+    assert "def _settle(" in source, "nothing waits for the submission to resolve"
+    commit = source[source.index("def commit("):]
+    assert "settled = _settle(page)" in commit, \
+        "the click is still followed by a fixed pause and a screenshot"
+    assert "still working when it was" in commit
+    assert "wait_for_timeout(SETTLE_MS * 2)\n            after" not in commit
+
+
+def test_the_unknown_outcome_never_becomes_an_appointment():
+    """unknown must reach the lane as unavailable, so no appointment row and no
+    message are ever produced from it."""
+    import pathlib
+
+    source = pathlib.Path("booker/driver.py").read_text()
+    commit = source[source.index("def commit("):]
+    block = commit[commit.index('if outcome == "unknown"'):]
+    block = block[:block.index('if outcome == "rejected"')]
+    assert '"outcome": "unavailable"' in block
+    assert "nothing" in block and "is claimed" in block
