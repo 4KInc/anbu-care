@@ -157,11 +157,17 @@ def arrange(*, case_id: str, order_id: str) -> dict:
                               "Recorded before it runs so a crash cannot hide "
                               "it and a retry cannot double-book.")})
 
-        def note(outcome, detail, failed_check=None):
+        def note(outcome, detail, failed_check=None, evidence=""):
             row = {"place_id": centre.get("place_id"), "name": centre.get("name"),
                    "channel": driver.name, "outcome": outcome, "detail": detail}
             if failed_check:
                 row["failed_check"] = failed_check
+            # A REFUSED attempt is as worth looking at as a successful one -
+            # more, usually, because the reason is the interesting part. Without
+            # this the picture existed in a bucket and the only way to see it
+            # was to go in by hand.
+            if evidence:
+                row["evidence"] = evidence
             attempts.append(row)
 
         # PREPARE. Navigates, fills, reads - and submits nothing.
@@ -220,7 +226,8 @@ def arrange(*, case_id: str, order_id: str) -> dict:
             otp.close(pending, outcome="used" if result.landed else "not_used")
 
         if not result.landed:
-            note(result.outcome, result.detail)
+            note(result.outcome, result.detail,
+                 evidence=getattr(result, "evidence", ""))
             continue
 
         return _record(case_id, order, mandate, centre, driver, result,

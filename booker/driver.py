@@ -780,7 +780,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                 }
 
             page.click(submit, timeout=15_000)
-            settled = _settle(page)
+            settled = _settle(page, submit=submit)
             after = _text_of(page)
 
             # A CODE WAS TEXTED TO SOMEBODY. Park here holding the session,
@@ -825,7 +825,7 @@ def commit(*, url: str, payload: dict, handle: dict,
                     page.fill(field, code, timeout=10_000)
                     verify = _validate_submit(page, _otp_submit(page))
                     page.click(verify, timeout=15_000)
-                    settled = _settle(page)
+                    settled = _settle(page, submit=verify)
                     after = _text_of(page)
                 except DriverError as refused:
                     return {"outcome": "unavailable",
@@ -1088,13 +1088,23 @@ _SPINNERS = (".spinner", ".loader", ".loading", "[class*='spinner' i]",
              "[class*='loader' i]", "[aria-busy='true']")
 
 
-def _settle(page, seconds: int = 20) -> bool:
+def _settle(page, seconds: int = 20, submit: str = "") -> bool:
     """Wait for the submission to actually resolve. True if it looks settled.
 
-    The click was followed by a fixed five-second pause and then a screenshot,
-    which caught Aarthi Scans mid-flight: the modal still open, our values still
-    in it, and a spinner turning in the middle of the page. That was recorded as
-    a booking.
+    Three signals, because no one of them is enough on a real site.
+
+    NETWORK QUIET is the cheap one and it missed both failures below.
+
+    A SPINNER is the obvious one, and matching it by class caught Aarthi Scans
+    but not DLABS, whose indicator is three animated dots belonging to no class
+    this or any list would guess.
+
+    A DISABLED SUBMIT BUTTON is the one that generalises. A form that has taken
+    your click almost always greys the button until it is done, and that is
+    true whatever the site calls its spinner. DLABS was photographed with its
+    fields greyed, its button disabled and its dots turning - and the lane, not
+    seeing a spinner it recognised, read the page and reported it as unknown.
+    Better than the booking it once claimed, and still not the answer.
     """
     try:
         page.wait_for_load_state("networkidle", timeout=seconds * 1000)
@@ -1103,18 +1113,29 @@ def _settle(page, seconds: int = 20) -> bool:
 
     waited, step, deadline = 0, 500, seconds * 1000
     while waited < deadline:
-        spinning = False
-        for selector in _SPINNERS:
-            try:
-                if page.locator(selector).filter(visible=True).count():
-                    spinning = True
-                    break
-            except Exception:  # noqa: BLE001
-                continue
-        if not spinning:
+        if not _busy(page, submit):
             return True
         page.wait_for_timeout(step)
         waited += step
+    return not _busy(page, submit)
+
+
+def _busy(page, submit: str = "") -> bool:
+    """Whether the page still looks like it is working."""
+    for selector in _SPINNERS:
+        try:
+            if page.locator(selector).filter(visible=True).count():
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+
+    if submit:
+        try:
+            control = page.locator(submit).first
+            if control.count() and not control.is_enabled():
+                return True
+        except Exception:  # noqa: BLE001
+            pass
     return False
 
 

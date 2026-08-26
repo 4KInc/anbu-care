@@ -1035,6 +1035,43 @@ def appointment_evidence(case_id: str, appointment_id: str,
                      "submitted. Anbu Care did not write this page.")}
 
 
+@app.get("/api/cases/{case_id}/attempts/{attempt}/evidence/view")
+def attempt_evidence_view(case_id: str, attempt: int,
+                          _session: str = Depends(require_case_access)) -> Response:
+    """The page of a centre that REFUSED, by its position in the escalation.
+
+    A refusal is the more interesting half of this lane and it was the harder
+    half to look at: the reason landed on the chain and the photograph sat in a
+    bucket reachable only by hand.
+
+    The object name is NEVER taken from the request. It is read out of this
+    case's own escalation receipt at the index asked for, so a caller holding a
+    link for one case cannot name an object belonging to another - the same
+    reason a bill is fetched by bill id rather than by path.
+    """
+    from anbu_care.comms import storage
+
+    tried: list[dict] = []
+    for receipt in service.get_chain(case_id).receipts:
+        if receipt.kind == "booking.escalated":
+            tried = list(receipt.payload.get("attempts") or [])
+    if not 0 <= attempt < len(tried):
+        raise HTTPException(status_code=404,
+                            detail=f"no attempt {attempt} on case {case_id}")
+
+    obj = str(tried[attempt].get("evidence") or "")
+    if not obj:
+        raise HTTPException(
+            status_code=404,
+            detail=("no page was photographed for that attempt. It may have "
+                    "failed before a page loaded at all."))
+
+    signed = storage.signed_url(obj)
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return RedirectResponse(signed.url, status_code=302)
+
+
 @app.get("/api/cases/{case_id}/appointments/{appointment_id}/evidence/view")
 def appointment_evidence_view(case_id: str, appointment_id: str,
                               _session: str = Depends(require_case_access)) -> Response:

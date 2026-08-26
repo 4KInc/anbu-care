@@ -1779,7 +1779,7 @@ def test_a_page_still_working_is_never_reported_as_taken():
     source = pathlib.Path("booker/driver.py").read_text()
     assert "def _settle(" in source, "nothing waits for the submission to resolve"
     commit = source[source.index("def commit("):]
-    assert "settled = _settle(page)" in commit, \
+    assert "settled = _settle(page, submit=" in commit, \
         "the click is still followed by a fixed pause and a screenshot"
     assert "still working when it was" in commit
     assert "wait_for_timeout(SETTLE_MS * 2)\n            after" not in commit
@@ -1867,3 +1867,87 @@ def test_the_record_still_refuses_everything_it_did_before():
         assert leak in disclosure.NEVER_DISCLOSE, f"{leak} stopped being refused"
         with pytest.raises(disclosure.DisclosureRefused):
             disclosure.check({"name": "A", "email": "x@y.com", leak: "no"})
+
+
+def test_a_disabled_submit_button_means_still_working():
+    """The signal that generalises. A form that has taken your click almost
+    always greys the button until it is done, whatever the site calls its
+    spinner - DLABS's is three animated dots belonging to no class any list
+    would guess, and it was photographed mid-flight because of it."""
+    driver = _driver_module()
+
+    class _Control:
+        def __init__(self, enabled, present=1):
+            self._enabled, self._count = enabled, present
+
+        def count(self):
+            return self._count
+
+        def is_enabled(self):
+            return self._enabled
+
+    class _Empty:
+        def filter(self, **_kw):
+            return self
+
+        def count(self):
+            return 0
+
+    class _Page:
+        def __init__(self, enabled):
+            self._control = _Control(enabled)
+
+        def locator(self, selector):
+            if selector == "#submit":
+                class _L:
+                    first = self._control
+                return _L()
+            return _Empty()
+
+    assert driver._busy(_Page(enabled=False), submit="#submit") is True
+    assert driver._busy(_Page(enabled=True), submit="#submit") is False
+    # with no submit selector it falls back to spinners only
+    assert driver._busy(_Page(enabled=False)) is False
+
+
+def test_a_refused_attempt_keeps_its_photograph(case, monkeypatch):
+    """A refusal is the more interesting half of this lane and it was the
+    harder half to look at: the reason landed on the chain and the picture sat
+    in a bucket reachable only by hand."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+
+    class Refuses(Landing):
+        name = "test-refuses"
+
+        def commit(self, *, centre, payload, prepared, session_id="",
+                   otp_wait_seconds=0):
+            return channels.AttemptResult(
+                outcome=channels.UNAVAILABLE,
+                detail="the centre's form refused what was sent",
+                evidence="artifacts/bookings/rejected-abc-1.png")
+
+    _drive(monkeypatch, Refuses())
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+
+    assert out["outcome"] == "escalated"
+    assert out["attempts"][0]["evidence"] == "artifacts/bookings/rejected-abc-1.png"
+
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "booking.escalated")
+    assert receipt.payload["attempts"][0]["evidence"], \
+        "the picture is unreachable from the record again"
+
+
+def test_an_attempt_photograph_is_never_named_by_the_caller():
+    """The object comes out of this case's own escalation receipt, so a link
+    for one case cannot name an object belonging to another."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.attempt_evidence_view)
+    assert "require_case_access" in source
+    assert "get_chain(case_id)" in source
+    assert 'tried[attempt].get("evidence")' in source
