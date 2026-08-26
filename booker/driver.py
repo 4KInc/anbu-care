@@ -33,6 +33,7 @@ real appointment for a patient who does not exist.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -1032,18 +1033,36 @@ def _slot_from(text: str) -> str:
 
 
 def _shot(page, label: str) -> str:
-    """A screenshot of what was actually on screen, kept where bills are kept."""
+    """A photograph of the centre's own page at the moment we submitted.
+
+    This is the only EXTERNAL evidence a booking happened. Everything else on
+    the record is Anbu Care's account of its own behaviour, and for the one lane
+    that acts against a third party, its own word is exactly the wrong thing to
+    ask a family to take.
+
+    Returns the OBJECT NAME, not a gs:// URL. The bucket is private and stays
+    private; a signed link is minted per request by the API, the same way a
+    photographed bill is served. Returning gs:// meant the value could never be
+    signed and the evidence was unreachable even when it was captured.
+
+    Never raises. A booking that happened and could not be photographed is
+    still a booking, and losing the screenshot must not lose the appointment.
+    """
     bucket = os.getenv("ANBU_ARTIFACT_BUCKET", "")
     if not bucket:
+        logger.info("no artifact bucket; the booking will have no evidence")
         return ""
     try:
         from google.cloud import storage
 
         raw = page.screenshot(full_page=True)
-        name = f"artifacts/bookings/{label}-{abs(hash(page.url)) % 10**10}.png"
+        name = (f"artifacts/bookings/{label}-"
+                f"{hashlib.sha256(page.url.encode()).hexdigest()[:16]}-"
+                f"{len(raw)}.png")
         storage.Client().bucket(bucket).blob(name).upload_from_string(
             raw, content_type="image/png")
-        return f"gs://{bucket}/{name}"
+        logger.info("kept booking evidence at %s", name)
+        return name
     except Exception:  # noqa: BLE001
-        logger.info("could not keep a screenshot of the booking")
+        logger.exception("could not keep a screenshot of the booking")
         return ""

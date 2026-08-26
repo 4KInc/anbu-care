@@ -25,6 +25,15 @@ SERVICE="${SERVICE:-anbu-care-booker}"
 API_SA="${API_SA:-$(gcloud run services describe anbu-care --region "$REGION" \
   --project "$PROJECT" --format='value(spec.template.spec.serviceAccountName)')}"
 
+# Read off the API rather than off the caller's shell. Every deploy so far
+# passed this empty, so the driver photographed each booking and threw the
+# picture away - the one piece of external evidence the lane produces.
+ANBU_ARTIFACT_BUCKET="${ANBU_ARTIFACT_BUCKET:-$(gcloud run services describe anbu-care \
+  --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' 2>/dev/null \
+  | tr ';' '\n' | sed -n "s/.*'name': 'ANBU_ARTIFACT_BUCKET', 'value': '\([^']*\)'.*/\1/p")}"
+echo "artifact bucket: ${ANBU_ARTIFACT_BUCKET:-(none - bookings will have no evidence)}"
+
 cd "$(dirname "$0")/../booker"
 
 gcloud run deploy "$SERVICE" \

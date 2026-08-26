@@ -999,6 +999,42 @@ def list_case_appointments(case_id: str,
             "appointments": [a.model_dump(mode="json") for a in appointments]}
 
 
+@app.get("/api/cases/{case_id}/appointments/{appointment_id}/evidence")
+def appointment_evidence(case_id: str, appointment_id: str,
+                         _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """A short-lived signed link to the centre's own page, as it was submitted.
+
+    The only EXTERNAL evidence this lane produces. Every other line on the
+    record is Anbu Care's account of its own behaviour, and for the one lane
+    that acts against a third party, its own word is the wrong thing to ask a
+    family to take.
+
+    **Credentialed**, like the bill photograph it copies: the page carries her
+    name and a telephone number, so it is content, not integrity. The bucket
+    stays private throughout and nothing here makes an object public.
+    """
+    from anbu_care.comms import storage
+
+    appointment = next((a for a in service.list_appointments(case_id)
+                        if a.appointment_id == appointment_id), None)
+    if appointment is None:
+        raise HTTPException(status_code=404,
+                            detail=f"no appointment {appointment_id} on case {case_id}")
+    if not appointment.evidence:
+        raise HTTPException(
+            status_code=404,
+            detail=("no page was photographed for this appointment. It may "
+                    "predate the evidence being kept, or the screenshot failed "
+                    "- the appointment stands either way."))
+
+    signed = storage.signed_url(appointment.evidence)
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return {"url": signed.url, "expires_in_seconds": signed.expires_in_seconds,
+            "note": ("The centre's own page at the moment the form was "
+                     "submitted. Anbu Care did not write this page.")}
+
+
 @app.post("/api/cases/{case_id}/appointments/{appointment_id}/cancel")
 def cancel_appointment(case_id: str, appointment_id: str,
                        _session: str = Depends(require_family_session)) -> dict[str, Any]:

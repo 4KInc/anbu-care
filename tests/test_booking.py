@@ -1562,3 +1562,58 @@ def test_a_message_that_names_a_page_opens_that_page():
 
     for name in ("payment_failed", "payment_amount_mismatch"):
         assert policy.TEMPLATES[name]["view"] == "claim"
+
+
+# =========================================================================
+# THE ONE THING ON THIS RECORD ANBU CARE DID NOT WRITE
+# =========================================================================
+
+
+def test_the_evidence_is_an_object_name_not_a_gs_url():
+    """signed_url takes a bare object name. Returning gs:// meant the value
+    could never be signed and the evidence was unreachable even when it had
+    been captured."""
+    import pathlib
+
+    driver = pathlib.Path("booker/driver.py").read_text()
+    shot = driver[driver.index("def _shot(page"):]
+    shot = shot[:shot.index("\n\n\n")] if "\n\n\n" in shot else shot
+    assert 'return f"gs://' not in shot, "the path can never be signed"
+    assert "return name" in shot
+
+
+def test_a_booking_with_no_photograph_still_stands(case, monkeypatch):
+    """Losing the screenshot must not lose the appointment."""
+    parent_id, case_id = case
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    _drive(monkeypatch, Landing())          # returns no evidence at all
+
+    out = run.arrange(case_id=case_id, order_id=order.order_id)
+    assert out["outcome"] == "requested"
+    assert service.list_appointments(case_id)[0].evidence == ""
+
+
+def test_the_evidence_route_is_credentialed_and_says_what_it_is():
+    """The page carries her name and a telephone number, so it is content, not
+    integrity - and it is served the way a photographed bill is."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.appointment_evidence)
+    assert "require_case_access" in source, \
+        "the centre's page carries her name and is served without a credential"
+    assert "storage.signed_url" in source
+    assert "Anbu Care did not write this page" in source
+    # an absent photograph is a 404 that explains itself, not a lie
+    assert "the appointment stands either way" in source
+
+
+def test_evidence_is_offered_on_the_card_only_when_there_is_some():
+    import pathlib
+
+    page = pathlib.Path("anbu_care/webui/index.html").read_text()
+    assert "${a.evidence?" in page, "the button renders with nothing behind it"
+    assert "See the centre's own page" in page
+    assert "photographed as it was submitted" in page

@@ -962,6 +962,25 @@ function dxOption(x, i){
 // it was allowed to submit anything. That is the difference between a lane
 // that looked something up and one that decided, and it is the part worth
 // putting on screen.
+// The one piece of evidence on this record that Anbu Care did not write.
+// Fetched on demand rather than rendered inline: the link is short-lived by
+// design, and minting one for a card nobody opened would waste it.
+async function showBookingEvidence(id){
+  const slot = document.getElementById(`ev-${id}`);
+  if(!slot) return;
+  slot.innerHTML = `<p class="mute" style="margin:10px 0 0">Fetching it…</p>`;
+  const r = await api(`/api/cases/${encodeURIComponent(S.caseId)}/appointments/`
+    + `${encodeURIComponent(id)}/evidence`, {auth:true});
+  if(!r || !r.url){
+    slot.innerHTML = `<p class="mute" style="margin:10px 0 0">${esc(
+      (r && r.detail) || "No page was photographed for this one. The appointment stands either way.")}</p>`;
+    return;
+  }
+  slot.innerHTML = `<img src="${esc(r.url)}" alt="the centre's page as submitted"
+      style="margin-top:12px;max-width:100%;border-radius:10px;border:1px solid var(--line)">
+    <p class="mute" style="font-size:13px;margin-top:6px">${esc(r.note)}</p>`;
+}
+
 function apptCard(a){
   const requested = a.status === "requested";
   const done = a.status === "confirmed";
@@ -1007,6 +1026,14 @@ function apptCard(a){
         ${(a.guards_passed||[]).length} checks passed before anything was sent</div>
       <div class="pills">${(a.guards_passed||[]).map(g=>
         `<span class="pill p-teal">${esc(g)}</span>`).join("")}</div>
+    </div>`:""}
+
+    ${a.evidence?`<div style="margin-top:14px">
+      <button class="btn" onclick="showBookingEvidence('${esc(a.appointment_id)}')">
+        See the centre's own page</button>
+      <span class="mute" style="margin-left:10px;font-size:13px">
+        photographed as it was submitted</span>
+      <div id="ev-${esc(a.appointment_id)}"></div>
     </div>`:""}
 
     <div class="strip note" style="margin-top:14px">
