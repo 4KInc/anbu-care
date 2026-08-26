@@ -71,7 +71,8 @@ MAX_PAGE_TEXT = 6_000
 # The fields we know how to supply. A map naming anything else is rejected
 # rather than ignored, because a model inventing "aadhaar" is a model that has
 # stopped answering the question it was asked.
-KNOWN_FIELDS = ("name", "age", "phone", "test_label", "gender", "pincode")
+KNOWN_FIELDS = ("name", "age", "phone", "test_label", "gender", "pincode",
+                "email")
 
 # What a submit control may say. Deliberately short, and deliberately missing
 # every word that means money.
@@ -104,6 +105,7 @@ Report ONLY which form inputs correspond to these fields:
              matching the WHOLE GROUP, e.g. input[name="gender"]. For a dropdown
              give the select element.
   pincode    a postal or PIN code. NOT a one-time password or verification code
+  email      an email address
 
 Return ONLY a JSON object, no prose and no code fence:
 

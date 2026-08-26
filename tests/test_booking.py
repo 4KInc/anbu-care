@@ -1067,7 +1067,7 @@ def test_widening_the_whitelist_did_not_widen_it_further():
     refused before is still refused."""
     for leak in ("allergies", "conditions", "medications", "policy_number",
                  "insurer", "case_id", "diagnosis", "dob", "son_phone",
-                 "aadhaar", "email"):
+                 "aadhaar", "hospital", "clinician_note"):
         with pytest.raises(disclosure.DisclosureRefused):
             disclosure.check({"name": "A", "gender": "female", leak: "no"})
 
@@ -1796,3 +1796,74 @@ def test_the_unknown_outcome_never_becomes_an_appointment():
     block = block[:block.index('if outcome == "rejected"')]
     assert '"outcome": "unavailable"' in block
     assert "nothing" in block and "is claimed" in block
+
+
+# =========================================================================
+# AN EMAIL IS A CHANNEL, NOT A FACT
+# =========================================================================
+
+
+def test_a_centre_may_be_given_an_email():
+    """Without one this lane cannot book anywhere in India. Every centre driven
+    so far - DLABS in Thoothukudi, Anderson in Chennai - makes it required."""
+    payload = disclosure.payload_for(
+        name="Ashanthi Machado", age=71, phone="+919488581822",
+        test_label="blood test", home_collection=False, gender="female",
+        pincode="628001", email="someone@example.com")
+    assert payload["email"] == "someone@example.com"
+    assert set(payload) == disclosure.ALLOWED_FIELDS
+
+
+def test_the_booking_email_is_not_the_sign_in_address(case):
+    """That string is what Google sign-in is matched against, and an address
+    handed to eight labs is one that will be sold, phished and reused. The
+    thing that opens her record and the thing that goes on a form are kept
+    apart even when a family puts the same value in both."""
+    from anbu_care.schemas import FamilyContact, ParentProfile
+
+    fields = set(ParentProfile.model_fields)
+    assert "booking_email" in fields
+    assert "email" not in fields, "the profile grew a single ambiguous address"
+    # the contact's email still exists and is still its own thing
+    assert "email" in set(FamilyContact.model_fields)
+
+
+def test_an_unrecorded_email_is_never_substituted_from_somewhere_else(case):
+    """An unset value refuses the form rather than reaching for an address
+    somebody gave for something else."""
+    import inspect
+
+    from anbu_care.booking import run as booking_run
+
+    payload = disclosure.payload_for(
+        name="A", age=71, phone="+91", test_label="blood test",
+        home_collection=False)
+    assert payload["email"] == ""
+
+    code = "\n".join(line.split("#")[0]
+                     for line in inspect.getsource(booking_run.arrange).splitlines())
+    assert 'email=getattr(profile, "booking_email", "")' in code
+    for borrowed in ("contact.email", "primary.email", "family_contacts[0].email"):
+        assert borrowed not in code, f"an address was borrowed: {borrowed}"
+
+
+def test_the_profile_refuses_something_that_is_not_an_address(case):
+    from anbu_care.tools import onboarding_tools
+
+    parent_id, _case_id = case
+    assert onboarding_tools.record_booking_details(
+        parent_id, booking_email="not-an-address")["status"] == "rejected"
+    ok = onboarding_tools.record_booking_details(
+        parent_id, booking_email="someone@example.com")
+    assert ok["booking_email"] == "someone@example.com"
+
+
+def test_the_record_still_refuses_everything_it_did_before():
+    """Widening by one field must not have widened it by two."""
+    for leak in ("allergies", "conditions", "medications", "policy_number",
+                 "insurer", "sum_insured_inr", "case_id", "parent_id",
+                 "order_id", "note", "clinician_note", "hospital", "diagnosis",
+                 "dob", "date_of_birth", "family_contact", "son_phone"):
+        assert leak in disclosure.NEVER_DISCLOSE, f"{leak} stopped being refused"
+        with pytest.raises(disclosure.DisclosureRefused):
+            disclosure.check({"name": "A", "email": "x@y.com", leak: "no"})

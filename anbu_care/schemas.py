@@ -103,6 +103,15 @@ class ParentProfile(BaseModel):
     # correct outcome and says so.
     gender: str = ""          # "female" | "male" | "other" | "" (unstated)
     pincode: str = ""
+    # An address a diagnostic centre may be given, because Indian lab enquiry
+    # forms are built around one and will not proceed without it.
+    #
+    # Its OWN field, deliberately not the family contact's `email`. That string
+    # is what Google sign-in is matched against, and an address handed to eight
+    # labs is an address that will be sold, phished and reused - so the thing
+    # that opens her record and the thing that goes on a booking form are kept
+    # apart even when a family chooses to put the same value in both.
+    booking_email: str = ""
     # What language to render messages TO HER in. Per-person, never global: her
     # son reads English and she reads Tamil, and one setting cannot serve both.
     # Defaults to English so nothing starts translating without somebody

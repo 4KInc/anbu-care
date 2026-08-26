@@ -19,13 +19,25 @@ The line is drawn at what is needed to hold a slot:
               pincode of the address a home collection would come to.
 
   REFUSED     allergies, conditions, medications, the policy number, the
-              insurer, the case id, the son's number, the hospital she was
-              admitted to, and anything from the clinician's note beyond the
-              test label itself.
+              insurer, the case id, the hospital she was admitted to, and
+              anything from the clinician's note beyond the test label itself.
 
 Age is in and date of birth is out, deliberately: a centre needs to know she is
 seventy-one because some tests are prepared differently for the elderly, and it
 never needs the day she was born. The narrowest thing that does the job.
+
+An EMAIL ADDRESS is the uncomfortable one, and it is here because without it
+this lane cannot book anywhere in India. Every centre driven so far - DLABS in
+Thoothukudi, Anderson in Chennai - makes it a required field. It is also
+different in kind from the others: a name or an age is a fact about her that a
+lab already needs, and an email is a CHANNEL. Whoever holds it can reach her
+for ever, and she cannot take it back.
+
+So it is a separate field from the family contact's address that Google sign-in
+is matched against, it is set deliberately and never derived, and an unset value
+refuses the form rather than substituting one somebody used for something else.
+A family that would rather give the son's address than the patient's can, and
+should.
 
 Gender and pincode were added for the same reason and only after a real centre
 refused without them - Aarthi Scans in Thoothukudi will not take a booking with
@@ -53,6 +65,7 @@ ALLOWED_FIELDS = frozenset({
     "home_collection",
     "gender",
     "pincode",
+    "email",
 })
 
 # Named individually rather than caught by a rule, so that adding a field to the
@@ -62,7 +75,7 @@ NEVER_DISCLOSE = frozenset({
     "policy_number", "insurer", "sum_insured_inr",
     "case_id", "parent_id", "order_id", "note", "clinician_note",
     "hospital", "admitted_to", "diagnosis", "dob", "date_of_birth",
-    "family_contact", "son_phone", "email",
+    "family_contact", "son_phone",
 })
 
 
@@ -87,7 +100,7 @@ def check(payload: dict) -> None:
 
 def payload_for(*, name: str, age: int | str, phone: str, test_label: str,
                 home_collection: bool, gender: str = "",
-                pincode: str = "") -> dict:
+                pincode: str = "", email: str = "") -> dict:
     """The only way this lane builds what it sends.
 
     A single constructor because the guarantee is about the payload's shape, and
@@ -107,6 +120,7 @@ def payload_for(*, name: str, age: int | str, phone: str, test_label: str,
         # form that requires one rather than putting a guess on her record.
         "gender": (gender or "").strip().lower(),
         "pincode": (pincode or "").strip(),
+        "email": (email or "").strip(),
     }
     check(payload)
     return payload

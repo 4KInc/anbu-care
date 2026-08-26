@@ -346,7 +346,8 @@ def record_emergency_disclosure_consent(parent_id: str, granted: bool = True) ->
 
 
 def record_booking_details(parent_id: str, gender: str = "",
-                           pincode: str = "") -> dict[str, Any]:
+                           pincode: str = "",
+                           booking_email: str = "") -> dict[str, Any]:
     """Record the two things a diagnostic centre will not book without.
 
     Kept on the profile rather than asked for at booking time, because a lane
@@ -362,6 +363,9 @@ def record_booking_details(parent_id: str, gender: str = "",
         parent_id: Whose details these are.
         gender: "female", "male", "other", or "" to leave unstated.
         pincode: The postal code a home collection would come to.
+        booking_email: An address a diagnostic centre may be given. Kept apart
+            from the family contact's sign-in address on purpose: one opens her
+            record, the other goes on forms at eight labs.
 
     Returns:
         What is now on file.
@@ -380,9 +384,16 @@ def record_booking_details(parent_id: str, gender: str = "",
         profile.gender = value
     if pincode.strip():
         profile.pincode = pincode.strip()
+    if booking_email.strip():
+        address = booking_email.strip()
+        if "@" not in address or len(address) < 5:
+            return {"status": "rejected",
+                    "detail": f"{booking_email!r} is not an email address"}
+        profile.booking_email = address
     service.save_profile(profile)
     return {"status": "recorded", "gender": profile.gender,
-            "pincode": profile.pincode}
+            "pincode": profile.pincode,
+            "booking_email": profile.booking_email}
 
 
 def record_booking_disclosure_consent(parent_id: str,

@@ -133,6 +133,7 @@ def arrange(*, case_id: str, order_id: str) -> dict:
         # requires one refuses and says which.
         gender=getattr(profile, "gender", "") if profile else "",
         pincode=getattr(profile, "pincode", "") if profile else "",
+        email=getattr(profile, "booking_email", "") if profile else "",
     )
 
     queue = choose(options, mandate)
