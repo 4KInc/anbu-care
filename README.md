@@ -344,10 +344,19 @@ This matters more than any feature list, so it comes first.
   **What a centre is told is a whitelist checked against the payload about to
   be sent**, so it fails closed: her name, age, a number, the test as the
   clinician worded it, and — because real forms will not proceed without them —
-  a gender and a pincode. Never inferred; unset stays unset and the form is
-  refused with the field named. It needs her **own** consent, a fourth
-  disclosure direction, because a bedside link ends when the browser closes and
-  a lab keeps her details afterwards.
+  a gender, a pincode and an **email address**. Never inferred; unset stays
+  unset and the form is refused with the field named. It needs her **own**
+  consent, a fourth disclosure direction, because a bedside link ends when the
+  browser closes and a lab keeps her details afterwards.
+
+  The email is different in kind from the rest and the code says so. A name or
+  an age is a FACT about her that a lab already needs; an email is a CHANNEL —
+  whoever holds it can reach her for ever and she cannot take it back. It is
+  kept as its own field rather than reusing the family contact's address,
+  because that string is what Google sign-in is matched against, and the thing
+  that opens her record should not be the thing printed on eight lab forms. It
+  went in only after three real attempts established that no Indian centre this
+  system can drive will proceed without one.
 
   **The model proposes, deterministic code acts.** Gemini is asked one
   question — which of our known fields does each input correspond to — and every
@@ -365,13 +374,45 @@ This matters more than any feature list, so it comes first.
   then be texted a code for an appointment in a woman's name they have never
   heard of. A field not holding what was typed refuses the whole attempt.
 
-  **A confirmation needs the centre to have actually confirmed**: a phrase
-  saying so AND a reference or a time to point at. "Thank you!" on a green
-  background is what almost every form says. A hedge wins outright — "confirmed,
-  our team will call you back" is a request whatever else is on the page — and
-  silence is a request, never a confirmation. The dashboard pill is amber
-  **"requested, not yet confirmed"**, never green, because it would be easy to
-  make a callback request look like a booked appointment and it is not one.
+  **Both sides of the click are photographed**, and this is the only external
+  evidence the system produces — everything else on the record is Anbu Care's
+  account of its own behaviour. The form as it stood filled in, and the centre's
+  answer, each behind a short-lived signed link served like a photographed bill.
+  A refused attempt keeps its picture too: the refusal is the more interesting
+  half and it was the harder one to look at.
+
+  Two pictures rather than one because a single one was read backwards. A form
+  that succeeds clears itself, so the answer alone shows empty boxes and looks
+  as though nothing was ever typed — evidence that has to be explained is not
+  doing its job.
+
+  **Every outcome is EARNED, and silence is not one of them.** Four rungs, in
+  this order: a page showing validation errors is `rejected` and that wins
+  outright, because a page can carry a confirmation phrase and an error at the
+  same time and only one is true. An acknowledgement — "thank you, our team will
+  call you", "Submission Success" — earns `requested`. A confirmation needs a
+  phrase AND a reference or a time to point at, since "Thank you!" on a green
+  background is what almost every form says. **Anything else is `unknown`, and
+  unknown never becomes an appointment.**
+
+  That default used to be `requested`, and it is how two different real centres
+  each produced an appointment nobody had. A page that says nothing recognisable
+  has told us nothing, and "we submitted it" is a claim, not an absence.
+
+  **An emptied form is believed over silence**, and it is the signal that
+  survives the language. A form that accepted a submission almost always resets
+  itself; one that refused keeps your values so you can fix them. A Tamil or
+  Hindi confirmation is a string this code will never have heard of; an empty
+  input is an empty input.
+
+  Reading the page at all means waiting for it to finish — network quiet, no
+  spinner, and **the submit button enabled again**, which is the one that
+  generalises: a form that has taken your click greys the button until it is
+  done, whatever it calls its spinner.
+
+  The dashboard pill is amber **"requested, not yet confirmed"**, never green,
+  because it would be easy to make a callback request look like a booked
+  appointment and it is not one.
 
   **The one-time code is relayed through the person in the room.** Nearly every
   real slot-booking flow in India sends an OTP, and defeating it is out of scope
@@ -881,6 +922,9 @@ Beyond ADK's own agent API:
 | `POST /api/cases/{id}/diagnostics/{order_id}/arrange` | Choose a centre and try to hold the slot, falling through on failure |
 | `GET /api/cases/{id}/appointments` | What was arranged, what was only requested, and every centre tried on the way. **Credentialed** — where she will be on Thursday is a fact about her |
 | `POST /api/cases/{id}/appointments/{id}/cancel` | Withdraw one, and hand back the path for telling the centre |
+| `GET /api/cases/{id}/appointments/{id}/evidence` | A signed link to the centre's own page. `?stage=sent` for the form as it was filled. **Credentialed** — the page carries her name and a number |
+| `GET /api/cases/{id}/appointments/{id}/evidence/view` | The same, as a redirect, so a WhatsApp message can carry the proof beside the claim |
+| `GET /api/cases/{id}/attempts/{n}/evidence/view` | The page of a centre that REFUSED, by its position in this case's own escalation receipt. The object is never named by the caller |
 | `GET /api/preflight` | The state that silently ruins a recording, in one round trip. **Credentialed** |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
 | `POST /api/parents/{id}/payment-mandate` | Authorise **standing**, ahead of any admission. Every case opened while it is live adopts it and they share the total cap |
