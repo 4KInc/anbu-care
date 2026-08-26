@@ -845,6 +845,12 @@ def commit(*, url: str, payload: dict, handle: dict,
 
             outcome, evidence = read_outcome(after)
 
+            # THE FORM EMPTIED ITSELF. Believed over silence, because a page
+            # that reset every box has taken what was in them - and this holds
+            # whatever language it says so in.
+            if outcome == "unknown" and form_cleared(page, fields, payload):
+                outcome, evidence = "requested", "the form cleared itself"
+
             # STILL WORKING when we looked. A screenshot taken over a spinner is
             # a photograph of a question, not of an answer - and Aarthi Scans
             # was caught exactly there: the modal still open, our values still
@@ -995,7 +1001,16 @@ NOT_CONFIRMED_SIGNALS = ("we will call", "will call you", "call you back",
                          "callback", "call back", "our team will",
                          "will contact you", "will get back", "request received",
                          "enquiry received", "we have received your request",
-                         "shortly")
+                         "shortly",
+                         # Read off DLABS, which answers a submitted form with
+                         # "Submission Success, Thanks for getting in touch!".
+                         # It had taken the request and the lane could not say
+                         # so, because none of the wording above matched.
+                         "submission success", "successfully submitted",
+                         "successfully sent", "thanks for getting in touch",
+                         "thank you for getting in touch",
+                         "thank you for contacting", "thank you for your submission",
+                         "message sent", "form submitted")
 
 
 # What a form says when it has REFUSED what was typed. Checked before anything
@@ -1118,6 +1133,34 @@ def _settle(page, seconds: int = 20, submit: str = "") -> bool:
         page.wait_for_timeout(step)
         waited += step
     return not _busy(page, submit)
+
+
+def form_cleared(page, fields: dict, payload: dict) -> bool:
+    """Whether the fields we filled are empty again.
+
+    The signal that needs no vocabulary. A form that ACCEPTED a submission
+    almost always resets itself, and a form that refused one keeps your values
+    so you can fix them - which is exactly what the three DLABS screenshots
+    show: values present and an error, values present and a spinner, then every
+    box blank beside "Submission Success".
+
+    It matters more than any phrase list because it survives the language. A
+    Tamil or Hindi confirmation is a string this code will never have heard of;
+    an empty input is an empty input.
+    """
+    checked = False
+    for name, selector in (fields or {}).items():
+        if name == "gender" or not str(payload.get(name, "")).strip():
+            continue
+        try:
+            if page.locator(selector).count() != 1:
+                continue
+            if (page.input_value(selector, timeout=3_000) or "").strip():
+                return False
+            checked = True
+        except Exception:  # noqa: BLE001
+            continue
+    return checked
 
 
 def _busy(page, submit: str = "") -> bool:

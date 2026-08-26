@@ -1263,7 +1263,8 @@ def test_a_page_that_says_nothing_recognisable_confirms_nothing():
     centres each produced an appointment nobody had. Silence is now unknown,
     which the lane turns into unavailable and never into a booking."""
     driver = _driver_module()
-    for quiet in ("", "Thank you for your submission!", "Booking Info | About us"):
+    for quiet in ("", "Booking Info | About us",
+                  "DLABS DIAGNOSTIC CENTRE Home About Us Services Contact"):
         assert driver.read_outcome(quiet)[0] == "unknown", quiet
         assert driver.read_outcome(quiet)[0] != "confirmed"
 
@@ -1951,3 +1952,67 @@ def test_an_attempt_photograph_is_never_named_by_the_caller():
     assert "require_case_access" in source
     assert "get_chain(case_id)" in source
     assert 'tried[attempt].get("evidence")' in source
+
+
+# =========================================================================
+# THE FORM EMPTIED ITSELF, WHICH NEEDS NO VOCABULARY
+# =========================================================================
+
+
+def test_the_wording_a_real_centre_actually_uses_is_understood():
+    """Read off DLABS, which answers a submitted form with "Submission Success,
+    Thanks for getting in touch!". It had taken the request and the lane could
+    not say so, because no phrase on the list matched."""
+    driver = _driver_module()
+
+    for taken in ("Submission Success, Thanks for getting in touch!",
+                  "Thank you for contacting us",
+                  "Your form has been successfully submitted"):
+        assert driver.read_outcome(taken)[0] == "requested", taken
+
+
+def test_an_emptied_form_is_believed_over_silence():
+    """The signal that survives the language. A Tamil or Hindi confirmation is
+    a string this code will never have heard of; an empty input is an empty
+    input."""
+    driver = _driver_module()
+
+    class _Box:
+        def __init__(self, value):
+            self.value = value
+
+        def count(self):
+            return 1
+
+    class _Page:
+        def __init__(self, values):
+            self.values = values
+
+        def locator(self, selector):
+            return _Box(self.values[selector])
+
+        def input_value(self, selector, timeout=0):
+            return self.values[selector]
+
+    fields = {"name": "#n", "phone": "#p"}
+    payload = {"name": "Ashanthi", "phone": "9488581822"}
+
+    assert driver.form_cleared(_Page({"#n": "", "#p": ""}), fields, payload) is True
+    # a form that REFUSED keeps your values so you can fix them
+    assert driver.form_cleared(
+        _Page({"#n": "Ashanthi", "#p": "9488581822"}), fields, payload) is False
+    assert driver.form_cleared(_Page({"#n": "", "#p": "9488581822"}),
+                               fields, payload) is False
+
+
+def test_an_emptied_form_only_rescues_silence_never_a_rejection():
+    """A page can clear one field and still be refusing. Rejection is decided
+    first and nothing downstream may overturn it."""
+    import pathlib
+
+    source = pathlib.Path("booker/driver.py").read_text()
+    commit = source[source.index("def commit("):]
+    guard = commit[commit.index("form_cleared(page, fields, payload)")]
+    assert 'outcome == "unknown" and form_cleared' in commit, \
+        "an emptied form could rescue a rejected submission"
+    assert guard
