@@ -377,8 +377,15 @@ def _required_but_unfillable(page, fields: dict) -> list[str]:
     known = {fields.get(name) for name in fields}
     missing: list[str] = []
     try:
-        required = page.locator("input[required], select[required], "
-                                "textarea[required]").filter(visible=True)
+        # `required` is the easy half. DLABS marks its mandatory fields with an
+        # asterisk in the label and validates in JavaScript, so the attribute
+        # was absent, the guard saw nothing to refuse, and the submission was
+        # made and rejected. aria-required and a starred label are how the rest
+        # of the web says the same thing.
+        required = page.locator(
+            "input[required], select[required], textarea[required], "
+            "input[aria-required='true'], select[aria-required='true'], "
+            "textarea[aria-required='true']").filter(visible=True)
         for i in range(min(required.count(), 20)):
             element = required.nth(i)
             label = (element.get_attribute("name")
@@ -835,6 +842,14 @@ def commit(*, url: str, payload: dict, handle: dict,
                             "evidence": _shot(page, "otp-rejected")}
 
             outcome, evidence = read_outcome(after)
+            if outcome == "rejected":
+                return {
+                    "outcome": "unavailable",
+                    "detail": (f"the centre's form refused what was sent "
+                               f"({evidence!r}), so nothing was booked there"),
+                    "cancel_url": cancel_url, "cancel_phone": cancel_phone,
+                    "evidence": _shot(page, "rejected"),
+                }
             return {
                 "outcome": outcome,
                 "detail": ("the centre confirmed it"
@@ -953,6 +968,14 @@ NOT_CONFIRMED_SIGNALS = ("we will call", "will call you", "call you back",
                          "shortly")
 
 
+# What a form says when it has REFUSED what was typed. Checked before anything
+# else, because a rejected submission is not a quieter kind of success.
+REJECTED_SIGNALS = ("is required", "are required", "please fix", "fix the errors",
+                    "required field", "this field is required", "invalid email",
+                    "enter a valid", "please enter", "cannot be blank",
+                    "must be filled", "error occurred", "something went wrong")
+
+
 def read_outcome(text: str) -> tuple[str, str]:
     """Whether the centre agreed a slot, and the reference if it did.
 
@@ -967,6 +990,20 @@ def read_outcome(text: str) -> tuple[str, str]:
     has not agreed to anything.
     """
     lowered = (text or "").lower()
+
+    # THE FORM REFUSED IT. This must be checked first and must not be
+    # "requested", because requested means a centre has the request and this
+    # means nobody does.
+    #
+    # It cost a real lie: DLABS validates its email field in JavaScript rather
+    # than with a `required` attribute, so the field guard did not see it, the
+    # submit click was made, the page came back saying "Email is required" and
+    # "Please fix the errors to proceed" - and the lane read no confirmation
+    # phrase, defaulted to requested, and told a family an appointment existed
+    # that no clinic had ever heard of.
+    refused = next((w for w in REJECTED_SIGNALS if w in lowered), "")
+    if refused:
+        return "rejected", refused
 
     hedge = next((w for w in NOT_CONFIRMED_SIGNALS if w in lowered), "")
     if hedge:

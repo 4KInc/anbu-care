@@ -1684,3 +1684,56 @@ def test_the_evidence_view_needs_a_token_scoped_to_that_case():
     assert "storage.signed_url" in source
     # an absent photograph is a page that says so, not a broken redirect
     assert "The appointment stands either way" in source
+
+
+# =========================================================================
+# A FORM THAT REFUSED IS NOT A QUIETER KIND OF SUCCESS
+# =========================================================================
+
+
+def test_a_rejected_form_is_never_recorded_as_requested():
+    """The lie this caught. DLABS validates its email field in JavaScript
+    rather than with a `required` attribute, so the field guard saw nothing,
+    the submit click was made, the page came back "Email is required / Please
+    fix the errors to proceed" - and the lane read no confirmation phrase,
+    defaulted to requested, and told a family an appointment existed that no
+    clinic had ever heard of."""
+    driver = _driver_module()
+
+    outcome, why = driver.read_outcome(
+        "Name Ashanthi Machado Email * Email is required Tel / Mob "
+        "+919488581822 Submit Please fix the errors to proceed")
+    assert outcome == "rejected", "a refused submission read as a booking"
+    assert why
+
+    for refusal in ("Please enter a valid mobile number",
+                    "This field is required", "Email cannot be blank",
+                    "Something went wrong, please try again"):
+        assert driver.read_outcome(refusal)[0] == "rejected", refusal
+
+
+def test_a_rejection_beats_a_confirmation_phrase_on_the_same_page():
+    """Checked first, because a page can carry both and only one is true."""
+    driver = _driver_module()
+    outcome, _ = driver.read_outcome(
+        "Appointment confirmed. Booking ID: 88231. Email is required.")
+    assert outcome == "rejected"
+
+
+def test_a_polite_callback_is_still_a_request_not_a_rejection():
+    """The new check must not swallow the outcome it sits next to."""
+    driver = _driver_module()
+    assert driver.read_outcome(
+        "Thank you. Our team will call you shortly.")[0] == "requested"
+
+
+def test_required_is_not_only_an_html_attribute():
+    """aria-required and a starred label are how the rest of the web says the
+    same thing."""
+    import pathlib
+
+    source = pathlib.Path("booker/driver.py").read_text()
+    guard = source[source.index("def _required_but_unfillable"):]
+    guard = guard[:guard.index("\ndef ")]
+    assert "aria-required" in guard, \
+        "a field the site validates in JavaScript is still invisible to this"
