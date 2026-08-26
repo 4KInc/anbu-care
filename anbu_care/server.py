@@ -1035,6 +1035,42 @@ def appointment_evidence(case_id: str, appointment_id: str,
                      "submitted. Anbu Care did not write this page.")}
 
 
+@app.get("/api/cases/{case_id}/appointments/{appointment_id}/evidence/view")
+def appointment_evidence_view(case_id: str, appointment_id: str,
+                              _session: str = Depends(require_case_access)) -> Response:
+    """Open the centre's own page, one tap from a WhatsApp message.
+
+    The JSON route beside this returns a link for the dashboard to draw. This
+    one IS the link: it takes a case-scoped signed token in the query string,
+    exactly as every other content route does, and redirects to a fresh signed
+    object URL. A family asked to trust that a booking happened should not have
+    to open an app and find a button to see the proof.
+
+    The redirect is minted per request and dies in fifteen minutes, so the URL
+    that ends up in a chat log is this route, never the object.
+    """
+    from anbu_care.comms import storage
+
+    appointment = next((a for a in service.list_appointments(case_id)
+                        if a.appointment_id == appointment_id), None)
+    if appointment is None or not appointment.evidence:
+        return Response(
+            content=("<!doctype html><meta charset=utf-8>"
+                     "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                     "<style>body{font:16px/1.6 system-ui;margin:0;display:grid;"
+                     "place-items:center;min-height:100vh;padding:24px;color:#1a2b32}"
+                     "div{max-width:32rem}</style>"
+                     "<div><h1 style='font-size:1.25rem'>No page was kept for this one</h1>"
+                     "<p>The appointment stands either way. Ring the centre on the "
+                     "number in the message if you need it confirmed.</p></div>"),
+            media_type="text/html", status_code=404)
+
+    signed = storage.signed_url(appointment.evidence)
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return RedirectResponse(signed.url, status_code=302)
+
+
 @app.post("/api/cases/{case_id}/appointments/{appointment_id}/cancel")
 def cancel_appointment(case_id: str, appointment_id: str,
                        _session: str = Depends(require_family_session)) -> dict[str, Any]:

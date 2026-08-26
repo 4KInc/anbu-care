@@ -250,11 +250,12 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "{centre}\n"
                 "{address}\n"
                 "{map_line}"
-                "{distance} km from the hospital.\n\n"
-                "To change or cancel it, ring {cancel}.\n\n"
+                "{distance} km from the hospital.\n"
+                "{evidence_line}"
+                "\nTo change or cancel it, ring {cancel}.\n\n"
                 "Nothing was paid.",
         "params": ["status_line", "centre", "address", "map_line", "distance",
-                   "cancel"],
+                   "cancel", "evidence_line"],
     },
 
     "clinician_note_text": {

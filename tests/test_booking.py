@@ -1617,3 +1617,70 @@ def test_evidence_is_offered_on_the_card_only_when_there_is_some():
     assert "${a.evidence?" in page, "the button renders with nothing behind it"
     assert "See the centre's own page" in page
     assert "photographed as it was submitted" in page
+
+
+def test_the_proof_travels_with_the_claim(case, monkeypatch):
+    """A family asked to trust that a booking happened should not have to open
+    an app and find a button to see the proof."""
+    from anbu_care.tools import onboarding_tools, whatsapp_tools
+
+    parent_id, case_id = case
+    monkeypatch.setenv("ANBU_PUBLIC_BASE_URL", "https://anbu.example")
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin Machado", relationship="son",
+        whatsapp_e164="+16692167706", timezone_name="America/Chicago",
+        is_primary=True, role="family",
+        consent_purposes=["outbound_notify", "status_updates"])
+
+    order = _order(parent_id, case_id, options=[NEAR])
+    _mandate(parent_id)
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: sent.append(kw) or {"status": "sent"})
+
+    driver = Landing(cancel_phone="+917550075500")
+    original = driver.commit
+
+    def with_evidence(**kw):
+        got = original(**kw)
+        return channels.AttemptResult(
+            outcome=got.outcome, detail=got.detail, cancel_url=got.cancel_url,
+            cancel_phone=got.cancel_phone,
+            evidence="artifacts/bookings/requested-abc-1.png")
+
+    driver.commit = with_evidence
+    _drive(monkeypatch, driver)
+
+    run.arrange(case_id=case_id, order_id=order.order_id)
+    done = next(k for k in sent if k["template_name"] == "booking_done")
+    line = done["template_params"]["evidence_line"]
+    assert "/evidence/view?t=" in line, "the proof did not travel with the claim"
+    assert "What the centre's page said" in line
+
+
+def test_a_booking_with_no_photograph_sends_no_dead_link(case, monkeypatch):
+    """A dead link in the message would undermine the very thing it was added
+    to support."""
+    from anbu_care.schemas import Appointment
+
+    parent_id, case_id = case
+    monkeypatch.setenv("ANBU_PUBLIC_BASE_URL", "https://anbu.example")
+    appt = Appointment(appointment_id="a", case_id=case_id, parent_id=parent_id,
+                       order_id="o", status="requested", centre_name="X",
+                       evidence="")
+    assert run._evidence_line(appt) == ""
+
+
+def test_the_evidence_view_needs_a_token_scoped_to_that_case():
+    """It carries her name and a telephone number. The link in a chat log is
+    this route, never the object."""
+    import inspect
+
+    from anbu_care import server
+
+    source = inspect.getsource(server.appointment_evidence_view)
+    assert "require_case_access" in source
+    assert "RedirectResponse" in source
+    assert "storage.signed_url" in source
+    # an absent photograph is a page that says so, not a broken redirect
+    assert "The appointment stands either way" in source

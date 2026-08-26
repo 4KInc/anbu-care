@@ -375,6 +375,33 @@ def readable(name: str) -> str:
     return ", ".join(tidy)
 
 
+def _evidence_line(appointment) -> str:
+    """A link to the centre's own page, or nothing at all.
+
+    The one thing on this record Anbu Care did not write. A family asked to
+    trust that a booking happened should not have to open an app and find a
+    button to see the proof - so the proof travels with the claim.
+
+    Empty when no page was kept, rather than a link that apologises. A booking
+    whose screenshot failed is still a booking, and a dead link in the message
+    would undermine the very thing it was added to support.
+    """
+    import os
+
+    if not appointment.evidence:
+        return ""
+    base = os.getenv("ANBU_PUBLIC_BASE_URL", "").rstrip("/")
+    if not base:
+        return ""
+
+    from anbu_care.webauth import make_link_token
+
+    token = make_link_token(appointment.parent_id, appointment.case_id)
+    return (f"What the centre's page said when it was submitted: "
+            f"{base}/api/cases/{appointment.case_id}/appointments/"
+            f"{appointment.appointment_id}/evidence/view?t={token}\n")
+
+
 def _status_line(appointment, first: str) -> str:
     """The opening sentence, and it must not overstate what happened.
 
@@ -446,6 +473,7 @@ def _tell_them_it_is_arranged(appointment) -> None:
                     "map_line": (f"On the map: {map_link(appointment)}\n"
                                  if map_link(appointment) else ""),
                     "distance": f"{appointment.distance_km:.1f}",
+                    "evidence_line": _evidence_line(appointment),
                     "cancel": appointment.cancel_phone or appointment.cancel_url
                               or "the centre",
                 },
