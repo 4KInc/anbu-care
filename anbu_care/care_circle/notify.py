@@ -101,6 +101,10 @@ def notify(
             case_id=case_id,
             parent_id=parent_id,
             to_e164=contact.whatsapp_e164,
+            # Named, for the same reason the skip list above is: one handset can
+            # be two people, and the neighbour must not be answered for by the
+            # son who shares her phone.
+            contact_name=contact.name,
             template_name=TEMPLATE,
             template_params={
                 "parent_name": first_name,

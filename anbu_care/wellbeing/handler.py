@@ -108,6 +108,7 @@ def _tell_unclear(case_id, parent_id, profile, first, entry, template, purpose, 
         reached.add(contact.whatsapp_e164)
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+            contact_name=contact.name,
             template_name=template,
             template_params={
                 "parent_name": first,
@@ -132,7 +133,13 @@ def handle(entry: WellbeingEntry, parent_id: str,
     verdict = esc.assess(entry.text, conditions, reading=reading)
 
     if not verdict.escalate:
-        return Handled(reply=esc.reply_text(verdict, []))
+        # Which check-in she answered, when she answered one. Read off the
+        # stored prompt exactly as the phase label is, never off her words, and
+        # never off today's date: an answer sent after midnight still belongs to
+        # the question it is answering.
+        return Handled(reply=esc.reply_text(
+            verdict, [], recovery_day=_answered_day(entry, parent_id),
+            language=getattr(profile, "language", "en")))
 
     case_id = _open_and_triage(entry, parent_id, verdict)
 
@@ -160,6 +167,8 @@ def handle(entry: WellbeingEntry, parent_id: str,
     # looked wrong anywhere.
     _hand_the_treating_team_a_link(case_id, parent_id,
                                    skip_names=set(family_alerted))
+    # And the money, before anybody has to think about it.
+    _file_cashless_preauth(case_id)
     # One person is one name, however many lists they appear on.
     alerted = _unique(family_alerted + circle_alerted)
     not_alerted = [n for n in _unique(family_failed + circle_failed) if n not in alerted]
@@ -178,6 +187,23 @@ def handle(entry: WellbeingEntry, parent_id: str,
         not_alerted=not_alerted,
         called=called,
     )
+
+
+def _answered_day(entry: WellbeingEntry, parent_id: str) -> int | None:
+    """The day number of the prompt this answers, or None if it answers none.
+
+    Not `_recovery_day`, which says what day it is now. The two agree except
+    across a midnight, where hers is the question she was actually sent.
+    """
+    if getattr(entry, "phase", "") != "recovery":
+        return None
+    from anbu_care.recovery import window as recovery
+
+    row = recovery.recent_prompt(parent_id)
+    try:
+        return int(row["day"]) if row else None
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _open_and_triage(entry: WellbeingEntry, parent_id: str, verdict: esc.Escalation) -> str:
@@ -459,6 +485,7 @@ def _tell_the_family(
 
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+            contact_name=contact.name,
             template_name=("recovery_escalation_family" if recovery
                            else "urgent_family_alert"),
             template_params={**params, "said": entry.text},
@@ -479,6 +506,7 @@ def _tell_the_family(
                         contact.name)
             sent = whatsapp_tools.send_family_update(
                 case_id=case_id, parent_id=parent_id, to_e164=contact.whatsapp_e164,
+                contact_name=contact.name,
                 template_name=("recovery_escalation_family_withheld" if recovery
                                else "urgent_family_alert_withheld"),
                 template_params=params,
@@ -488,6 +516,34 @@ def _tell_the_family(
 
         (alerted if sent.get("delivered") else failed).append(contact.name)
     return alerted, failed, reached
+
+
+def _file_cashless_preauth(case_id: str) -> None:
+    """Ask for cashless cover at admission, without anybody asking for it.
+
+    The first insurance act on the morning a parent is admitted is getting
+    cashless pre-authorisation filed, so the family does not pay the hospital
+    out of pocket and wait months to be repaid. A son who is awake does it in
+    the first ten minutes. This system exists to do what he would do while he
+    is asleep eleven time zones away, so a lane that waits for somebody to
+    trigger it has already failed at the thing it is for.
+
+    It goes out on the same fact that opened the case: she is being taken to a
+    hospital. Nothing clinical travels with it - the request carries the policy,
+    the sum insured, the admission date and the hospital, and the pre-auth lane
+    reads no severity and no diagnosis.
+
+    NEVER RAISES. An emergency alert that failed because an insurer's clock
+    could not be started would be a far worse outcome than an admission with no
+    pre-authorisation on it. The alert is the thing that matters in the first
+    minute; this is the thing that matters in the first hour.
+    """
+    try:
+        from anbu_care.preauth import request_cashless_preauth
+
+        request_cashless_preauth(case_id)
+    except Exception:
+        logger.exception("could not file a cashless pre-authorisation for %s", case_id)
 
 
 def _recovery_day(parent_id: str) -> int | None:
@@ -534,8 +590,24 @@ def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
         if profile is None:
             return
         skip = {n.strip().lower() for n in (skip_names or set())}
-        contacts = [c for c in care_notify.care_circle(parent_id)
-                    if c.name.strip().lower() not in skip]
+        consented = [c for c in care_notify.care_circle(parent_id)
+                     if c.name.strip().lower() not in skip]
+        # WHOEVER IS PHYSICALLY THERE, which is a role and not a consent.
+        #
+        # care_circle() answers "who agreed to be notified", and the son agreed,
+        # so he was in this list and got the code. That put the picture in the
+        # hands of the one person who cannot show it to anybody: he is asleep
+        # eleven time zones away, and the neighbour standing next to the doctor
+        # had nothing. Being told is not the same as being there.
+        #
+        # He still hears about the admission. He is told as somebody who should
+        # know, by the alert that goes out beside this one, and not as the
+        # courier.
+        present = [c for c in consented if getattr(c, "role", "") == "care_circle"]
+        # With nobody named as being there, the only hands available are his.
+        # A link nobody holds helps no one, so this falls back rather than
+        # refusing, and the fallback is the old behaviour.
+        contacts = present or consented
         if not contacts:
             return
 
@@ -560,7 +632,7 @@ def _hand_the_treating_team_a_link(case_id: str, parent_id: str,
         try:
             whatsapp_tools.send_family_update(
                 case_id=case_id, parent_id=parent_id,
-                to_e164=contact.whatsapp_e164,
+                to_e164=contact.whatsapp_e164, contact_name=contact.name,
                 template_name="clinician_handoff_link", template_params=params,
                 message_class="logistics",
                 purpose_override=consent.OUTBOUND_NOTIFY,

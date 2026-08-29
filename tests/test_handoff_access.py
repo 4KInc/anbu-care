@@ -356,11 +356,11 @@ def _svg_of(qr) -> str:
 # =========================================================================
 
 
-def _contact(parent_id, number, purposes, name="Karthik", primary=True):
+def _contact(parent_id, number, purposes, name="Karthik", primary=True, role=""):
     onboarding_tools.record_family_contact(
         parent_id, name=name, relationship="son", whatsapp_e164=number,
         timezone_name="America/Los_Angeles", is_primary=primary,
-        consent_purposes=purposes,
+        consent_purposes=purposes, **({"role": role} if role else {}),
     )
 
 
@@ -759,8 +759,8 @@ def test_the_handoff_message_carries_a_scannable_code(monkeypatch):
     sent = []
     real = whatsapp_tools._deliver
     monkeypatch.setattr(whatsapp_tools, "_deliver",
-                        lambda to, body, template, media_url=None:
-                        sent.append(media_url) or real(to, body, template))
+                        lambda to, body, template, media_url=None, **kw:
+                        sent.append(media_url) or real(to, body, template, **kw))
 
     from anbu_care.wellbeing import handler
 
@@ -819,3 +819,91 @@ def test_the_receipt_does_not_carry_the_link_itself(monkeypatch):
     attachment.pop("url", None)          # as the sender does before recording
     assert "SECRET-TOKEN" not in str(attachment)
     assert attachment["sha256"], "nothing proves which image was sent"
+
+
+def test_the_code_goes_to_whoever_is_at_the_bedside_not_to_the_son(monkeypatch):
+    """The son agreed to be notified, so he was in the care circle list, so he
+    got the QR. That is the picture arriving in the one pair of hands that
+    cannot show it to anybody: he is asleep eleven time zones away and the
+    neighbour standing next to the doctor had nothing.
+
+    Being told is not the same as being there. He still hears about the
+    admission, from the alert that goes out beside this one.
+    """
+    from anbu_care.tools import whatsapp_tools
+    from anbu_care.wellbeing import handler
+
+    parent_id = _parent()
+    _contact(parent_id, "+919000000201", ["outbound_notify"],
+             name="Heartlin", primary=True)
+    _contact(parent_id, "+919000000202", ["outbound_notify"],
+             name="Meena", primary=False, role="care_circle")
+    case_id = _case(parent_id)
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-qr-secret")
+
+    to: list[str] = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: to.append(kw["to_e164"]) or {"allowed": True})
+
+    handler._hand_the_treating_team_a_link(case_id, parent_id)
+
+    assert to == ["+919000000202"], "the code did not go to the person at the bedside"
+
+
+def test_with_nobody_named_as_being_there_the_son_is_the_only_hands(monkeypatch):
+    """A link nobody holds helps no one. With no care circle member on file he
+    is the only channel to the treating team, so it falls back rather than
+    refusing - and he is a courier by necessity, not by design."""
+    from anbu_care.tools import whatsapp_tools
+    from anbu_care.wellbeing import handler
+
+    parent_id = _parent()
+    _contact(parent_id, "+919000000203", ["outbound_notify"],
+             name="Heartlin", primary=True)
+    case_id = _case(parent_id)
+    monkeypatch.setenv("ANBU_LINK_SECRET", "test-qr-secret")
+
+    to: list[str] = []
+    monkeypatch.setattr(whatsapp_tools, "send_family_update",
+                        lambda **kw: to.append(kw["to_e164"]) or {"allowed": True})
+
+    handler._hand_the_treating_team_a_link(case_id, parent_id)
+
+    assert to == ["+919000000203"]
+
+
+def test_one_handset_two_people_are_not_the_same_person(monkeypatch):
+    """A son and the neighbour sitting with his mother can share a phone. That
+    is ordinary, and in a one-handset demo it is unavoidable.
+
+    Resolving the recipient by NUMBER returned whichever contact was registered
+    first, so a message addressed to the neighbour was consent-checked against
+    the son's purposes and rendered in the son's language. The care circle
+    notice meant for Meena in Tamil went out as Heartlin's, in English.
+    """
+    from anbu_care.tools import whatsapp_tools
+
+    parent_id = _parent()
+    _contact(parent_id, "+919000000301", ["outbound_notify"],
+             name="Heartlin", primary=True)
+    _contact(parent_id, "+919000000301", ["outbound_notify"],
+             name="Meena", primary=False, role="care_circle")
+
+    seen: list = []
+    real = whatsapp_tools._deliver
+    monkeypatch.setattr(whatsapp_tools, "_deliver",
+                        lambda to, body, template, media_url=None, **kw:
+                        seen.append(kw) or real(to, body, template, **kw))
+
+    whatsapp_tools.send_family_update(
+        case_id=_case(parent_id), parent_id=parent_id,
+        to_e164="+919000000301", contact_name="Meena",
+        template_name="care_circle_notice",
+        template_params={"parent_name": "Ashanthi", "hospital_name": "Sacred Heart",
+                         "timestamp": "02:40", "cashless_status": "Cashless applies"},
+        message_class="logistics", purpose_override="outbound_notify")
+
+    assert seen, "nothing was delivered"
+    assert seen[0]["recipient_name"] == "Meena", \
+        "the neighbour's message was answered for by the son who shares her phone"
+    assert seen[0]["audience"] == "care_circle"

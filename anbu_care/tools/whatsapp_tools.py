@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from anbu_care import service
-from anbu_care.comms import shortlinks
+from anbu_care.comms import demo_labels, shortlinks
 from anbu_care.comms.policy import TEMPLATES, consent_ok, gate_message, render_template
 from anbu_care.config import settings
 from anbu_care.schemas import MessageClass, OutboundMessage
@@ -67,6 +67,9 @@ def send_family_update(
     # how it gets to him.
     attach_qr_of: str = "",
     purpose_override: str = "",
+    # WHICH person at that number. Two contacts can share one handset, and
+    # without this the first one registered answers for both.
+    contact_name: str = "",
 ) -> dict[str, Any]:
     """Send a templated WhatsApp update to a family member.
 
@@ -100,7 +103,26 @@ def send_family_update(
     if profile is None:
         return {"status": "error", "error": f"no profile for parent_id {parent_id}"}
 
-    contact = next((c for c in profile.family_contacts if c.whatsapp_e164 == to_e164), None)
+    # A PERSON IS NOT A HANDSET, and this lookup used to assume they were.
+    #
+    # One phone can belong to two people: the son and the neighbour who is
+    # sitting with his mother, sharing a handset, which is ordinary and in a
+    # one-handset demo is unavoidable. Matching on the number alone returned
+    # whichever contact was registered first, so a message addressed to the
+    # neighbour was consent-checked against the son's purposes, rendered in the
+    # son's language, and captioned with the son's name. The care circle notice
+    # meant for Meena in Tamil went out as Heartlin's, in English.
+    #
+    # So a caller that knows WHICH person it means says so, and the number
+    # alone is used only when it does not. The care circle notifier already
+    # learned this for its skip list; this is the same rule one layer down.
+    contact = next((c for c in profile.family_contacts
+                    if c.whatsapp_e164 == to_e164
+                    and c.name.strip().lower() == contact_name.strip().lower()),
+                   None) if contact_name else None
+    if contact is None:
+        contact = next((c for c in profile.family_contacts
+                        if c.whatsapp_e164 == to_e164), None)
     if contact is None:
         return {"status": "error", "error": f"{to_e164} is not a registered family contact"}
 
@@ -118,6 +140,11 @@ def send_family_update(
         template_name=template_name, template_params=template_params,
         declared=declared, attach_claim_summary=attach_claim_summary,
         attach_qr_of=attach_qr_of,
+        # A neighbour who agreed to help is a different addressee from the son
+        # who holds the case, and on a recording they arrive in one thread.
+        audience=(demo_labels.CARE_CIRCLE
+                  if getattr(contact, "role", "") == "care_circle"
+                  else demo_labels.FAMILY),
     )
 
 
@@ -187,6 +214,7 @@ def send_parent_message(
         language=getattr(profile, "language", "en"),
         template_name=template_name, template_params=template_params,
         declared=declared, attach_claim_summary=False,
+        audience=demo_labels.PARENT,
     )
 
 
@@ -204,6 +232,10 @@ def _send(
     declared: MessageClass,
     attach_claim_summary: bool,
     attach_qr_of: str = "",
+    # Which of the four people this is for. Demo caption only, and passed in
+    # rather than read off to_e164 because one handset stands in for all of
+    # them during a recording.
+    audience: str = "",
 ) -> dict[str, Any]:
     """Consent, gate, render, deliver, record. The only way content leaves.
 
@@ -256,7 +288,8 @@ def _send(
         attachment = _attach_qr(attach_qr_of)
     media_url = attachment.pop("url", None) if attachment else None
 
-    delivery = _deliver(to_e164, rendering.text, template_name, media_url=media_url)
+    delivery = _deliver(to_e164, rendering.text, template_name, media_url=media_url,
+                        audience=audience, recipient_name=recipient_name)
     return _record(case_id, to_e164, gate.message_class, template_name, rendering.text,
                    allowed=True, reason=gate.reason, delivery=delivery,
                    attachment=attachment, rendering=rendering)
@@ -426,7 +459,8 @@ def _attach(case_id: str) -> dict[str, Any]:
 
 
 def _deliver(to_e164: str, body: str, template_name: str,
-             media_url: str | None = None) -> dict[str, Any]:
+             media_url: str | None = None, audience: str = "",
+             recipient_name: str = "") -> dict[str, Any]:
     """Carry a message the gate has already permitted.
 
     This is only ever reached after `gate_message` returned allowed. A blocked
@@ -439,7 +473,14 @@ def _deliver(to_e164: str, body: str, template_name: str,
     """
     from anbu_care.comms.transport import send
 
+    # The caption goes on HERE, after the gate has ruled and after rendering,
+    # at the last point before the provider. It is a fixed string, so it cannot
+    # carry content past a decision, and it is returned in the result so the
+    # receipt records that the message went out captioned.
+    body, demo_tag = demo_labels.apply(body, audience, recipient_name)
     result = send(to_e164, body, media_url=media_url).as_dict()
+    if demo_tag:
+        result["demo_tag"] = demo_tag
     result["template"] = template_name
     return result
 
