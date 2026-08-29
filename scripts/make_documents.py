@@ -167,12 +167,12 @@ def discharge_summary(out: Path) -> Path:
     p.para("Haemodynamically stable, chest pain free, ambulant. Discharged to home care.")
     p.section("Prescribed medication at discharge")
     p.bullets([
-        "Tab Aspirin 75 mg — once daily, after breakfast",
-        "Tab Clopidogrel 75 mg — once daily, after breakfast",
-        "Tab Atorvastatin 40 mg — once daily, at night",
-        "Tab Telmisartan 40 mg — once daily, morning",
-        "Tab Metformin 500 mg — twice daily, after meals",
-        "Tab Pantoprazole 40 mg — once daily, before breakfast",
+        "Aspirin 75 mg, once daily after breakfast",
+        "Clopidogrel 75 mg, once daily after breakfast",
+        "Atorvastatin 40 mg, once daily at night",
+        "Telmisartan 40 mg, once daily in the morning",
+        "Metformin 500 mg, twice daily after meals",
+        "Pantoprazole 40 mg, once daily before breakfast",
     ])
     p.section("Advice on discharge")
     p.bullets([
@@ -182,7 +182,8 @@ def discharge_summary(out: Path) -> Path:
         "Do not stop antiplatelet medication without consulting the cardiologist.",
     ])
     p.section("Known allergies")
-    p.para("PENICILLIN — rash and angioedema documented in 2019.")
+    p.bullets(["Penicillin", "Sulfa drugs"])
+    p.para("Reactions on record: rash and angioedema in 2019, rash in 2021.")
     p.rule()
     p.text(50, "Dr A. Anand,  MD DM (Cardiology),  Reg. No. TN/54129", 16, fill=MUTED, gap=24)
     return p.finish(out)
