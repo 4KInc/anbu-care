@@ -2065,3 +2065,24 @@ def test_the_answer_explains_why_the_boxes_are_empty():
     source = inspect.getsource(server.appointment_evidence)
     assert "empty boxes here are the acknowledgement" in source
     assert "a moment before it was" in source
+
+
+def test_the_number_a_lab_rings_can_differ_from_the_one_she_is_messaged_on(case):
+    """Different questions with usually the same answer. A recovery check-in in
+    Tamil arrives on her own phone; a lab rings to confirm a slot. A family
+    whose mother does not answer unknown numbers can point the second at the
+    neighbour taking her without silencing the first."""
+    from anbu_care.tools import onboarding_tools
+
+    parent_id, _case_id = case
+    profile = service.load_profile(parent_id)
+    profile.whatsapp_e164 = "+919000011111"
+    service.save_profile(profile)
+
+    # by default a centre is given HER number
+    assert run._number_for(service.load_profile(parent_id)) == "+919000011111"
+
+    onboarding_tools.record_booking_details(parent_id, booking_phone="+919000022222")
+    assert run._number_for(service.load_profile(parent_id)) == "+919000022222"
+    # and the check-in still goes to her
+    assert service.load_profile(parent_id).whatsapp_e164 == "+919000011111"

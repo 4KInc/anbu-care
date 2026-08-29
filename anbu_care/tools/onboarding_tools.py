@@ -346,8 +346,8 @@ def record_emergency_disclosure_consent(parent_id: str, granted: bool = True) ->
 
 
 def record_booking_details(parent_id: str, gender: str = "",
-                           pincode: str = "",
-                           booking_email: str = "") -> dict[str, Any]:
+                           pincode: str = "", booking_email: str = "",
+                           booking_phone: str = "") -> dict[str, Any]:
     """Record the two things a diagnostic centre will not book without.
 
     Kept on the profile rather than asked for at booking time, because a lane
@@ -390,10 +390,13 @@ def record_booking_details(parent_id: str, gender: str = "",
             return {"status": "rejected",
                     "detail": f"{booking_email!r} is not an email address"}
         profile.booking_email = address
+    if booking_phone.strip():
+        profile.booking_phone = booking_phone.strip()
     service.save_profile(profile)
     return {"status": "recorded", "gender": profile.gender,
             "pincode": profile.pincode,
-            "booking_email": profile.booking_email}
+            "booking_email": profile.booking_email,
+            "booking_phone": profile.booking_phone or "(her own)"}
 
 
 def record_booking_disclosure_consent(parent_id: str,

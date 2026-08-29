@@ -112,6 +112,7 @@ class ParentProfile(BaseModel):
     # that opens her record and the thing that goes on a booking form are kept
     # apart even when a family chooses to put the same value in both.
     booking_email: str = ""
+    booking_phone: str = ""
     # What language to render messages TO HER in. Per-person, never global: her
     # son reads English and she reads Tamil, and one setting cannot serve both.
     # Defaults to English so nothing starts translating without somebody

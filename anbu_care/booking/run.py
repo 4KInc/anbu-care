@@ -294,8 +294,14 @@ def _number_for(profile) -> str:
     A centre calling back to confirm needs to reach the person attending. Giving
     them a number in Nashville would mean a confirmation call at 3am to somebody
     who cannot answer a question about her.
+
+    `booking_phone` overrides where a family has set one, because the number a
+    lab rings and the number a recovery check-in arrives on are different
+    questions with usually the same answer. Falls back to her own, which is the
+    right default and the only one most families will ever need.
     """
-    return getattr(profile, "whatsapp_e164", "") or ""
+    return (getattr(profile, "booking_phone", "")
+            or getattr(profile, "whatsapp_e164", "") or "")
 
 
 def _record(case_id, order, mandate, centre, driver, result, verdict,
