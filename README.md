@@ -69,12 +69,21 @@ This matters more than any feature list, so it comes first.
 - Claim packet assembly, coverage and sub-limit checks, and STEP_UP evidence
   scoring.
 - SLA tracking against the regulatory cashless and reimbursement windows, run
-  against real wall time. The two window lengths are implemented as real
-  deadlines in `anbu_care/service.py` and are quoted from the IRDAI 2024 Master
-  Circular, but that citation is **not yet verified against the source
-  document** — see [`docs/CITATIONS.md`](docs/CITATIONS.md), where both are
-  flagged load-bearing. The clock machinery is real either way; the specific
-  window lengths should be checked before anyone narrates them as fact.
+  against real wall time. The window lengths are implemented as real deadlines
+  in `anbu_care/service.py` and are now **verified** against the source:
+  IRDAI/HLT/CIR/PRO/84/5/2024, 29 May 2024, the Master Circular on Health
+  Insurance Business — one hour for cashless authorisation, three hours for
+  final discharge authorisation, thirty days for reimbursement settlement, with
+  interest at two percent above the bank rate on delay. See
+  [`docs/CITATIONS.md`](docs/CITATIONS.md).
+- **Cashless pre-authorisation at admission, filed without being asked.** The
+  escalation that opens a case also files it, the same simulated adjudicator
+  answers, the one-hour clock starts on real wall time, and a scheduler records
+  the breach if the hour lapses without a decision. Requested is not
+  authorised, and authorised is not settled: cashless means the insurer pays
+  the hospital, which Anbu Care never does and never claims. On a breach it
+  states what the policyholder is entitled to and nothing more — it has not
+  filed a grievance, cannot compel anyone, and does not claim it will be won.
 - The signed, tamper-evident receipt chain, and the verification that detects
   a silent edit.
 - **Wellbeing check-in over inbound WhatsApp**, including voice notes. A voice
@@ -856,6 +865,7 @@ anbu_care/
   triage/               severity rules + hospital ranking (deterministic)
   comms/                WhatsApp message policy (deterministic), outbound translation, link aliasing
   recovery/             the fortnight after discharge: window, cadence, stop conditions
+  preauth/              cashless pre-authorisation at admission, and the insurer's 1-hour clock
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
   diagnostics/          live Places search, ranking, and reading an order from dictation
   payments/             standing and per-case mandates, the nine guards, the settlement rails
@@ -879,9 +889,12 @@ scripts/
   retake_bill.py        the same bill photographed a second time, for the dedupe
   collapse_demo_family.py  fold accumulated demo families back to the live one
   preflight.py          the state that silently ruins a take (`make preflight`)
-tests/                  1070 tests, no GCP or model access needed
+  clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
+  seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
+tests/                  1144 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
+infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself
 ```
 
 ---
@@ -905,6 +918,10 @@ Beyond ADK's own agent API:
 | `GET /api/parents/{id}/wellbeing` | Check-in history for a parent |
 | `GET /api/parents/{id}/care-circle` | Care-circle contacts and their consent purposes |
 | `POST /api/recovery/tick` | Send any recovery check-in that is due. **Credentialed** — it is the trigger for the only outbound channel pointed at the parent herself |
+| `POST /api/cases/{id}/preauth` | Ask the simulated adjudicator whether cover exists for this admission. Idempotent: one admission is one pre-authorisation |
+| `GET /api/cases/{id}/preauth` | Every pre-authorisation on the case and how its clock stands right now |
+| `POST /api/claims/sla-tick` | Record every cashless clock that has actually lapsed. **Credentialed** — an open version would let anybody put a regulatory breach on somebody else's record |
+| `POST /api/cases/{id}/preauth/backdate` | Move a pending clock's start into the past, **for demonstration**. The deadline stays start plus one hour and the breach still has to be genuinely past it; the request and the breach both carry `requested_at_source: demonstration_seed` so a seeded clock can never read as an hour that elapsed on its own |
 | `GET /api/parents/{id}/recovery` | The recovery window, whether consent is held, and the answers recorded |
 | `POST /api/cases/{id}/notify-claim` | Claim-status message to the family, through the comms gate |
 | `POST /api/cases/{id}/notify-care-circle` | Care-circle notice, through the comms gate |

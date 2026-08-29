@@ -16,14 +16,31 @@ that turns out wrong costs more than the number was ever worth.
 | Health insurance GWP ~₹1.36 lakh crore (~$16B) FY26, ~15% YoY | IRDAI annual report | unverified |
 | Retail health ~$15B → ~$22–23B by 2031 | Published market reports | unverified |
 | ~3.26 crore claims processed FY24–25 (~89k/day) | IRDAI annual claims data | unverified |
-| 1-hour cashless pre-auth decision mandate | IRDAI Master Circular 2024 | unverified — **load-bearing**, see below |
-| 30-day reimbursement clock | IRDAI Master Circular 2024 | unverified — **load-bearing**, see below |
+| 1-hour cashless pre-auth decision mandate | IRDAI/HLT/CIR/PRO/84/5/2024, 29 May 2024, Master Circular on Health Insurance Business | **verified** — load-bearing |
+| 3-hour final discharge authorisation | same circular | **verified** |
+| 30-day reimbursement settlement clock | same circular | **verified** — load-bearing |
+| Interest at 2% above bank rate on delayed settlement | same circular | **verified** |
+| Insurer bears delay-caused extra cost (e.g. an additional room day) | same circular | **verified** |
 | TPA market ~$5.9B (2023) → ~$9.3B (2030) | Published TPA market reports | unverified |
 | Competitors are all human-coordinator models | Each company's own product pages | unverified |
 
-The two IRDAI SLA windows are load-bearing: they are implemented as real
-deadlines in `anbu_care/service.py` (`SLA_CASHLESS_PREAUTH`,
-`SLA_REIMBURSEMENT`) and narrated during the demo. Verify these two first.
+The IRDAI SLA windows are load-bearing and are now **verified against the
+circular itself**: IRDAI/HLT/CIR/PRO/84/5/2024, dated 29 May 2024, the Master
+Circular on Health Insurance Business. Cashless authorisation is due within one
+hour of a complete request, final discharge authorisation within three hours,
+and reimbursement settlement within thirty days. Delay carries interest at two
+percent above the bank rate, and delay-caused extra cost, such as an additional
+room day, sits with the insurer.
+
+They are implemented as real deadlines in `anbu_care/service.py`
+(`SLA_CASHLESS_PREAUTH`, `SLA_REIMBURSEMENT`), checked against real wall time,
+and the one-hour clock is what `anbu_care/preauth/cashless.py` breaches against.
+
+What the figures are NOT: the circular states what an insurer owes. Anbu Care
+records that a window passed and states the right. It does not file a
+grievance, cannot compel anybody, and does not claim any of it will be won. The
+counterparty in this build is the simulated adjudicator, so no request has been
+filed into a real insurer and no real clock has been breached by anyone.
 
 ## Hospital bill structure
 
