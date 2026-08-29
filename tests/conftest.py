@@ -4,6 +4,15 @@ import os
 # developer's .env pointing at a real project must not change that.
 os.environ["ANBU_STORE_BACKEND"] = "memory"
 os.environ["ANBU_PUBSUB_ENABLED"] = "false"
+# The demo caption is a recording affordance and OFF is its real default. A
+# developer's .env switching it on must not make the suite agree that captions
+# are normal, for the same reason the store backend is pinned above.
+os.environ["ANBU_DEMO_ROLE_TAGS"] = "off"
+# Same reason, and a sharper one. A recording sets this to 0 so a check-in goes
+# out whatever the hour where she is. That is a setting for one afternoon, not
+# the policy, and the suite must keep testing that nothing reaches a seventy-one
+# year old before nine in the morning.
+os.environ["ANBU_RECOVERY_HOUR"] = "9"
 os.environ.setdefault("ANBU_SIGNING_KEY_B64", "")
 
 import pytest
