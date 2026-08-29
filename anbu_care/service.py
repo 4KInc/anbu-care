@@ -34,6 +34,7 @@ from anbu_care.schemas import (
     ParsedDocument,
     PaymentMandate,
     PaymentRecord,
+    PreAuthRequest,
 )
 
 # IRDAI 2024 Master Circular: cashless pre-auth decision within 1 hour;
@@ -401,6 +402,67 @@ def load_packet(case_id: str, packet_id: str, store: Store | None = None) -> Cla
     store = store or get_store()
     row = store.get(f"CASE#{case_id}", f"PACKET#{packet_id}")
     return ClaimPacket.model_validate(_clean(row)) if row else None
+
+
+def save_preauth(req: PreAuthRequest, store: Store | None = None) -> None:
+    """Stored under its own sort key, never under PACKET#.
+
+    The key is the guarantee that a pre-auth cannot be mistaken for a claim
+    packet by anything that walks the case partition looking for one.
+    """
+    store = store or get_store()
+    store.put(f"CASE#{req.case_id}", f"PREAUTH#{req.preauth_id}", req.model_dump(mode="json"))
+
+
+def load_preauth(case_id: str, preauth_id: str, store: Store | None = None) -> PreAuthRequest | None:
+    store = store or get_store()
+    row = store.get(f"CASE#{case_id}", f"PREAUTH#{preauth_id}")
+    return PreAuthRequest.model_validate(_clean(row)) if row else None
+
+
+def list_preauths(case_id: str, store: Store | None = None) -> list[PreAuthRequest]:
+    store = store or get_store()
+    rows = store.query_prefix(f"CASE#{case_id}", "PREAUTH#")
+    return [PreAuthRequest.model_validate(_clean(r)) for r in rows]
+
+
+def recent_seeded_preauths(parent_id: str, within: timedelta,
+                           store: Store | None = None) -> list[PreAuthRequest]:
+    """Demonstration-seeded clocks started for this parent lately.
+
+    Read so a second seed can refuse instead of quietly putting another
+    identical breach message in the thread. Two seeds are two real clocks and
+    each is correctly breached once, but on a recording two identical messages
+    read as a duplicate-send bug.
+    """
+    store = store or get_store()
+    cutoff = _now() - within
+    out: list[PreAuthRequest] = []
+    for row in store.query_sk_prefix_across("PREAUTH#"):
+        if row.get("parent_id") != parent_id:
+            continue
+        req = PreAuthRequest.model_validate(_clean(row))
+        if req.requested_at_source != "demonstration_seed":
+            continue
+        stamp = req.decision_due_at or req.requested_at
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=UTC)
+        if stamp >= cutoff:
+            out.append(req)
+    return out
+
+
+def preauths_awaiting_decision(store: Store | None = None) -> list[PreAuthRequest]:
+    """Every pre-auth still waiting, in any case. What a clock tick considers.
+
+    A cross-partition scan, honest about what it costs, for the same reason the
+    recovery tick's is: at demo scale it is nothing, and at real scale it wants
+    an index rather than a cleverer scan.
+    """
+    store = store or get_store()
+    rows = store.query_sk_prefix_across("PREAUTH#")
+    out = [PreAuthRequest.model_validate(_clean(r)) for r in rows]
+    return [r for r in out if r.outcome == "requested"]
 
 
 def save_submission(sub: ClaimSubmission, store: Store | None = None) -> None:

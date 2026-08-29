@@ -73,6 +73,27 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "You can follow it here: {dashboard_url}",
         "params": ["parent_name", "stage", "amount"],
     },
+    # The pre-auth lane's only outbound message. BILLING class so the content
+    # gate treats it as money, but the CONSENT it demands is claim_updates,
+    # passed explicitly by the caller. Being willing to receive billing
+    # summaries is not the same agreement as following a claim.
+    "preauth_status": {
+        "message_class": MessageClass.BILLING,
+        # The simulated label is NOT in this body, and that is a deliberate
+        # split rather than a quiet drop. A family reading a message about
+        # their mother's admission is not the audience for a note about the
+        # build's counterparty, and the sentence read as clutter in the thread.
+        #
+        # It stays everywhere the claim can actually be checked: the receipt
+        # payload, the API response, the trace step and the dashboard sentence
+        # all carry `SIMULATED - deterministic local rules, not an insurer`,
+        # and a test asserts each of them. What was removed is the copy, not
+        # the disclosure.
+        "body": "Anbu Care: cashless pre-authorisation for {parent_name} is "
+                "{state}. {detail}\n"
+                "Follow it here: {dashboard_url}",
+        "params": ["parent_name", "state", "detail"],
+    },
     "billing_summary": {
         "message_class": MessageClass.BILLING,
         "body": "Anbu Care: the bill for {parent_name} comes to INR {total} across {line_count} items. "
@@ -338,8 +359,7 @@ TEMPLATES: dict[str, dict[str, object]] = {
                 "It opens her allergies, conditions, medication and recent "
                 "results, and lets the treating team record a note or a test "
                 "they are ordering. No login is needed. It stops working in "
-                "{expires_minutes} minutes and you can stop it sooner from the "
-                "dashboard.\n"
+                "{expires_minutes} minutes, and her family can stop it sooner.\n"
                 "Every time it is opened, and anything they record, is written "
                 "to her case.",
         "params": ["parent_name", "handoff_url", "expires_minutes"],

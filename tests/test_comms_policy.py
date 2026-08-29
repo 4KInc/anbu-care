@@ -141,6 +141,9 @@ def test_every_template_renders_and_passes_its_own_gate():
         "doctor_name": "Iyer",
         "department": "Cardiology",
         "cashless_status": "Cashless approval is in progress",
+        "state": "authorised",
+        "detail": ("This is provisional cover at admission, not a decision "
+                   "about any bill, and nothing has been settled."),
         "amount": "66,000",
         "total": "1,20,000",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",
@@ -301,6 +304,9 @@ def test_a_rendered_template_still_passes_the_gate():
         "doctor_name": "Iyer",
         "department": "Cardiology",
         "cashless_status": "Cashless approval is in progress",
+        "state": "authorised",
+        "detail": ("This is provisional cover at admission, not a decision "
+                   "about any bill, and nothing has been settled."),
         "amount": "66,000",
         "total": "1,20,000",
         "handoff_url": "https://example.run.app/handoff/case-x.read.0.9.sig",

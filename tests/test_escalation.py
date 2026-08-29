@@ -560,8 +560,13 @@ def test_the_blocked_attempt_is_still_on_the_chain(monkeypatch):
     out = handler.handle(
         wb.record(pid, "self-reported", "chest pain, troponin 0.94 ng/mL"), pid,
     )
+    # Scoped to the ALERT, because an admission now also files a cashless
+    # pre-authorisation and tells the family about that on its own consent
+    # direction. That is a different message on a different purpose, and this
+    # test is about the alert's blocked-then-withheld pair.
     kinds = [r.kind for r in service.get_chain(out.case_id).receipts
-             if r.kind.startswith("comms.")]
+             if r.kind.startswith("comms.")
+             and str(r.payload.get("template_name", "")).startswith("urgent_family_alert")]
     assert kinds == ["comms.blocked", "comms.sent"]
 
 

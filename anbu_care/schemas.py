@@ -112,6 +112,15 @@ class ParentProfile(BaseModel):
     # that opens her record and the thing that goes on a booking form are kept
     # apart even when a family chooses to put the same value in both.
     booking_email: str = ""
+    # The number a diagnostic centre is given, when it should not be the number
+    # Anbu Care messages her on.
+    #
+    # They are usually the same and default to it. They are separable because
+    # they answer different questions: `whatsapp_e164` is where a recovery
+    # check-in in Tamil arrives on her own phone, and this is what a lab rings
+    # to confirm a slot. A family whose mother does not answer unknown numbers
+    # can point this at the neighbour who is taking her, without silencing the
+    # check-ins meant for her.
     booking_phone: str = ""
     # What language to render messages TO HER in. Per-person, never global: her
     # son reads English and she reads Tamil, and one setting cannot serve both.
@@ -374,6 +383,71 @@ class Adjudication(BaseModel):
     simulated: bool = True
     adjudicator: str = "SIMULATED — deterministic local rules, not an insurer"
     adjudicated_at: datetime = Field(default_factory=utcnow)
+
+
+class PreAuthRequest(BaseModel):
+    """A cashless pre-authorization request, made at ADMISSION.
+
+    Deliberately NOT a ClaimPacket. A claim packet is a discharge-time object:
+    it carries itemised bills and a discharge date, and the adjudicator prices
+    against them. None of that exists on the morning somebody is admitted, and
+    a half-filled claim packet would either be priced against absent lines or
+    sit in the claim store looking like a claim nobody finished. This is its
+    own type, stored under its own key, and no code path turns one into the
+    other.
+
+    What it holds is exactly what a hospital insurance desk puts on a pre-auth
+    form and nothing else: who the insurer is, the policy identity and its sum
+    insured, whether the policy says cashless at all, the date of admission,
+    and the hospital. No diagnosis, no severity, no clinical justification -
+    a pre-auth in this system asks whether COVER exists, never whether
+    treatment is warranted.
+
+    The outcome vocabulary is pre-auth vocabulary and lives only here and on
+    the receipts. The adjudicator's own enum is untouched.
+    """
+
+    preauth_id: str
+    case_id: str
+    parent_id: str
+
+    # Given facts, all of them available the moment a case opens.
+    insurer: str = ""
+    policy_number: str = ""
+    sum_insured_inr: int = 0
+    cashless_eligible: bool = False
+    admitted_on: str = ""
+    hospital_name: str = ""
+
+    requested_at: datetime = Field(default_factory=utcnow)
+    # request_start + 1 hour, under the IRDAI 2024 Master Circular. Stored as
+    # data so a breach can state the instant the window actually lapsed,
+    # separately from whenever anybody got round to noticing.
+    decision_due_at: datetime | None = None
+
+    # "requested" until the simulated adjudicator answers.
+    outcome: str = "requested"
+    decided_at: datetime | None = None
+    reasons: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+
+    # PROVISIONAL. An admission-time ceiling under the policy, not a decision
+    # about what any bill will come to and never the covered amount. It is kept
+    # out of the coverage estimate on purpose: that split reads `claim.adjudicated`
+    # receipts, and nothing here writes one.
+    provisional_ceiling_inr: int | None = None
+
+    adjudicator: str = ""
+    simulated: bool = True
+    # Set once, when a breach receipt has been written for this clock. A second
+    # tick after the same lapse must not say it happened twice.
+    breach_recorded: bool = False
+    # WHERE `requested_at` CAME FROM. "live" means the clock started when the
+    # request was made. "demonstration_seed" means the start was set backwards
+    # deliberately so the one-hour breach could be shown without waiting an
+    # hour. It travels onto the receipts, so a backdated request can never pass
+    # on the chain as an hour that naturally elapsed.
+    requested_at_source: str = "live"
 
 
 class ClaimSubmission(BaseModel):

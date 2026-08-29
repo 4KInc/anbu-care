@@ -106,6 +106,46 @@ def _cap_for(item: str, sum_insured_inr: int, days: int) -> tuple[int, str] | No
     )
 
 
+def _preauth(result: Adjudication, policy: InsurancePolicy) -> Adjudication:
+    """Does cover exist for this admission, under this policy.
+
+    Three answers and no fourth. DENY when the policy itself says this is not a
+    cashless policy - the family pays and is repaid later, and saying otherwise
+    at the door would send them in expecting something that will not happen.
+    QUERY when the sum insured is not on record, because a ceiling cannot be
+    stated without it and inventing one would be inventing money. Otherwise the
+    cover is in force and the ceiling is the sum insured.
+
+    `total_allowed_inr` is left at zero deliberately. It is the claim lane's
+    field for what an insurer decided to pay, and a pre-auth has decided
+    nothing of the sort. The provisional ceiling travels on the pre-auth record
+    and on its receipt, where it is named provisional and cannot be mistaken
+    for a settlement.
+    """
+    if not policy.cashless_eligible:
+        result.reasons = [(
+            f"policy {policy.policy_number} with {policy.insurer} is not a cashless "
+            "policy; this admission is reimbursement only and the family pays first"
+        )]
+        return result
+
+    if not policy.sum_insured_inr:
+        result.outcome = AdjudicationOutcome.QUERY
+        result.missing_documents = ["sum_insured"]
+        result.reasons = [(
+            "the sum insured is not on record, so no authorisation ceiling can be "
+            "stated; nothing has been assumed"
+        )]
+        return result
+
+    result.outcome = AdjudicationOutcome.PASS
+    result.reasons = [(
+        f"cover in force under policy {policy.policy_number} with {policy.insurer}; "
+        f"cashless eligible, provisional ceiling INR {policy.sum_insured_inr:,}"
+    )]
+    return result
+
+
 def adjudicate(
     packet: ClaimPacket,
     policy: InsurancePolicy | None,
@@ -113,8 +153,24 @@ def adjudicate(
     *,
     attempt: int = 1,
     today: date | None = None,
+    preauth: bool = False,
 ) -> Adjudication:
-    """Decide a claim. Order is DENY, then QUERY, then PARTIAL, then PASS."""
+    """Decide a claim. Order is DENY, then QUERY, then PARTIAL, then PASS.
+
+    `preauth` asks a different question of the same rules. A claim asks what is
+    payable against bills that exist; a cashless pre-authorization, made on the
+    morning of admission, asks only whether COVER EXISTS - and the two document
+    checks below are both discharge-shaped. The required-document gate wants a
+    discharge summary, and the per-day sub-limit arithmetic wants a length of
+    stay. Neither can be satisfied at admission, so a pre-auth run through the
+    unmodified rules would return QUERY every time, for a document nobody could
+    have yet.
+
+    So preauth skips exactly those two, and nothing else. The policy checks
+    above them - no policy, lapsed policy - are the same checks and stay. The
+    verdict enum is unchanged, and this label is unchanged: the counterparty is
+    the same simulated adjudicator either way.
+    """
     result = Adjudication(
         adjudication_id=f"{packet.packet_id}:adj{attempt:02d}",
         submission_id="",
@@ -143,6 +199,14 @@ def adjudicate(
                 return result
         except ValueError:
             pass  # an unparseable expiry is not evidence of lapse
+
+    # ---- the one pre-auth branch ------------------------------------------
+    #
+    # Placed after the policy checks so a lapsed or absent policy still denies,
+    # and before everything that reads a bill, because at admission there is no
+    # bill to read.
+    if preauth:
+        return _preauth(result, policy)
 
     if not packet.itemized_bills_inr:
         result.reasons = ["no itemised bill lines were submitted; nothing to assess"]
