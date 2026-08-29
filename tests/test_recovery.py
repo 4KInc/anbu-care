@@ -31,7 +31,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from anbu_care import service
-from anbu_care.comms import consent
+from anbu_care.comms import consent, parent_replies
 from anbu_care.provenance.store import PARENT_SUBJECT
 from anbu_care.recovery import checkin, window
 from anbu_care.tools import onboarding_tools
@@ -176,7 +176,7 @@ def test_a_recovery_reply_is_recorded_through_the_existing_inbound_path(client, 
 
 
 def test_an_ordinary_recovery_reply_gets_no_interpretation_back(client, discharged):
-    """"Thanks, that's noted." and nothing else.
+    """What was recorded, and nothing else.
 
     This is where a helpful system would say "glad to hear it" or "keep taking
     them as prescribed". Both are things a doctor says.
@@ -185,7 +185,9 @@ def test_an_ordinary_recovery_reply_gets_no_interpretation_back(client, discharg
     checkin.send_due(parent_id, now=DAY1)
 
     response = _signed(client, {"From": f"whatsapp:{MOTHER}", "Body": "feeling better today"})
-    assert "Thanks, that's noted." in response.text
+    # She reads Tamil, so the reply is the Tamil one. Same sentence, chosen
+    # ahead of time rather than translated inside a webhook that must answer.
+    assert parent_replies.text(parent_replies.RECORDED, "ta", day=1) in response.text
     for advice in ("should", "keep taking", "glad", "recommend", "make sure",
                    "continue", "good news", "improving"):
         assert advice not in response.text.lower(), f"the reply advised: '{advice}'"
@@ -388,7 +390,7 @@ def test_replying_stop_ends_the_check_ins_on_that_message(client, discharged):
 
     response = _signed(client, {"From": f"whatsapp:{MOTHER}", "Body": "STOP"})
     assert response.status_code == 200
-    assert "stopped the daily check-in messages" in response.text
+    assert parent_replies.text(parent_replies.STOPPED, "ta") in response.text
 
     assert window.open_window_for(parent_id) is None
     assert checkin.send_due(parent_id, now=DAY1 + timedelta(days=1)) is None
@@ -663,3 +665,282 @@ def test_a_read_document_gets_a_label_on_the_trace_like_everything_else():
         prev_hash="0" * 64, hash="a" * 64, signature="sig", public_key="pk",
     )
     assert _detail(receipt) == "discharge summary — Filled in the admission dates"
+
+
+# ---- the pre-flight catches a window an earlier take left open ------------
+
+
+def _preflight_check(client, name: str) -> dict:
+    response = client.get("/api/preflight",
+                          headers={"Authorization": f"Bearer {DEMO_TOKEN}"})
+    assert response.status_code == 200, response.text
+    checks = {c["name"]: c for c in response.json()["checks"]}
+    assert name in checks, f"{name} is not among {sorted(checks)}"
+    return checks[name]
+
+
+def test_the_preflight_says_so_when_no_window_is_open(client, parent, monkeypatch):
+    monkeypatch.setenv("ANBU_DEMO_CIRCLE_E164", MOTHER)
+
+    check = _preflight_check(client, "no recovery window already open")
+
+    assert check["ok"] is True
+    assert "discharge summary opens the one the take uses" in check["detail"]
+
+
+def test_the_preflight_names_a_window_an_earlier_take_left_open(
+        client, discharged, monkeypatch):
+    """The fault this exists for.
+
+    due_now resolves a parent's window with max(starts_on), so a leftover that
+    started later than the discharge date on the paper answers instead of the
+    one beat 7 just opened. The check-in then reports ITS day number under a
+    trace line describing the other window: nothing throws, nothing fails, and
+    the number on screen is wrong.
+    """
+    _parent_id, case_id, leftover = discharged
+    monkeypatch.setenv("ANBU_DEMO_CIRCLE_E164", MOTHER)
+
+    check = _preflight_check(client, "no recovery window already open")
+
+    assert check["ok"] is False
+    assert check["fatal"] is True
+    assert leftover.window_id in check["detail"]
+    assert case_id in check["detail"]
+
+
+def test_a_window_the_preflight_closes_is_receipted_not_deleted(discharged):
+    """--fix closes it the honest way: the check-ins really do end, the reason
+    is on the chain, and the row stays where it was. A pre-flight that quietly
+    deleted a window would be tidying away the evidence it exists to surface."""
+    parent_id, case_id, leftover = discharged
+
+    closed = window.stop(parent_id, "cleared before a recording",
+                         detail="An earlier take left it open.")
+
+    assert [w.window_id for w in closed] == [leftover.window_id]
+    assert window.open_window_for(parent_id) is None
+    still_there = next(w for w in window.list_windows(parent_id)
+                       if w.window_id == leftover.window_id)
+    assert still_there.status == "stopped"
+    receipt = next(r for r in service.get_chain(case_id).receipts
+                   if r.kind == "recovery.stopped")
+    assert receipt.payload["reason"] == "cleared before a recording"
+
+
+# ---- the first check-in does not wait for the next poll -------------------
+
+
+def test_the_first_check_in_goes_out_when_the_window_opens(parent, monkeypatch):
+    """She came home today. A question that arrives up to a polling interval
+    late, for no reason other than when the scheduler last ran, is a worse
+    answer than one that arrives now.
+
+    Nothing here is a new permission: it is the same send_due the scheduler
+    calls, so the same consent read, the same hour gate, the same day slot.
+    """
+    from anbu_care.docvision import ingest
+
+    sent: list[dict] = []
+    monkeypatch.setattr(checkin, "send_due",
+                        lambda pid, now=None: sent.append({"parent_id": pid}))
+
+    case = service.open_case(parent)
+    ingest._open_recovery_window(parent, case.case_id,
+                                 {"discharged_on": "2026-08-20"}, "doc-1")
+
+    assert [s["parent_id"] for s in sent] == [parent]
+
+
+def test_a_check_in_that_could_not_be_sent_does_not_cost_her_the_window(
+        parent, monkeypatch):
+    """The window is the thing that makes anybody ask how she is for a
+    fortnight. A transport that failed on the first morning must not take the
+    other thirteen days with it."""
+    from anbu_care.docvision import ingest
+
+    def boom(pid, now=None):
+        raise RuntimeError("no transport")
+
+    monkeypatch.setattr(checkin, "send_due", boom)
+
+    case = service.open_case(parent)
+    window_id = ingest._open_recovery_window(
+        parent, case.case_id, {"discharged_on": "2026-08-20"}, "doc-1")
+
+    assert window_id, "the window was lost because a message could not be sent"
+    assert window.open_window_for(parent) is not None
+
+
+def test_a_second_send_on_the_same_day_is_owed_nothing(discharged):
+    """What stops the scheduler duplicating the opening send.
+
+    The check-in that goes out when the window opens claims that day's slot, so
+    the next scheduled tick finds the morning already answered. Without this the
+    first day would be the one day she is asked twice.
+    """
+    parent_id, _case_id, _ = discharged
+
+    assert checkin.send_due(parent_id, now=DAY1) is not None
+    assert checkin.send_due(parent_id, now=DAY1) is None, \
+        "she was asked twice on the same day"
+
+
+def test_two_callers_racing_for_the_same_morning_send_one_message(discharged):
+    """The defect this reserve exists for, reproduced.
+
+    A check-in sent when the discharge summary opened the window collided with
+    the scheduled tick thirty seconds later. Both had read the slot as empty
+    while the first was still translating and calling the provider, so both
+    sent, and a seventy-one year old was asked how she was feeling twice in one
+    minute.
+
+    The claim is atomic and happens BEFORE the send, so of two callers exactly
+    one proceeds. This drives the race directly: reserve, then let a second
+    caller try the whole path.
+    """
+    parent_id, _case_id, _w = discharged
+
+    due = window.due_now(parent_id, now=DAY1)
+    assert due is not None
+    assert window.reserve_slot(parent_id, due) is True, "the first caller lost its own slot"
+    assert window.reserve_slot(parent_id, due) is False, "two callers both took the day"
+
+    # And the full path agrees: the day is gone, so nothing further is owed.
+    assert checkin.send_due(parent_id, now=DAY1) is None
+
+
+def test_a_reserved_day_still_records_what_the_transport_said(discharged):
+    """Reserving early must not lose the delivery outcome. The slot is written
+    twice on purpose: once to take the day, once to say what happened."""
+    parent_id, _case_id, _w = discharged
+    from anbu_care.provenance.store import get_store
+
+    sent = checkin.send_due(parent_id, now=DAY1)
+    assert sent is not None
+
+    due = window.due_now(parent_id, now=DAY1 + timedelta(days=1))
+    assert due is not None, "the next day should be owed"
+
+    row = get_store().get(f"PARENT#{parent_id}",
+                          window.prompt_sk(_w.window_id, DAY1.date()))
+    assert row is not None
+    assert row["prompt_id"] == sent["prompt_id"], "the slot forgot which prompt it was"
+
+
+def test_an_answer_is_told_which_check_in_it_landed_on(client, discharged):
+    """"Thanks, that's noted" was true and told her nothing.
+
+    She had just answered a question the system asked her that morning, and the
+    reply did not say it had landed anywhere. On a recording it looks like a
+    voice note went into a void. The day number comes off the prompt she is
+    answering, never off her words, and the sentence after it is the same one
+    the question carried.
+    """
+    parent_id, _case_id, _w = discharged
+    sent = checkin.send_due(parent_id, now=DAY1)
+    assert sent is not None
+
+    response = _signed(client, {"From": f"whatsapp:{MOTHER}",
+                                "Body": "I am alright, took the morning tablets"})
+
+    assert parent_replies.text(parent_replies.RECORDED, "ta", day=1) in response.text
+    assert "1" in response.text, "the day number did not survive the substitution"
+    # And an English reader gets the English, from the same table.
+    assert "recorded against today's check-in, day 1" in parent_replies.text(
+        parent_replies.RECORDED, "en", day=1)
+
+
+def test_an_answer_to_nothing_is_still_only_noted(client, parent):
+    """Outside a recovery window there is no check-in to land on, so the reply
+    must not name one. It stays the short acknowledgement it always was."""
+    response = _signed(client, {"From": f"whatsapp:{MOTHER}",
+                                "Body": "I am alright today"})
+
+    assert parent_replies.text(parent_replies.NOTED, "ta") in response.text
+    assert parent_replies.text(parent_replies.RECORDED, "ta", day=1) not in response.text
+
+
+def test_the_day_is_read_off_the_prompt_and_not_off_her_words(discharged):
+    """She could say "day 9" in her answer and it would change nothing."""
+    from anbu_care.wellbeing import handler
+
+    parent_id, _case_id, _w = discharged
+    checkin.send_due(parent_id, now=DAY1)
+
+    entry = wellbeing_store.record(parent_id, "self", "day 9, feeling fine",
+                                   phase="recovery", prompt_id="rp-x")
+    assert handler._answered_day(entry, parent_id) == 1
+
+
+def test_the_replies_she_gets_are_chosen_and_never_translated_late(parent):
+    """Every other outbound message is rendered by the model on the way out.
+    These cannot be: they are the webhook's own answer, and a translation call
+    inside it is a coin flip that has already come up tails once - a 504 on the
+    one path that must always respond.
+
+    So they are picked from a table. An unknown language falls back to English
+    rather than to an approximation of it.
+    """
+    from anbu_care.comms import parent_replies
+
+    assert parent_replies.text(parent_replies.NOTED, "ta") != \
+        parent_replies.text(parent_replies.NOTED, "en")
+    assert parent_replies.text(parent_replies.NOTED, "de") == \
+        parent_replies.text(parent_replies.NOTED, "en")
+    assert "7" in parent_replies.text(parent_replies.RECORDED, "ta", day=7)
+    assert "108" in parent_replies.text(parent_replies.STOPPED, "ta")
+
+
+# ---- whose words are these -----------------------------------------------
+
+
+def test_her_answer_to_her_own_check_in_is_recorded_as_hers(client, discharged):
+    """One handset, two people, and the record contradicting itself.
+
+    The number index keeps one owner and the last registered wins, so on a
+    phone she shares with her son it resolved to him. Her answer to her own
+    check-in was filed as his report of it, while the same entry carried
+    `phase=recovery` and the id of the prompt it answers.
+    """
+    parent_id, _case_id, _w = discharged
+    onboarding_tools.record_family_contact(
+        parent_id=parent_id, name="Heartlin", relationship="son",
+        whatsapp_e164=MOTHER, timezone_name="Asia/Kolkata", is_primary=False,
+        consent_purposes=[consent.INBOUND_WELLBEING, consent.STATUS_UPDATES])
+    checkin.send_due(parent_id, now=DAY1)
+
+    _signed(client, {"From": f"whatsapp:{MOTHER}", "Body": "I am alright today"})
+
+    entry = wellbeing_store.list_entries(parent_id)[0]
+    assert entry.phase == "recovery"
+    assert entry.source == wellbeing_store.SELF_REPORTED, \
+        "her answer was filed as somebody else's report of it"
+
+
+def test_a_message_nobody_asked_for_is_still_a_caregiver_report(client, parent):
+    """Without a check-in waiting, a message from a shared handset is what it
+    always was. The attribution turns on a question having been asked, not on
+    whose phone it is."""
+    onboarding_tools.record_family_contact(
+        parent_id=parent, name="Heartlin", relationship="son",
+        whatsapp_e164=MOTHER, timezone_name="Asia/Kolkata", is_primary=False,
+        consent_purposes=[consent.INBOUND_WELLBEING, consent.STATUS_UPDATES])
+
+    _signed(client, {"From": f"whatsapp:{MOTHER}", "Body": "she slept well"})
+
+    entry = wellbeing_store.list_entries(parent)[0]
+    assert entry.source == "caregiver:Heartlin"
+
+
+def test_a_caregivers_own_phone_never_speaks_as_her(client, discharged):
+    """The handset has to be one SHE is registered on. Otherwise a caregiver
+    answering a check-in on his own phone would be recorded as her."""
+    from anbu_care.comms import inbound
+
+    parent_id, _case_id, _w = discharged
+    checkin.send_due(parent_id, now=DAY1)
+
+    profile = service.load_profile(parent_id)
+    assert inbound._answers_her_own_check_in(profile, "+14155550999") is False
+    assert inbound._answers_her_own_check_in(profile, MOTHER) is True

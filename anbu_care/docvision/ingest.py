@@ -443,4 +443,29 @@ def _open_recovery_window(parent_id: str, case_id: str, payload: dict,
     except Exception:
         logger.exception("could not open a recovery window for %s", parent_id)
         return None
-    return opened.window_id if opened else None
+    if opened is None:
+        return None
+
+    # SEND WHAT IS OWED AS SOON AS IT IS OWED, rather than at the next poll.
+    #
+    # Nothing in this service holds a timer, so a scheduler calls the tick from
+    # outside and the first check-in used to wait for whenever that next fired.
+    # She came home today; a question that arrives up to a polling interval
+    # late for no reason is a worse answer than one that arrives now.
+    #
+    # This adds no permission and skips no guard. It is the same send_due the
+    # scheduler calls, so consent is read live off her profile, nothing goes
+    # before nine in the morning where she is, and the day slot is claimed
+    # exactly once - which is also what stops the next scheduled tick sending a
+    # second copy of this one.
+    #
+    # It is deliberately inside the same never-raises block. A check-in that
+    # could not be sent must not cost her the recovery window it belongs to.
+    try:
+        from anbu_care.recovery import checkin
+
+        checkin.send_due(parent_id)
+    except Exception:
+        logger.exception("the first recovery check-in was not sent for %s", parent_id)
+
+    return opened.window_id

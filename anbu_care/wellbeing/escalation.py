@@ -242,16 +242,30 @@ def assess(text: str, chronic_conditions: list[str] | None = None,
 
 
 def reply_text(escalation: Escalation, alerted: list[str],
-               called: list[str] | None = None) -> str:
+               called: list[str] | None = None,
+               recovery_day: int | None = None,
+               language: str = "en") -> str:
     """What to say back, promising only what actually happened.
 
     The "we have alerted" sentence appears only when a notification was really
     accepted by the transport. This is the one message where claiming an action
     that did not happen could get somebody hurt, so it is conditioned on the
     delivery result rather than on having attempted it.
+
+    `recovery_day` names which check-in an answer belongs to. "Thanks, that's
+    noted" was true and told her nothing: she had answered a question the system
+    asked her that morning, and the reply did not say it had landed anywhere.
+    The day number is read off the prompt she is answering, not inferred from
+    her words, and the sentence after it is the same one the question carried:
+    nobody has assessed this.
     """
     if not escalation.escalate:
-        return "Thanks, that's noted."
+        from anbu_care.comms import parent_replies
+
+        if recovery_day:
+            return parent_replies.text(parent_replies.RECORDED, language,
+                                       day=recovery_day)
+        return parent_replies.text(parent_replies.NOTED, language)
 
     lines = [
         f"This sounds urgent. If it is an emergency, call {EMERGENCY_NUMBER} now.",

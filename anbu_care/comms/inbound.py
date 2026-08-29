@@ -169,6 +169,23 @@ class Sender:
     source: str
 
 
+def _answers_her_own_check_in(profile: object, from_number: str) -> bool:
+    """Her handset, and a check-in still waiting for an answer on it.
+
+    Never raises into the inbound path. A recovery lookup that failed must not
+    lose a message, so the fallback is the old behaviour rather than a refusal.
+    """
+    own = getattr(profile, "whatsapp_e164", "") or ""
+    if not own or service.number_key(own) != service.number_key(from_number):
+        return False
+    try:
+        from anbu_care.recovery import window as recovery
+
+        return recovery.recent_prompt(getattr(profile, "parent_id", "")) is not None
+    except Exception:  # noqa: BLE001 - attribution falls back, nothing is lost
+        return False
+
+
 def resolve_sender(from_number: str) -> Sender | None:
     """Map an inbound number to a parent and a source label, or refuse.
 
@@ -190,6 +207,25 @@ def resolve_sender(from_number: str) -> Sender | None:
 
     contact_name = owner.get("contact_name")
     if contact_name is None:
+        return Sender(parent_id=profile.parent_id, source=SELF_REPORTED)
+
+    # AN ANSWER TO A QUESTION WE ASKED HER IS HERS.
+    #
+    # The index holds one owner per number and keeps the last registered, so on
+    # a handset she shares with her son it resolves to him. Her own answer to
+    # her own check-in was then filed as his report of it, while the very same
+    # entry was labelled `phase=recovery` with the prompt id it answers. The
+    # record contradicted itself: this answers the question we asked her, and
+    # her son said it.
+    #
+    # Two stored facts settle it, the same pair the phase label already stands
+    # on: this is a handset SHE is registered on, and a prompt went out to her
+    # inside the reply window. Nothing here reads what she wrote.
+    #
+    # Both conditions are load-bearing. Without the first, a caregiver's own
+    # phone would start speaking as her. Without the second, every message from
+    # a shared handset would, including the ones nobody asked for.
+    if _answers_her_own_check_in(profile, from_number):
         return Sender(parent_id=profile.parent_id, source=SELF_REPORTED)
 
     # MATCHED BY NUMBER, not by the name the index happens to hold.

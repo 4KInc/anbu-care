@@ -47,6 +47,19 @@ def send_due(parent_id: str, now: datetime | None = None) -> dict | None:
     if due is None:
         return None
 
+    # TAKE THE DAY BEFORE SENDING, not after.
+    #
+    # due_now read the slot; the write used to happen after the send. Between
+    # them sit a translation and a call to a provider, and a second caller
+    # reading that same empty slot sends the same message. It happened: a
+    # check-in sent as a discharge summary opened the window collided with the
+    # scheduled tick thirty seconds later, and she was asked how she was
+    # feeling twice in one minute.
+    #
+    # The claim is atomic, so of two callers exactly one proceeds.
+    if not win.reserve_slot(parent_id, due):
+        return None
+
     profile = service.load_profile(parent_id)
     if profile is None:
         return None
@@ -157,6 +170,8 @@ def handle_stop(parent_id: str, body: str) -> str | None:
                       detail="She replied STOP. Check-ins ended on that message.")
     if not closed:
         return None
-    return ("Understood. We have stopped the daily check-in messages. "
-            "Your record is unchanged and you can still message here any time. "
-            "If something is wrong, call 108.")
+    from anbu_care.comms import parent_replies
+
+    profile = service.load_profile(parent_id)
+    return parent_replies.text(parent_replies.STOPPED,
+                               getattr(profile, "language", "en"))

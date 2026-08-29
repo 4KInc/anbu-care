@@ -269,9 +269,10 @@ def _save(window: Window) -> None:
 def stop(parent_id: str, reason: str, *, detail: str = "") -> list[Window]:
     """Close every open window for a parent, now. Returns what was closed.
 
-    Called from three places — a withdrawn consent, a STOP reply, an expired
-    window — and it writes the same receipt for all of them, because from the
-    outside they are one fact: the messages have ended, and here is why.
+    Called from four places — a withdrawn consent, a STOP reply, an expired
+    window, and the pre-flight clearing one an earlier take left open — and it
+    writes the same receipt for all of them, because from the outside they are
+    one fact: the messages have ended, and here is why.
     """
     closed: list[Window] = []
     for window in list_windows(parent_id):
@@ -368,14 +369,36 @@ def due_now(parent_id: str, now: datetime | None = None) -> Due | None:
     return Due(window=window, day=day, on=today, slot=slot)
 
 
-def claim_slot(parent_id: str, due: Due, prompt_id: str, sent: dict) -> None:
-    """Mark the slot used, whatever the transport said.
+def reserve_slot(parent_id: str, due: Due) -> bool:
+    """Take the day BEFORE sending. True if this caller may send.
 
-    Written on a failed delivery too. A prompt that was attempted and not
+    due_now reads the slot; this writes it. Between those two things sit a
+    translation and a call to a provider, several seconds during which a second
+    caller reads the same empty slot and sends the same message. That is not a
+    theory: a check-in sent when a discharge summary opened the window collided
+    with the scheduled tick thirty seconds later, and a seventy-one year old
+    was asked how she was feeling twice in the same minute.
+
+    So the slot is claimed first, atomically, and the send follows. A caller
+    that does not win the row is owed nothing and sends nothing.
+
+    Claiming before the send also keeps the existing rule that a failed
+    delivery still consumes the day: a prompt that was attempted and not
     delivered is receipted as not delivered, and re-attempting it on the next
-    tick would turn one missed morning into a burst of catch-up messages at
-    whatever hour the tick happened to run.
+    tick would turn one missed morning into a burst of catch-up messages.
     """
+    return get_store().put_if_absent(f"PARENT#{parent_id}", due.slot, {
+        "window_id": due.window.window_id,
+        "day": due.day,
+        "on": due.on.isoformat(),
+        "attempted_at": datetime.now(UTC).isoformat(),
+        "prompt_id": "",
+        "delivered": False,
+    })
+
+
+def claim_slot(parent_id: str, due: Due, prompt_id: str, sent: dict) -> None:
+    """Record what the transport said, on the slot already reserved."""
     get_store().put(f"PARENT#{parent_id}", due.slot, {
         "prompt_id": prompt_id,
         "window_id": due.window.window_id,

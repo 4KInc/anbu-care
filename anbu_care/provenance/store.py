@@ -35,6 +35,7 @@ def receipt_sk(seq: int) -> str:
 
 class Store(Protocol):
     def put(self, pk: str, sk: str, data: dict[str, Any]) -> None: ...
+    def put_if_absent(self, pk: str, sk: str, data: dict[str, Any]) -> bool: ...
     def get(self, pk: str, sk: str) -> dict[str, Any] | None: ...
     def query_prefix(self, pk: str, sk_prefix: str) -> list[dict[str, Any]]: ...
     def query_by_sk(self, sk: str) -> list[dict[str, Any]]: ...
@@ -50,6 +51,14 @@ class MemoryStore:
     def put(self, pk: str, sk: str, data: dict[str, Any]) -> None:
         with self._lock:
             self._data[(pk, sk)] = {**data, "pk": pk, "sk": sk}
+
+    def put_if_absent(self, pk: str, sk: str, data: dict[str, Any]) -> bool:
+        """Write only if nothing is there. True if this caller won the row."""
+        with self._lock:
+            if (pk, sk) in self._data:
+                return False
+            self._data[(pk, sk)] = {**data, "pk": pk, "sk": sk}
+            return True
 
     def get(self, pk: str, sk: str) -> dict[str, Any] | None:
         with self._lock:
@@ -100,6 +109,24 @@ class FirestoreStore:
         self._client.collection(COLLECTION).document(_doc_id(pk, sk)).set(
             {**data, "pk": pk, "sk": sk}
         )
+
+    def put_if_absent(self, pk: str, sk: str, data: dict[str, Any]) -> bool:
+        """Write only if nothing is there. True if this caller won the row.
+
+        Firestore's create() fails when the document exists, which makes this a
+        real compare-and-set rather than a read followed by a hopeful write.
+        Two instances racing for the same row both call this and exactly one
+        gets True.
+        """
+        from google.api_core.exceptions import AlreadyExists
+
+        try:
+            self._client.collection(COLLECTION).document(_doc_id(pk, sk)).create(
+                {**data, "pk": pk, "sk": sk}
+            )
+        except AlreadyExists:
+            return False
+        return True
 
     def get(self, pk: str, sk: str) -> dict[str, Any] | None:
         snap = self._client.collection(COLLECTION).document(_doc_id(pk, sk)).get()
