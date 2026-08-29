@@ -1,0 +1,90 @@
+---
+title: Anbu Care — agents propose, guards decide, the chain records
+---
+flowchart TB
+%% Source of truth for docs/architecture.svg and docs/architecture.png.
+%% Re-render both with:
+%%   npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.svg -b white
+%%   npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.png -b white --scale 2
+%% The GUARD band is drawn as its own layer on purpose, and the spine runs
+%% straight through it. Everything in that band is deterministic code the model
+%% cannot reach, argue with, or widen. That separation IS the architecture:
+%% a diagram that mixed the two would be describing a different system.
+
+  subgraph L1["① The people, and what each may see"]
+    direction LR
+    MUM["👵 Parent in India<br/><i>Tamil voice note</i>"]
+    SON["📱 NRI family<br/><i>dashboard + WhatsApp</i>"]
+    MEENA["🏠 Care circle<br/><i>notified, no record access</i>"]
+    DOC["🩺 Treating team<br/><i>scoped 60-minute link</i>"]
+  end
+
+  subgraph L2["② Cloud Run"]
+    direction LR
+    API["<b>anbu-care</b><br/><i>ADK API · Twilio webhook · dashboard</i>"]
+    BOOKER["<b>anbu-care-booker</b><br/><i>headless browser, real clinic forms</i>"]
+    SCHED["<b>Cloud Scheduler</b><br/><i>recovery tick · claims SLA tick</i><br/>Cloud Run holds no timer"]
+  end
+
+  subgraph L3["③ ADK — one coordinator, five sub-agents, isolated tool scopes"]
+    direction LR
+    ROOT(["Coordinator<br/>root_agent"])
+    A1["Onboarding / KB"]
+    A2["Triage"]
+    A3["Evidence / STEP_UP"]
+    A4["Insurer liaison"]
+    A5["WhatsApp comms"]
+    ROOT --- A1 & A2 & A3 & A4 & A5
+  end
+
+  GEM{{"<b>Gemini 3.5 · Vertex AI</b><br/>vision · transcription · translation<br/><i>proposes — never decides</i>"}}
+
+  subgraph L4["④ DETERMINISTIC GUARD LAYER — code, not prompts"]
+    GATE{"Does this pass?"}
+    G1["RED_FLAGS table<br/><i>severity decided here</i>"]
+    G2["Comms gate<br/><i>clinical content, 24h window</i>"]
+    G3["Consent, per purpose<br/><i>read live, every send</i>"]
+    G4["Payment enforcer<br/><i>9 guards</i>"]
+    G5["Booking enforcer<br/><i>12 guards</i>"]
+    G6["Simulated adjudicator<br/><i>rules, not an insurer</i>"]
+  end
+
+  subgraph L5["⑤ State and evidence"]
+    direction LR
+    FS[("<b>Firestore</b><br/>single-table PK/SK<br/><b>hash-chained receipts</b>")]
+    GCS[("Cloud Storage<br/><i>photographs, private</i>")]
+    PS[["Pub/Sub<br/><i>intake · case · claim</i>"]]
+    MB[("Memory Bank<br/><i>cross-session</i>")]
+  end
+
+  VERIFY["<b>GET /api/cases/:id/verify</b><br/>public, no credential<br/><i>anyone can check the chain, including you</i>"]
+
+  MUM ==>|"voice note"| API
+  API ==> ROOT
+  ROOT ==>|"every action, without exception"| GATE
+  GATE ==> FS
+  FS ==>|"one receipt per action"| VERIFY
+
+  GATE --- G1 & G2 & G3 & G4 & G5 & G6
+  ROOT -. "asks" .-> GEM
+  GEM -. "terms and transcripts, never verdicts" .-> GATE
+  SCHED -. "credentialed tick" .-> API
+  G5 -. "drives" .-> BOOKER
+  G2 -. "permitted only" .-> SON & MEENA
+  API -. "scoped link + QR" .-> DOC
+
+  classDef person fill:#eef6f4,stroke:#0e4f52,color:#14211f
+  classDef guard fill:#fdecea,stroke:#9d3a26,stroke-width:2px,color:#3a1710
+  classDef store fill:#eef1f6,stroke:#3d4a63,color:#1b2231
+  classDef model fill:#fff6e5,stroke:#8c5e0c,stroke-width:2px,color:#3a2a05
+  classDef run fill:#e8f0ff,stroke:#2b4a8a,color:#16233d
+  classDef agent fill:#f3eefb,stroke:#5b3a8a,color:#241436
+  classDef proof fill:#d9ece9,stroke:#0e4f52,stroke-width:3px,color:#0b2b2c
+
+  class MUM,SON,MEENA,DOC person
+  class G1,G2,G3,G4,G5,G6,GATE guard
+  class FS,GCS,PS,MB store
+  class GEM model
+  class API,BOOKER,SCHED run
+  class ROOT,A1,A2,A3,A4,A5 agent
+  class VERIFY proof

@@ -6,6 +6,18 @@ behalf of their adult children abroad.
 
 Built for the **All Things Agentic Hackathon** (Google / Devpost), Taskmaster track.
 
+### Architecture at a glance
+
+[![Anbu Care architecture](docs/architecture.png)](docs/architecture.png)
+
+*Agents propose, guards decide, the chain records.* The deterministic guard band
+is drawn as its own layer because that separation **is** the architecture:
+Gemini contributes terms and transcripts and never a verdict, every action
+passes through code the model cannot reach or widen, and one receipt per action
+lands on a chain anyone can verify without a credential. Source:
+[`docs/architecture.mmd`](docs/architecture.mmd) · rendered
+[SVG](docs/architecture.svg) · [PNG](docs/architecture.png).
+
 ### 🟢 Live demo — no login required
 
 **https://anbu-care-37j4eofpwq-el.a.run.app**
