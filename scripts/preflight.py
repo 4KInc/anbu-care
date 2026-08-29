@@ -138,16 +138,22 @@ def main() -> int:
 
 
 def _fix(base: str, token: str) -> None:
-    """Only the two things that are always safe to clear before a take.
+    """Only the things that are always safe to clear before a take.
 
     Deliberately not "make every check pass". Granting a mandate or fabricating
     a consent to turn a line green would be the pre-flight lying on behalf of
     the thing it exists to catch.
+
+    Closing a leftover recovery window belongs here because it is not a tidy-up
+    that hides anything: the check-ins really do end, `recovery.stopped` says so
+    on the chain with the reason in it, and the window row stays exactly where
+    it was. Nothing is deleted and nothing is claimed that did not happen.
     """
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from anbu_care import service
     from anbu_care.booking import otp
     from anbu_care.handoff import channel
+    from anbu_care.recovery import window as recovery
 
     handset = os.getenv("ANBU_DEMO_CIRCLE_E164", "")
     if not handset:
@@ -169,6 +175,14 @@ def _fix(base: str, token: str) -> None:
             closed += 1
         if closed:
             print(f"  closed {closed} outstanding code request(s)")
+
+        ended = recovery.stop(
+            parent_id, "cleared before a recording",
+            detail=("A window left open by an earlier take would have answered "
+                    "the tick instead of the window the discharge summary "
+                    "opens. No check-in is owed on it now."))
+        for w in ended:
+            print(f"  closed recovery window {w.window_id} from {w.case_id}")
 
 
 if __name__ == "__main__":

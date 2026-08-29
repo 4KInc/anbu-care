@@ -598,7 +598,8 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
     stopped = recovery_checkin.handle_stop(sender.parent_id, body)
     if stopped is not None:
         logger.info("recovery check-ins stopped by request for %s", sender.parent_id)
-        return _twiml(stopped)
+        audience, name = _reply_audience(sender)
+        return _twiml(stopped, audience=audience, recipient_name=name)
 
     phase, prompt_id = recovery_checkin.phase_for(sender.parent_id)
     entry = wellbeing_store.record(sender.parent_id, sender.source, body,
@@ -612,13 +613,8 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
     # silent model cannot quieten a red flag.
     alerted = wellbeing_escalation.handle(entry, sender.parent_id)
 
-    return Response(
-        content=(
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            f"<Response><Message>{escape(alerted.reply)}</Message></Response>"
-        ),
-        media_type="application/xml",
-    )
+    audience, name = _reply_audience(sender)
+    return _twiml(alerted.reply, audience=audience, recipient_name=name)
 
 
 def _relay_booking_code(pending: Any, body: str) -> Response:
@@ -755,6 +751,104 @@ def recovery_tick(
         "note": ("Only what was due right now. A day with no tick has no check-in, "
                  "and none is sent later to make up for it."),
     }
+
+
+@app.post("/api/cases/{case_id}/preauth")
+def request_preauth(
+    case_id: str, _session: str = Depends(require_case_access)
+) -> dict[str, Any]:
+    """Ask for cashless pre-authorisation on an admitted case.
+
+    Credentialed, because it writes to somebody's case and messages their
+    family. Idempotent: one admission is one pre-auth and one clock.
+
+    The counterparty is the same simulated adjudicator the claim lane uses. No
+    request has been filed into a real insurer, and the response says so.
+    """
+    from anbu_care.preauth import request_cashless_preauth
+
+    return request_cashless_preauth(case_id)
+
+
+@app.get("/api/cases/{case_id}/preauth")
+def read_preauth(
+    case_id: str, _session: str = Depends(require_case_access)
+) -> dict[str, Any]:
+    """Every pre-auth on this case and how its clock stands right now."""
+    from anbu_care.preauth import cashless
+
+    out = []
+    for req in service.list_preauths(case_id):
+        due = req.decision_due_at
+        remaining = None
+        if due is not None:
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=UTC)
+            remaining = int((due - datetime.now(UTC)).total_seconds())
+        out.append({
+            **req.model_dump(mode="json"),
+            "seconds_remaining": remaining,
+            # Read, not stored. Whether the hour has passed is a fact about the
+            # clock; whether it was RECORDED as breached is `breach_recorded`,
+            # and only the tick writes that.
+            "window_lapsed": bool(remaining is not None and remaining < 0),
+        })
+    return {"case_id": case_id, "preauths": out,
+            "simulated": True,
+            "adjudicator": cashless.SIMULATED_ADJUDICATOR,
+            "label": ("The counterparty is simulated. Authorisation is "
+                      "provisional cover at admission and is never a "
+                      "settlement: cashless means the insurer pays the "
+                      "hospital, which Anbu Care does not do.")}
+
+
+@app.post("/api/cases/{case_id}/preauth/backdate")
+def backdate_preauth(
+    case_id: str, minutes: int = 70, force: bool = False,
+    _session: str = Depends(require_family_session),
+) -> dict[str, Any]:
+    """Move a pending pre-auth's clock into the past. FOR DEMONSTRATION.
+
+    This exists so the one-hour breach path can be shown without waiting an
+    hour. It does not fake a lapse: it sets a real past `requested_at`, leaves
+    the deadline at exactly that plus one hour, and the ordinary tick then
+    judges it against real wall time like any other clock.
+
+    What it changes is provenance, and the chain records that rather than
+    hiding it. The request and the breach that follows both carry
+    `requested_at_source: demonstration_seed`, so a seeded clock can never be
+    read as an hour that elapsed on its own.
+
+    Credentialed like the ticks, and for a stronger reason: an open version
+    would let anybody put a regulatory breach on somebody else's record.
+
+    Refuses a request that has already been answered, and says so once a
+    breach has been recorded rather than issuing a second one.
+
+    `force` skips the one-seed-per-parent guard. That guard exists so a second
+    identical breach message does not land beside the first in a thread, and
+    the only person who can know the first was deleted is whoever deleted it.
+    So it is an explicit choice rather than a default.
+    """
+    from anbu_care.preauth import backdate_request
+
+    return backdate_request(case_id, minutes=minutes, force=force)
+
+
+@app.post("/api/claims/sla-tick")
+def claims_sla_tick(_session: str = Depends(require_family_session)) -> dict[str, Any]:
+    """Record every cashless clock that has actually lapsed.
+
+    CREDENTIALED, like the recovery tick and for a related reason: this writes
+    to a family's chain and states a regulatory right on their case. An open
+    version would let anybody put a breach on somebody else's record.
+
+    Cloud Run has no timer, so a scheduler calls this. It compares stored
+    deadlines to real wall time, cannot fire early, and writes each breach once.
+    """
+    from anbu_care.preauth import sla_tick
+
+    return sla_tick()
 
 
 @app.get("/api/parents/{parent_id}/recovery")
@@ -1656,6 +1750,22 @@ def preflight(_session: str = Depends(require_family_session)) -> dict[str, Any]
     check("no code request outstanding", pending is None,
           f"{pending.request_id} would eat any digits sent" if pending else "none")
 
+    # A window left open by an earlier take is the same class of fault as a
+    # bound handset: nothing is broken, and the wrong one answers.
+    #
+    # due_now resolves the parent's window with max(starts_on), so a leftover
+    # started later than the discharge date on the paper wins. The tick then
+    # reports its day number, while the trace line on screen describes the
+    # window the discharge summary just opened. No error, no failed request,
+    # simply the wrong day count under the right sentence.
+    leftover = recovery_window.open_window_for(parent_id)
+    check("no recovery window already open", leftover is None,
+          (f"{leftover.window_id} starts {leftover.starts_on} on "
+           f"{leftover.case_id}; due_now takes the latest start, so it would "
+           f"answer instead of the window the discharge summary opens"
+           if leftover else
+           "none, so the discharge summary opens the one the take uses"))
+
     money = live_standing_for(parent_id)
     check("payment authority", money is not None,
           f"{money.mandate_id}: INR {group(money.per_bill_cap_inr)}/bill, "
@@ -1812,7 +1922,12 @@ def send_handoff_link(
     # to the family decision-maker first made him the courier: he had to be
     # awake, copy a URL and forward it to a hospital eleven time zones away,
     # which is precisely the job this system exists to do instead of him.
-    recipients = (circle.care_circle(case.parent_id) if to_care_circle
+    # care_circle() answers "who agreed to be notified", and the son agreed, so
+    # he was in it and got the code he cannot show to anybody. Being told is not
+    # being there: the people in the room are the ones carrying that role.
+    consented = circle.care_circle(case.parent_id)
+    present = [c for c in consented if getattr(c, "role", "") == "care_circle"]
+    recipients = ((present or consented) if to_care_circle
                   else [c for c in profile.family_contacts if c.is_primary]
                   or profile.family_contacts)
     purpose = (consent.OUTBOUND_NOTIFY if to_care_circle else consent.ADMISSION_ALERTS)
@@ -1821,6 +1936,7 @@ def send_handoff_link(
     for contact in recipients:
         sent = whatsapp_tools.send_family_update(
             case_id=case_id, parent_id=case.parent_id, to_e164=contact.whatsapp_e164,
+            contact_name=contact.name,
             template_name="clinician_handoff_link", template_params=params,
             attach_qr_of=url,
             message_class="logistics", purpose_override=purpose,
@@ -2745,12 +2861,14 @@ def _handle_clinician_message(bound: Any, fields: dict, background: BackgroundTa
     # whole-message match, the same discipline the parent's STOP already
     # follows: "stop the bleeding" is a clinical note and must stay one.
     if body.strip().upper() == "STOP":
+        from anbu_care.comms import demo_labels
         from anbu_care.handoff import channel as clinician_channel
 
         clinician_channel.unbind(bound)
         return _twiml(
             "Anbu Care: this handset is no longer connected as the treating "
-            "team. Nothing further from it is recorded against that case."
+            "team. Nothing further from it is recorded against that case.",
+            audience=demo_labels.CLINICIAN,
         )
 
     if media is None and not body:
@@ -2968,7 +3086,7 @@ def _reply_to_clinician(e164: str, body: str) -> None:
     rule, which is about the words and not the reader — a test name the
     classifier refuses to a son is refused to a doctor too.
     """
-    from anbu_care.comms import policy, transport
+    from anbu_care.comms import demo_labels, policy, transport
     from anbu_care.schemas import MessageClass
 
     verdict = policy.gate_message(body, MessageClass.LOGISTICS)
@@ -2976,6 +3094,8 @@ def _reply_to_clinician(e164: str, body: str) -> None:
         logger.info("clinician reply blocked by the gate: %s", verdict.reason)
         body = ("Anbu Care: the options are on the record for this admission. "
                 "Open the link you were given to see them.")
+
+    body, _tag = demo_labels.apply(body, demo_labels.CLINICIAN)
 
     try:
         transport.send(e164, body)
@@ -3443,7 +3563,47 @@ def _latest_open_case_for(parent_id: str) -> str | None:
     return case.case_id if case else None
 
 
-def _twiml(message: str) -> Response:
+def _reply_audience(sender: Any) -> tuple[str, str]:
+    """Who a direct reply is addressed to, which is whoever wrote in.
+
+    Derived from the sender rather than the number, because one handset can be
+    several people and in a recording it always is. Returns empty when the
+    sender is unknown, and an unknown audience gets no caption rather than a
+    guessed one.
+    """
+    from anbu_care.comms import demo_labels
+
+    source = (getattr(sender, "source", "") or "") if sender is not None else ""
+    if not source:
+        return "", ""
+
+    profile = service.load_profile(getattr(sender, "parent_id", ""))
+    if source == inbound.SELF_REPORTED:
+        first = profile.name.split()[0] if profile and profile.name else ""
+        return demo_labels.PARENT, first
+
+    if source.startswith("caregiver:"):
+        name = source.split(":", 1)[1].strip()
+        contact = next((c for c in (profile.family_contacts if profile else [])
+                        if c.name.strip().lower() == name.lower()), None)
+        role = getattr(contact, "role", "") if contact else ""
+        audience = (demo_labels.CARE_CIRCLE if role == "care_circle"
+                    else demo_labels.FAMILY)
+        return audience, name
+    return "", ""
+
+
+def _twiml(message: str, audience: str = "", recipient_name: str = "") -> Response:
+    """A reply straight back down the webhook.
+
+    Captioned like every other outbound message when tagging is on. These
+    bypass the send path where captions are applied, so without this the
+    check-in going out carries an addressee and the answer coming back carries
+    none - in the one beat that exists to show who each message is for.
+    """
+    from anbu_care.comms import demo_labels
+
+    message, _tag = demo_labels.apply(message, audience, recipient_name)
     return Response(
         content=('<?xml version="1.0" encoding="UTF-8"?>'
                  f"<Response><Message>{escape(message)}</Message></Response>"),

@@ -36,3 +36,10 @@ preflight:  ## Check the state that silently ruins a recording (add FIX=1 to cle
 
 booking-mode:  ## Show or set whether the booker submits for real (MODE=dry|live)
 	@bash .claude/skills/booking-mode/scripts/booking-mode.sh $(or $(MODE),status)
+
+debris:  ## Show what rehearsing left on the demo record (add APPLY=1 --backup to clear it)
+	@./.venv/bin/python scripts/clear_rehearsal_debris.py \
+	 $(if $(BACKUP),--backup $(BACKUP),) $(if $(APPLY),--apply,)
+
+breach-seed:  ## Seed an already-lapsed cashless clock for the breach beat (demo only)
+	@set -a; . ./.env; set +a; ./scripts/seed_breach.sh

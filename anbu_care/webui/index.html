@@ -132,6 +132,9 @@ main{max-width:760px;margin:0 auto;padding:var(--pad)}
 .p-violet{background:var(--violet-bg);color:var(--violet)}
 .p-slate{background:var(--slate-bg);color:var(--ink-soft)}
 .pills{display:flex;flex-wrap:wrap;gap:7px}
+.probe-out{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.probe-row{display:flex;gap:10px;align-items:flex-start}
+.probe-row .pill{flex:0 0 auto;margin-top:1px}
 
 /* ---- rows ------------------------------------------------------------- */
 .row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
@@ -547,6 +550,12 @@ function describe(r){
     case "claim.adjudicated": return `SIMULATED adjudication returned ${p.outcome}.`;
     case "claim.query_answered": return "A counterparty query was answered.";
     case "claim.stage_changed": return `Claim stage moved ${p.from} → ${p.to}.`;
+
+    case "pre_auth.requested": return `Cashless pre-authorisation requested from the SIMULATED insurer endpoint. The decision is owed by ${p.decision_due_at||"the 1-hour deadline"}.`;
+    case "pre_auth.authorized": return `SIMULATED pre-authorisation: ${p.outcome==="authorized_with_limits"?"authorised with limits":"authorised"}. Provisional cover at admission, not a decision about any bill, and nothing settled.`;
+    case "pre_auth.queried": return "SIMULATED pre-authorisation: the counterparty asked for more before authorising.";
+    case "pre_auth.denied": return "SIMULATED pre-authorisation: refused. The family pays the hospital and claims afterwards.";
+    case "pre_auth.clock_breached": return `The 1-hour authorisation window passed with no decision. It was due at ${p.decision_due_at}, and this was noticed at ${p.observed_at}.`;
 
     // A kind with no sentence yet is a bug, not a thing to print raw at a
     // family. Say what little is honestly known and keep the name for the
@@ -1793,12 +1802,12 @@ function vAudit(){
   </div>
   <div class="card">
     <h2>Verify this case yourself</h2>
-    <p class="mute">Runs unauthenticated. Copy it into any terminal.</p>
-    <pre>curl -s ${esc(API)}/api/cases/${esc(S.caseId||"{case_id}")}/verify</pre>
+    <p class="mute">This check needs no login. Anyone can run it, including you.</p>
     <div id="vout">${S.verify&&!S.verify.__error?vblock(S.verify):`<p class="mute">Press verify to call it live.</p>`}</div>
     <div class="btns">
       <button class="btn" onclick="doVerify()">Verify now</button>
       <button class="btn ghost" onclick="probe()">Prove the gate</button>
+      <button class="btn ghost" onclick="copyVerifyCommand(this)">Copy the command</button>
     </div>
     <div id="probe"></div>
   </div>`;
@@ -1806,7 +1815,8 @@ function vAudit(){
 function vblock(v){
   return `<div class="pills" style="margin:12px 0">
     <span class="pill ${v.verified?"p-teal":"p-red"}">${v.verified?"VERIFIED ✓":"TAMPER DETECTED"}</span>
-    <span class="pill p-slate">${v.receipt_count} receipts</span></div>
+    <span class="pill p-slate">${v.receipt_count} receipts</span>
+    ${S.verifiedAt?`<span class="pill p-slate">checked ${esc(S.verifiedAt)}</span>`:""}</div>
     ${v.verified?"":`<p style="color:var(--red);font-size:13.5px">Broken at receipt ${v.broken_at_seq}: ${esc(v.reason)}</p>`}`;
 }
 
@@ -2098,14 +2108,49 @@ function signOut(){
   try{ google?.accounts?.id?.disableAutoSelect(); }catch{ /* not loaded */ }
   load();
 }
-async function doVerify(){ if(!S.caseId) return; S.verify=await api(`/api/cases/${S.caseId}/verify`); render(); }
+async function doVerify(){
+  // Say that it ran. The answer is usually identical to the one already on
+  // screen, so without this the button looks broken: the call goes out, the
+  // chain verifies, and nothing moves. On a recording that reads as a dead
+  // control rather than as a proof.
+  if(!S.caseId) return;
+  const out=document.getElementById("vout");
+  if(out) out.innerHTML=`<p class="mute">Calling the open endpoint, no credential…</p>`;
+  const at=new Date();
+  S.verify=await api(`/api/cases/${S.caseId}/verify`);
+  S.verifiedAt=at.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  render();
+}
 async function probe(){
+  // Two findings, not a transcript. The same two calls are made and the same
+  // two statuses come back; what changed is that a viewer can read the result
+  // without knowing what a curl line is. A red 401 printed raw looks like a
+  // failure to somebody who does not know it was the point.
   const el=document.getElementById("probe");
-  el.innerHTML=`<p class="mute">Calling the clinical endpoint with no credential…</p>`;
+  el.innerHTML=`<p class="mute">Asking for her record with no credential…</p>`;
   const a=await fetch(`${API}/api/parents/${S.parentId||"unknown"}`);
   const b=await fetch(`${API}/api/cases/${S.caseId}/verify`);
-  el.innerHTML=`<pre>GET /api/parents/{id}        -> HTTP ${a.status}   ${a.status===401?"denied, no credential":""}
-GET /api/cases/{id}/verify   -> HTTP ${b.status}   open by design</pre>`;
+  const denied = a.status===401, open = b.status===200;
+  el.innerHTML=`<div class="probe-out">
+    <div class="probe-row">
+      <span class="pill ${denied?"p-teal":"p-red"}">${denied?"refused ✓":`unexpected ${a.status}`}</span>
+      <span class="v long">Her record was asked for without a credential and the server
+      refused it. Not hidden, not obscured. Refused.</span></div>
+    <div class="probe-row">
+      <span class="pill ${open?"p-teal":"p-red"}">${open?"served ✓":`unexpected ${b.status}`}</span>
+      <span class="v long">The proof that nothing was altered was served to the same
+      caller, with no credential at all. It reveals no content.</span></div>
+  </div>`;
+}
+
+function copyVerifyCommand(btn){
+  // Kept, because a judge who wants to check this from their own terminal
+  // should be able to. Behind a button rather than printed on the page: the
+  // claim belongs on screen, the shell command does not.
+  const cmd = `curl -s ${API}/api/cases/${S.caseId||"{case_id}"}/verify`;
+  navigator.clipboard?.writeText(cmd);
+  if(btn){ const was = btn.textContent; btn.textContent = "Copied";
+           setTimeout(()=>{ btn.textContent = was; }, 1600); }
 }
 async function seed(){
   document.getElementById("seederr").innerHTML=`<p class="mute" style="margin-top:10px">Seeding…</p>`;
