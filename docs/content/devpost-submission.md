@@ -236,12 +236,28 @@ Gemini 3.5 Flash (five-agent ADK fleet on Vertex AI: document vision over bills,
 > `gemini-2.5-flash-lite` both answer, `gemma-3-27b-it` and `gemma-3-12b-it`
 > both return 404.
 
-**Architecture diagram: ready.** Upload `docs/architecture.png`, rendered from
-`docs/architecture.mmd`. Five numbered bands, with the deterministic guard layer
-drawn as its own layer and the request spine running straight through it. That
-separation is the architecture: a diagram that mixed the two would describe a
-different system. Regenerate with
-`npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.png -b white --scale 2`.
+**Architecture diagram: ready.** Upload
+`docs/diagram/AnbuCare-Architecture.pdf`. Two pages, A3 landscape, 329KB, well
+inside the 35MB limit. PDF rather than PNG on purpose: the diagram is 3,564
+pixels wide, so a PNG of it is a picture of some text a judge cannot read. PDF
+keeps it as vectors and the guard band stays legible at any zoom.
+
+Page 1 is the full system, five numbered bands, with the deterministic guard
+layer drawn as its own layer and the request spine running straight through it.
+That separation is the architecture: a diagram that mixed the two would describe
+a different system.
+
+Page 2 is the part a diagram cannot carry. Which pillars are Google managed and
+the exact command that proves each one, because a pillar with no check beside it
+is a pillar somebody has to take on trust. And what the system refuses to do,
+each refusal enforced in code with a test that fails if the guard is removed.
+
+Rebuild after any change to the diagram:
+
+```bash
+npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.svg -b white
+./.venv/bin/python scripts/make_architecture_pdf.py
+```
 
 **Startup Prize fields: DECIDE.** Only if you are entering as Blockintel Inc,
 which requires the incorporated organisation name and a corporate email
