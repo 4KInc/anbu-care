@@ -4,11 +4,39 @@
 **Bonus requirements:** the post must carry **#AllThingsAgenticHackathon** and
 must say explicitly that it was created for the hackathon.
 
-> **PUBLISH ONE OF THESE, NOT ALL THREE.**
-> Recommended: the **X thread**. It carries the most checkable claims, and the
-> hackathon audience is on X. LinkedIn is the better choice if the intended
-> reader is a hiring manager rather than a judge. The single post is the
-> fallback for when there is no time to thread.
+> **PUBLISH ONE OF THESE, NOT ALL FOUR.**
+> Recommended: **draft ⓪**, the short one below. It is the shape that pairs a
+> social post with the article, which is what the two bonus fields are asking
+> for together, and it is the same skeleton used for the sibling project. The X
+> thread carries more checkable claims if you would rather lead with those.
+> LinkedIn suits a hiring-manager reader. The single post is the no-time
+> fallback.
+
+---
+
+## ⓪ The short one, pointing at the article: RECOMMENDED
+
+Counted for X at 271 of 280, with the URL charged at 23 characters as X does.
+
+```
+Created for the #AllThingsAgenticHackathon #AllThingsAgentic.
+
+Autonomous eldercare coordination on your family's own data: her voice notes, her policy, her bills. Books real clinics, files real claims, pays only the part insurance doesn't cover.
+
+https://dev.to/blockintel/the-guardrails-that-matter-are-code-not-prompts-1ii8
+```
+
+> The article is **published and public**, verified 30 Aug: HTTP 200, no
+> `noindex` in the robots meta, and the "created for the purposes of entering"
+> line present in the body. Unlisted dev.to posts carry `noindex`, and this one
+> does not, which is what the bonus requires.
+>
+> Two alternates if you want a different emphasis. **Leads with the 3am moment**,
+> exactly 280 so it has no slack, better suited to LinkedIn:
+> `Autonomous eldercare for families who live somewhere else. One Tamil voice note at 3am files cashless cover, starts a 1-hour regulatory clock, and tells the neighbour. Nobody pressed anything.`
+>
+> **Most complete**, 293, so only where length does not matter:
+> `Autonomous eldercare coordination on your family's own data: her voice notes, her policy, her bills. Files cashless cover on a 1-hour regulatory clock, books real clinics, pays only what insurance doesn't.`
 
 Every post in the thread is **under 280 characters counted raw**. X counts any
 URL as 23 characters regardless of length, so the real headroom is larger than
@@ -307,7 +335,7 @@ anbu-care-37j4eofpwq-el.a.run.app/app
 
 ## Pre-publish checklist
 
-- [ ] **Only one** of the three above is published.
+- [ ] **Only one** of the four above is published.
 - [ ] It carries **#AllThingsAgenticHackathon**.
 - [ ] It carries the line *"Created for the All Things Agentic Hackathon"*.
 - [ ] `make test` — confirm the count still reads 1,221 and update if not.

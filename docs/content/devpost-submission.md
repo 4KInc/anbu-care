@@ -332,16 +332,24 @@ a verification date), and the receipt chain. All demo data is synthetic.
 
 ## Bonus-points fields
 
-**Link to a piece of content: DECIDE.** The article is written and ready to
-paste at `docs/content/devto-article.md`, with its title, four tags and body. It
-carries the required "created for the purposes of entering this hackathon" line
-in the first paragraph and again at the end. Publish it at `dev.to/new`, public
-rather than unlisted, and paste the URL here. `docs/content/build-log-post.md`
-is the longer version it was adapted from; you do not need both.
+**Link to a piece of content: PUBLISHED.** Paste this:
 
-**Link to a social media post: DECIDE.** `docs/content/social-post.md` has three
-drafts, all tagged `#AllThingsAgenticHackathon` with the attribution line. The X
-thread is recommended. Post **one** and paste the URL.
+```
+https://dev.to/blockintel/the-guardrails-that-matter-are-code-not-prompts-1ii8
+```
+
+Verified 30 Aug: HTTP 200, no `noindex` in the robots meta, so it is public
+rather than unlisted, which is what the bonus requires. The "created for the
+purposes of entering" line is in the body, in the first paragraph and again at
+the end. Source is `docs/content/devto-article.md`;
+`docs/content/build-log-post.md` is the longer version it was adapted from and
+does not need publishing.
+
+**Link to a social media post: DECIDE.** `docs/content/social-post.md` has four
+drafts, all tagged `#AllThingsAgenticHackathon` with the attribution line. Draft
+⓪ is recommended: it is short, it points at the published article, and it is the
+shape that makes the two bonus fields work together. Post **one** and paste the
+URL.
 
 ---
 
@@ -356,5 +364,5 @@ thread is recommended. Post **one** and paste the URL.
       simulated" wording above
 - [ ] Both canonical cases still verify as stated
 - [ ] `make test` still reads 1,221, or every number here is updated
-- [ ] dev.to article and social post live, URLs pasted
+- [ ] dev.to article live (done) and social post live, both URLs pasted
 - [ ] Category is **Taskmaster**

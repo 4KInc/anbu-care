@@ -1,6 +1,7 @@
 # dev.to article, ready to publish
 
-**Where:** https://dev.to/new
+**PUBLISHED:** https://dev.to/blockintel/the-guardrails-that-matter-are-code-not-prompts-1ii8
+**Where it was drafted for:** https://dev.to/new
 **Must be PUBLIC, not unlisted.** The bonus requires it.
 **Must say it was created for the hackathon.** The line is in the first
 paragraph and again at the end.
