@@ -40,14 +40,14 @@ https://dev.to/blockintel/the-guardrails-that-matter-are-code-not-prompts-1ii8
 
 Every post in the thread is **under 280 characters counted raw**. X counts any
 URL as 23 characters regardless of length, so the real headroom is larger than
-these drafts assume — verify in the composer before posting anyway.
+these drafts assume. Verify in the composer before posting anyway.
 
 **Last fact-check:** 30 Aug 2026, against revision `anbu-care-00196-wd4`.
 Every number below was read off the deployed service or the test suite that day.
 
 ---
 
-## ① X / Twitter — thread — RECOMMENDED
+## ① X / Twitter thread
 
 **1/**
 My parents live in Thoothukudi. I don't.
@@ -82,7 +82,7 @@ That clock isn't decorative.
 IRDAI's Master Circular (IRDAI/HLT/CIR/PRO/84/5/2024) gives an insurer one hour
 to decide a cashless request.
 
-When it lapses, the family is told what they're owed — and told in the same
+When it lapses, the family is told what they're owed, and told in the same
 breath that we've filed nothing and can compel no one.
 
 **5/**
@@ -104,7 +104,7 @@ the form, map the fields, fill, read back, submit, screenshot.
 **7/**
 Two details I'd defend in review:
 
-It records `requested`, not `confirmed` — a callback form can't truthfully
+It records `requested`, not `confirmed`. A callback form can't truthfully
 produce more.
 
 And it captures the cancellation path BEFORE committing. An agent that can create
@@ -120,7 +120,7 @@ The thing that decides severity is a Python dict. It never reads that sentence
 as permission.
 
 **9/**
-Clinical detail can't go over WhatsApp — India's DPDP Act.
+Clinical detail can't go over WhatsApp. India's DPDP Act.
 
 The gate classifies the *content*, not what the caller claims it is. A message
 labelled "just logistics" carrying a troponin value is blocked anyway.
@@ -138,7 +138,7 @@ My favourite refusal.
 A lab report arrives and closes the test it belongs to. But if TWO tests are
 outstanding, it closes neither.
 
-Attributing it means reading it to decide which — a model choosing which clinical
+Attributing it means reading it to decide which, and that is a model choosing which clinical
 order was carried out. So it stops and says so.
 
 **12/**
@@ -155,7 +155,7 @@ Public where it proves. Private where it reveals.
 **13/**
 Watch it catch an edit.
 
-Rewrite a receipt straight in Firestore, leaving hash + signature untouched —
+Rewrite a receipt straight in Firestore, leaving hash + signature untouched:
 severity HIGH → LOW.
 
 Ask the public endpoint:
@@ -194,7 +194,7 @@ compared the stored word.
 
 Nothing raises. The guard just never matches.
 
-18 unit tests passed — they all called the function directly and handed it the
+18 unit tests passed. They all called the function directly and handed it the
 right word.
 
 **17/**
@@ -235,7 +235,7 @@ Created for the All Things Agentic Hackathon
 
 ---
 
-## ② LinkedIn — alternate
+## ② LinkedIn
 
 **Guardrails you can't talk your way past**
 
@@ -243,7 +243,7 @@ My parents live in Thoothukudi. I don't. Every NRI I know has the same fear:
 something happens, and by the time you hear about it, the decisions that mattered
 have already been made.
 
-Today that role is filled by a person — a family friend, a paid proxy, a sibling
+Today that role is filled by a person: a family friend, a paid proxy, a sibling
 WhatsApp thread. Every existing service answers it the same way: a human
 coordinator.
 
@@ -253,14 +253,14 @@ what would have to be true before I'd trust it with my mother.
 Created for the All Things Agentic Hackathon.
 
 The rule I kept returning to: any step that needs me to act is a design failure.
-I am asleep, nine and a half time zones away — that is the problem, not a detail
+I am asleep, nine and a half time zones away. That is the problem, not a detail
 of it.
 
 So: she sends one voice note in Tamil, and inside fifteen seconds her son is
 told, the neighbour has a scoped bedside link, a cashless pre-authorisation is
 filed against her policy, and a one-hour regulatory clock starts. IRDAI's Master
 Circular gives an insurer one hour to decide a cashless request. When that hour
-lapses, the family is told what they are owed — and told in the same breath that
+lapses, the family is told what they are owed, and told in the same breath that
 Anbu Care has filed nothing and can compel no one.
 
 Then a doctor dictates a test at the bedside, in Tamil, and the system books it:
@@ -268,7 +268,7 @@ it searches real diagnostic centres, ranks them against a mandate, and drives
 each centre's own booking site in a real browser. It records the result as
 "requested", not "confirmed", because an unauthenticated callback form cannot
 truthfully produce anything stronger. And it captures the cancellation path
-before it commits — an agent that can create an obligation and cannot undo it is
+before it commits. An agent that can create an obligation and cannot undo it is
 worse than one that does nothing.
 
 The answer wasn't more agents. It was deciding what they are not allowed to do,
@@ -278,7 +278,7 @@ and putting those things in code where no prompt can reach them:
 it's probably just gas." Severity still returns HIGH.
 
 → Clinical detail never leaves over WhatsApp. India's DPDP Act makes that a legal
-line. The gate inspects the content, not the caller's claim about it — and I demo
+line. The gate inspects the content, not the caller's claim about it, and I demo
 it by bypassing the agent entirely and calling the send function directly. Still
 blocked.
 
@@ -287,7 +287,7 @@ whose hash covers the previous one.
 
 The design decision I'm most pleased with came from a question I couldn't answer
 cleanly at first. If clinical data can't go over WhatsApp because it "lives
-somewhere protected" — what is protecting it? If the answer were "a URL nobody
+somewhere protected", what is protecting it? If the answer were "a URL nobody
 guesses", the argument would be hollow.
 
 So verification is open to everyone and needs no credential, because it proves
@@ -297,7 +297,7 @@ content is credentialed. Public where it proves; private where it reveals.
 The bug worth admitting: on one run the agent told me it had "successfully
 ingested" a lab report into the record. Documents actually stored: zero. For a
 system whose entire pitch is a verifiable record, that is the failure that
-discredits everything else. The fix wasn't better prompt wording — the demo now
+discredits everything else. The fix wasn't better prompt wording. The demo now
 prints the stored count read back from the service, right next to what the agent
 claimed.
 
@@ -319,7 +319,7 @@ Anbu (அன்பு) is Tamil for love.
 
 ---
 
-## ③ X / Twitter — single post — fallback
+## ③ X / Twitter, single post
 
 One Tamil voice note → her son is told, cashless cover is filed, and a 1-hour
 IRDAI clock starts. Nobody pressed anything.
@@ -338,8 +338,8 @@ anbu-care-37j4eofpwq-el.a.run.app/app
 - [ ] **Only one** of the four above is published.
 - [ ] It carries **#AllThingsAgenticHackathon**.
 - [ ] It carries the line *"Created for the All Things Agentic Hackathon"*.
-- [ ] `make test` — confirm the count still reads 1,221 and update if not.
-- [ ] `curl -s $URL/api/healthz` — confirm `tpa_mode`, `whatsapp_mode` and
+- [ ] `make test`, confirm the count still reads 1,221 and update if not.
+- [ ] `curl -s $URL/api/healthz`, confirm `tpa_mode`, `whatsapp_mode` and
       `memory_bank` still match the "what isn't real" lines.
 - [ ] Live URL still serving, and `/app` loads.
 - [ ] Seed a fresh case before posting so any linked case ids verify.
