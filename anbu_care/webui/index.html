@@ -1600,11 +1600,34 @@ function paymentCard(x){
     ? `Settled with ${esc(x.payee_label)}. ${esc(x.settlement_note || "")}`
     : `Sent to ${esc(x.payee_label)}. Not confirmed yet, so it is not counted as paid.`;
 
+  // WHAT IT DID NOT PAY, which is the more interesting number.
+  //
+  // Under a cashless authorisation the insurer settles its part with the
+  // hospital directly, so the card used to show INR 9,733 against a bill that
+  // plainly says INR 27,300 and left a reader to assume an underpayment. The
+  // split is already on the chain; this reads it back rather than recomputing.
+  const sh = (kinds("payment.auto_initiated").concat(kinds("payment.approved")))
+    .map(r => r.payload).find(pl => pl.payment_id === x.payment_id)?.share;
+  const withheld = sh && sh.basis === "cashless_residual"
+    && sh.insurer_share_inr > 0 ? sh : null;
+
   return `<div class="cleared">
     <div class="head" style="display:flex;justify-content:space-between;gap:12px">
       <div><strong>Bill ${esc(x.bill_id)}</strong> · ${state}</div>
       <div class="num" style="font-weight:800">${inr(x.amount_inr)}</div>
     </div>
+    ${withheld?`<div class="row stack" style="margin-top:8px;padding-top:8px;
+        border-top:1px solid var(--line-soft)">
+      <div class="k"><span class="pill p-teal">did not pay
+        ${inr(withheld.insurer_share_inr)}</span></div>
+      <div class="v long">Of the ${inr(withheld.balance_due_inr)} on the bill,
+        about ${inr(withheld.insurer_share_inr)} is settled by your insurer with
+        the hospital directly under cashless, so only ${inr(x.amount_inr)} was
+        yours to pay.
+        <span class="why2">That split is Anbu Care's estimate from your policy,
+        not the insurer's decision.${withheld.estimate_is_provisional
+          ? " It can come out low where a room went over its limit, so the "
+            + "hospital may still ask for more." : ""}</span></div></div>`:""}
     <p class="mute" style="margin-top:4px">${detail}</p>
     ${!x.confirmed && x.checkout_url?`<button class="paper"
       onclick="window.open('${esc(x.checkout_url)}','_blank')">

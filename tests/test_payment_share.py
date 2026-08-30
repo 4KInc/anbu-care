@@ -279,3 +279,46 @@ def test_a_reimbursement_message_is_unchanged(case, monkeypatch):
     assert "The hospital wants INR 27,300 of it now." in body
     assert "Once the insurer settles" in body
     assert "settled by your insurer with the hospital directly" not in body
+
+
+def test_the_dashboard_can_read_the_split_back_off_the_chain(case, monkeypatch):
+    """The card showing what it did NOT pay reads the receipt, not a recompute.
+
+    It matches on payment_id and on `basis`, so if either the field name or the
+    basis string moves, the card silently stops showing the more interesting
+    number and nothing else fails. This is that guard.
+    """
+    import pathlib
+
+    from anbu_care import service
+    from anbu_care.payments import consider_bill
+
+    pid, cid = case
+    _preauth(cid, pid, "authorized")
+    bill = _bill(cid, pid)
+    share = payment_share.decide(case_id=cid, bill=bill,
+                                 estimate=_Estimate(17_567, 9_733))
+
+    from anbu_care.payments.mandate import grant
+    grant(parent_id=pid, case_id=cid, payee_vpa="hospital@okhdfcbank",
+          payee_label="Sacred Heart Hospital", per_bill_cap_inr=50_000,
+          total_cap_inr=400_000, hours=48, granted_by="Arun")
+    consider_bill(case_id=cid, parent_id=pid, bill_id=bill.bill_id,
+                  amount_inr=share.amount_inr, share=share,
+                  extracted_payee="Sacred Heart Hospital",
+                  extracted_vendor="Sacred Heart Hospital")
+
+    receipt = next(r for r in service.load_receipts(cid)
+                   if r.kind in {"payment.auto_initiated", "payment.approved"})
+    carried = receipt.payload["share"]
+    assert carried["basis"] == payment_share.RESIDUAL
+    assert carried["insurer_share_inr"] == 17_567
+    assert carried["balance_due_inr"] == 27_300
+    assert receipt.payload["payment_id"]
+
+    # And the dashboard looks for exactly these names.
+    ui = pathlib.Path("anbu_care/webui/index.html").read_text()
+    assert 'pl.payment_id === x.payment_id' in ui
+    assert 'sh.basis === "cashless_residual"' in ui
+    for field in ("insurer_share_inr", "balance_due_inr", "estimate_is_provisional"):
+        assert field in ui, f"the card stopped reading {field}"
