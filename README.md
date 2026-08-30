@@ -1310,8 +1310,6 @@ Then deploy a new revision — running instances do not pick up IAM changes.
 
 ## Writeup material
 
-- [`docs/content/build-log-post.md`](docs/content/build-log-post.md) — build-log post draft
-- [`docs/content/social-post.md`](docs/content/social-post.md) — social drafts
 - [`DISCLOSURE.md`](DISCLOSURE.md) — prior-work and simulated-adjudicator disclosure
 - [`docs/CITATIONS.md`](docs/CITATIONS.md) — every market figure, and its verification status
 - [`docs/DEMO_SCRIPT_4MIN.md`](docs/DEMO_SCRIPT_4MIN.md) — **the four-minute cut**, autonomy first

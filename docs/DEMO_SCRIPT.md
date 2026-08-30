@@ -385,7 +385,7 @@ Open `$URL/app` at the window size you will record.
 
 Record a second pass immediately, before changing anything. Everything except
 the Gemini transcription and extraction is deterministic;
-`docs/takes/backup-take-spine.txt` is the fallback if recording fails outright.
+The backup-take spine, kept out of the repo with the other take notes, is the fallback if recording fails outright.
 
 ---
 
