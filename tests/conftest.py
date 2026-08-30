@@ -27,6 +27,11 @@ os.environ["ANBU_RECOVERY_HOUR"] = "9"
 # anbu_care is first imported, and it will fill a name that is absent but
 # will not override one that is already present.
 os.environ["ANBU_MEMORY_BANK"] = os.environ.get("ANBU_MEMORY_BANK_LIVE", "")
+# Language detection is a real model call on a real project. The suite never
+# makes one, and a test that wants the detector exercises `detect` directly
+# with `_ask` patched, so the parsing and the refusals are covered without
+# spending anything.
+os.environ["ANBU_DETECT_LANGUAGE_MODE"] = "off"
 os.environ.setdefault("ANBU_SIGNING_KEY_B64", "")
 
 import pytest

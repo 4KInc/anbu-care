@@ -49,6 +49,10 @@ def record(parent_id: str, source: str, text: str, channel: str = "whatsapp",
             lessons.remember_reply_mode, parent_id,
             lessons.VOICE if source_kind == "voice" else lessons.TEXT,
         )
+        # And which language she used, which her profile only ever guessed at.
+        # Off the request path for the same reason: this costs a model call,
+        # and Twilio abandons a webhook that is still owed a reply.
+        lessons.remember_in_background(lessons.learn_language_from, parent_id, text)
 
     entry = WellbeingEntry(
         entry_id=service.new_id("wb"),

@@ -6,7 +6,7 @@
 paragraph and again at the end.
 
 **Fact-checked:** 30 Aug 2026 against revision `anbu-care-00199-ncz`,
-suite at 1,203 tests. Re-check before publishing.
+suite at 1,221 tests. Re-check before publishing.
 
 ---
 
@@ -149,7 +149,7 @@ If **two** tests are outstanding on an admission and one report arrives, it clos
 
 Attributing that report to one of the two orders means reading it to work out which test it is, and that is a model deciding which clinical order was carried out. So it stops, writes a receipt saying exactly why, and leaves a person an accurate record and an obvious next step.
 
-The same instinct shows up in the memory. The system remembers one class of fact between admissions: whether she answers by voice note or by typing. It's in a Vertex AI Agent Engine Memory Bank, and there is **no free-text path into that store.** Each kind of memory has its own function composing its own sentence from a value validated first. A caller can't put a symptom in it because a caller can't put a *sentence* in it. Recall is an exact scope lookup, never a similarity search, so an unrelated memory can't surface because it read as close enough.
+The same instinct shows up in the memory. The system remembers two classes of fact between admissions: whether she answers by voice note or by typing, and which language she actually writes in. Her profile carries a language too, but it was chosen for her at onboarding, usually by a son filling in a form from another country. This one she demonstrated, and where they disagree the demonstration wins. It's in a Vertex AI Agent Engine Memory Bank, and there is **no free-text path into that store.** Each kind of memory has its own function composing its own sentence from a value validated first. A caller can't put a symptom in it because a caller can't put a *sentence* in it. Recall is an exact scope lookup, never a similarity search, so an unrelated memory can't surface because it read as close enough.
 
 That's the whole philosophy in one small module: **decide what may be true, in code, and the interesting failures become impossible rather than unlikely.**
 
@@ -157,11 +157,11 @@ That's the whole philosophy in one small module: **decide what may be true, in c
 
 ## What's actually running
 
-Gemini 3.5 Flash and the Agent Development Kit on Cloud Run, Firestore for state and the receipt ledger, Pub/Sub for multi-day case events, Cloud Storage for photographs, Vertex AI Agent Engine for Memory Bank, Google Places to verify that every hospital is a real place.
+Gemini 3.5 Flash and the Agent Development Kit on Cloud Run, Firestore for state and the receipt ledger, Pub/Sub for multi-day case events, Cloud Storage for photographs, Vertex AI Agent Engine for Memory Bank, Google Places to verify that every hospital is a real place. One thing runs on a smaller model on purpose: detecting which language she writes in is a question with a two-letter answer, and spending a frontier model on that, on a path that owes her a reply in fifteen seconds, is the wrong trade. Gemini 2.5 Flash Lite answers it.
 
 Cloud Scheduler matters more than it sounds. Cloud Run holds no timer, so the regulatory clocks are real scheduler jobs ticking every minute, which is the difference between an agent and a demo. It keeps running when the browser is closed and nobody is watching.
 
-**1,203 tests, none of which need cloud access or a model to run.**
+**1,221 tests, none of which need cloud access or a model to run.**
 
 ---
 
@@ -203,7 +203,7 @@ I created this article for the purposes of entering the **All Things Agentic Hac
 - [ ] The line *"created this post for the purposes of entering the All Things
       Agentic Hackathon"* is present near the top.
 - [ ] Max 4 tags.
-- [ ] `make test`, confirm 1,203 and update if not.
+- [ ] `make test`, confirm 1,221 and update if not.
 - [ ] `curl -s $URL/api/healthz`, confirm the "what isn't real" list still
       matches `tpa_mode`, `whatsapp_mode`, `memory_bank`.
 - [ ] Both canonical case ids still verify as stated.

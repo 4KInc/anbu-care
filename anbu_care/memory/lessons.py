@@ -294,3 +294,34 @@ def _swallow(fn, *args) -> None:
         fn(*args)
     except Exception as e:  # noqa: BLE001 - a lesson is never load-bearing
         log.warning("background lesson write failed: %s", e)
+
+
+def learn_language_from(parent_id: str, text: str) -> bool:
+    """Establish her language from something she wrote, and remember it.
+
+    The detection is a separate, smaller model and its answer is already
+    constrained to a closed list before it gets here. This only decides whether
+    there is anything worth storing: no answer means no lesson, which is the
+    state that existed before detection did.
+    """
+    from anbu_care.comms import detect_language
+
+    code = detect_language.detect(text)
+    if not code:
+        return False
+    return remember_language(parent_id, code)
+
+
+def language_for(parent_id: str, profile) -> str:
+    """The language to write to her in.
+
+    Her profile carries one, chosen at onboarding by whoever filled the form,
+    usually a son in another country. This one she demonstrated. Where they
+    disagree the demonstration wins, because it is evidence rather than an
+    assumption, and it is the only one of the two that survived the last case.
+
+    Falls back to the profile, then to English. A parent we have never heard
+    from has taught us nothing, and that is not an error.
+    """
+    fallback = (getattr(profile, "language", "") or "en")
+    return recall_language(parent_id) or fallback

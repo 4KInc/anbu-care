@@ -721,7 +721,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1203 tests, no GCP or model access needed
+make test             # 1221 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -775,7 +775,7 @@ Every mandatory requirement, and where it is actually load-bearing.
 | **Cloud Run** | Hosts the agent API, the Twilio webhook, and the dashboard. |
 | **Firestore** | Case state and the hash-chained receipt ledger, single-table PK/SK. |
 | **Pub/Sub** | Async multi-day case tracking — intake events, case updates, claim status. |
-| **Memory Bank** | A Vertex AI Agent Engine Memory Bank in `asia-south1`, live on the deployed revision: `/api/healthz` reports `"memory_bank": "vertex ai agent engine, asia-south1 (persistent)"`. It holds **lessons** — the small class of fact that is true of the person rather than of the admission, currently how she answers (voice note or typed), observed from how her messages arrive. Written on her own inbound messages, read by the next recovery check-in. Recall is an exact scope lookup, not a similarity search, and there is no free-text path into the store, so nothing clinical can enter it. |
+| **Memory Bank** | A Vertex AI Agent Engine Memory Bank in `asia-south1`, live on the deployed revision: `/api/healthz` reports `"memory_bank": "vertex ai agent engine, asia-south1 (persistent)"`. It holds **lessons**: the small class of fact that is true of the person rather than of the admission. Two today. How she answers (voice note or typed), observed from how her messages arrive. And **which language she actually writes in**, detected by a second, smaller model and read back to decide what the next admission's first check-in is written in, rather than trusting the language a son in another country picked on a form. Written on her own inbound messages, read by the next recovery check-in. Recall is an exact scope lookup, not a similarity search, and there is no free-text path into the store, so nothing clinical can enter it. |
 
 ---
 
@@ -921,7 +921,7 @@ scripts/
   preflight.py          the state that silently ruins a take (`make preflight`)
   clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1203 tests, no GCP or model access needed
+tests/                  1221 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself

@@ -144,7 +144,7 @@ counter. Two workers appending concurrently would collide on `seq` — acceptabl
 at hackathon scale, and the fix (a Firestore transaction on the case document)
 is a known next step rather than an oversight.
 
-A `MemoryStore` implements the same interface, which is why 1203 tests run with no
+A `MemoryStore` implements the same interface, which is why 1221 tests run with no
 GCP access at all.
 
 ## Why the TPA is simulated, and says so
@@ -213,11 +213,11 @@ gets confused produces a worse *explanation*, not a worse *decision*.
 
 - **Concurrent receipt appends** can collide on `seq`. Needs a Firestore
   transaction on the case document.
-- **Memory Bank holds two kinds of lesson, and only one is written today.**
-  `reply_mode` is observed and stored; `language` has a writer and a reader but
-  nothing observes it yet, because no language detection exists on the inbound
-  path. Recall is also not yet load-bearing: the check-in records what it knew
-  on the receipt, and no decision branches on it.
+- **Memory Bank recall is load-bearing for language and not for reply mode.**
+  `language` is observed on her own inbound messages, stored, and read back to
+  decide what the next admission's first check-in is written in. `reply_mode` is
+  observed and stored but nothing branches on it yet: the check-in records what
+  it knew on the receipt and no decision reads it.
 - **No live hospital-capability feed.** Hospital *locations* are now verified
   against Google Places, with a `place_id` and verification date on every
   record, so distance is real. Capability and insurer empanelment remain a dated

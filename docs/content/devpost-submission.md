@@ -67,7 +67,7 @@ Every action leaves an Ed25519-signed receipt whose hash covers the previous one
 
 ## How we built it
 
-Five agents on **Google ADK**, a coordinator delegating to onboarding, triage, evidence, insurer liaison and WhatsApp comms, each with an isolated tool scope, running **Gemini 3.5 Flash** on Vertex AI for document vision, Tamil transcription, translation and policy-clause matching.
+Five agents on **Google ADK**, a coordinator delegating to onboarding, triage, evidence, insurer liaison and WhatsApp comms, each with an isolated tool scope, running **Gemini 3.5 Flash** on Vertex AI for document vision, Tamil transcription, translation and policy-clause matching. A second, smaller model, **Gemini 2.5 Flash Lite**, decides which language she actually writes in, because asking a frontier model a question with a two-letter answer is the wrong trade on a path that owes her a reply in fifteen seconds.
 
 Underneath them is a deterministic layer no agent can reach past. **The model proposes; that layer decides, and it is the only thing that can write.**
 
@@ -81,7 +81,7 @@ Google-managed services doing real work:
 - **Vertex AI Agent Engine Memory Bank** for the one class of fact that outlives a case
 - **Google Places** so every hospital and diagnostic centre carries a `place_id` and a verification date
 
-The discipline that mattered: guarantees live in code, and the tests assert claims about the world rather than return values. There are 1,203 of them, none needing GCP credentials or a model.
+The discipline that mattered: guarantees live in code, and the tests assert claims about the world rather than return values. There are 1,221 of them, none needing GCP credentials or a model.
 
 ## Challenges we ran into
 
@@ -207,14 +207,22 @@ gallery size.
 **Which Google AI Models did you use?**
 
 ```
-Gemini 3.5 Flash (five-agent fleet via ADK on Vertex AI: document vision over discharge summaries, lab reports, ECGs, prescriptions and bills; single-call Tamil voice-note transcription; translation; policy-clause matching)
+Gemini 3.5 Flash (five-agent fleet via ADK on Vertex AI: document vision over discharge summaries, lab reports, ECGs, prescriptions and bills; single-call Tamil voice-note transcription; translation; policy-clause matching). Gemini 2.5 Flash Lite (detecting which language she actually writes in, so the next admission's first check-in is not in the language somebody chose for her on a form)
 ```
 
-> No additional Google AI model is used, and the field notes that additional
-> models boost the score. Gemma was scoped and is not in the build: unavailable
-> as a managed endpoint on this project's Vertex AI, all three variants
-> returning 404 on `generateContent`. Claiming it is the one thing this project
-> cannot afford to do.
+> **Why two, and why that one.** Everything else runs on 3.5 Flash, which reads
+> a discharge summary and hears Tamil out of a voice note. The detector asks one
+> question with a two-letter answer, on a path that already owes her a reply
+> inside fifteen seconds, and spending a frontier model on a one-token
+> classification is the wrong trade. The reason is architectural rather than a
+> model count, and a test asserts the detector does not silently fall back to
+> `settings().model`.
+>
+> **Gemma is still not in the build**, and is claimed nowhere. Re-probed on 30
+> Aug through the same client the app uses: `gemini-3.5-flash` and
+> `gemini-2.5-flash-lite` both answer, `gemma-3-27b-it` and `gemma-3-12b-it`
+> both return 404. Serving it would mean a GPU-backed endpoint billed by the
+> hour for a component that by design could never change a decision.
 
 **Architecture diagram: ready.** Upload `docs/architecture.png`, rendered from
 `docs/architecture.mmd`. Five numbered bands, with the deterministic guard layer
@@ -236,7 +244,7 @@ the README, which is what the *Reproducible Testing instructions* field points
 at anyway. This is 245:
 
 ```
-No GCP creds: make install && make test = 1,203 offline tests. The chain is public: /api/cases/case-da1c2cb6db/verify -> verified true, 8 receipts; case-a7cf9fa613 -> verified false, broken_at_seq 1. /api/healthz names every simulated component.
+No GCP creds: make install && make test = 1,221 offline tests. The chain is public: /api/cases/case-da1c2cb6db/verify -> verified true, 8 receipts; case-a7cf9fa613 -> verified false, broken_at_seq 1. /api/healthz names every simulated component.
 ```
 
 > Chosen for what a judge cannot get anywhere else on the form: that the suite
@@ -252,7 +260,7 @@ No GCP credentials needed for the test suite:
 
   git clone https://github.com/4KInc/anbu-care && cd anbu-care
   make install
-  make test                 # 1,203 tests, all offline, no model access
+  make test                 # 1,221 tests, all offline, no model access
   make demo                 # the full spine with no LLM in the loop,
                             # ending with a tamper the chain catches
 
@@ -318,6 +326,6 @@ thread is recommended. Post **one** and paste the URL.
 - [ ] `/api/healthz` returns ok, and its labels still match the "what is
       simulated" wording above
 - [ ] Both canonical cases still verify as stated
-- [ ] `make test` still reads 1,203, or every number here is updated
+- [ ] `make test` still reads 1,221, or every number here is updated
 - [ ] dev.to article and social post live, URLs pasted
 - [ ] Category is **Taskmaster**

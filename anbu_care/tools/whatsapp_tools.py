@@ -19,6 +19,7 @@ from anbu_care import service
 from anbu_care.comms import demo_labels, shortlinks
 from anbu_care.comms.policy import TEMPLATES, consent_ok, gate_message, render_template
 from anbu_care.config import settings
+from anbu_care.memory import lessons
 from anbu_care.schemas import MessageClass, OutboundMessage
 
 PURPOSE_BY_CLASS = {
@@ -211,7 +212,10 @@ def send_parent_message(
         # the very next message rather than whenever something was last cached.
         consents=profile.contact_consents,
         purpose=purpose,
-        language=getattr(profile, "language", "en"),
+        # What she ANSWERED in last time, falling back to the profile. Read
+        # here rather than on the inbound path: this runs from the scheduler,
+        # where nobody is waiting fifteen seconds for a reply.
+        language=lessons.language_for(parent_id, profile),
         template_name=template_name, template_params=template_params,
         declared=declared, attach_claim_summary=False,
         audience=demo_labels.PARENT,

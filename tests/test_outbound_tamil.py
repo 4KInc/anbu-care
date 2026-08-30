@@ -507,5 +507,17 @@ def test_no_sender_chooses_a_language_for_somebody_else():
     # And each derives it from the person being written to, not from a default.
     assert 'language=getattr(contact, "language", "en")' in inspect.getsource(
         whatsapp_tools.send_family_update)
-    assert 'language=getattr(profile, "language", "en")' in inspect.getsource(
+
+    # Hers is derived through `language_for`, which prefers the language she was
+    # observed answering in over the one somebody chose for her on a form. Still
+    # the recipient's own, and still not the caller's: the parameter check above
+    # is what stops a caller naming one, and this is what it resolves to.
+    assert 'language=lessons.language_for(parent_id, profile)' in inspect.getsource(
         whatsapp_tools.send_parent_message)
+
+    from anbu_care.memory import lessons
+
+    resolver = inspect.getsource(lessons.language_for)
+    assert 'recall_language(parent_id)' in resolver
+    assert 'getattr(profile, "language", "")' in resolver, (
+        "language_for stopped falling back to her own profile")
