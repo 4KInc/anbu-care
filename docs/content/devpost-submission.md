@@ -284,7 +284,7 @@ No credentials needed for the two things worth checking.
    something to catch:
    curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-a7cf9fa613/verify
    -> verified: false, broken_at_seq: 1,
-      "payload does not hash to the recorded hash - content was altered"
+      "payload does not hash to the recorded hash: content was altered"
 
    Note an empty chain is a valid chain: a deleted case returns verified:true
    with receipt_count:0. The COUNT is what ties the proof to the story.

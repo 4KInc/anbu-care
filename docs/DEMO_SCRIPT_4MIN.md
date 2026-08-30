@@ -320,7 +320,7 @@ curl -s https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/$THROW/verify \
     "verified": false,
     "receipt_count": 2,
     "broken_at_seq": 1,
-    "reason": "payload does not hash to the recorded hash — content was altered"
+    "reason": "payload does not hash to the recorded hash: content was altered"
 }
 ```
 

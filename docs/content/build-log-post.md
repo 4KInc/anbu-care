@@ -153,7 +153,7 @@ Then ask the public endpoint:
 
 ```json
 { "verified": false, "receipt_count": 2, "broken_at_seq": 1,
-  "reason": "payload does not hash to the recorded hash — content was altered" }
+  "reason": "payload does not hash to the recorded hash: content was altered" }
 ```
 
 It names the sequence number. Not "something is wrong" — *this* receipt, content

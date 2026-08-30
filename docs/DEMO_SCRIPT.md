@@ -1038,7 +1038,7 @@ curl -s $URL/api/cases/case-a7cf9fa613/verify
 ```
 verified: false
 broken_at_seq: 1
-reason: payload does not hash to the recorded hash — content was altered
+reason: payload does not hash to the recorded hash: content was altered
 ```
 
 > "Same endpoint, a case where one payload was edited after the fact. It names

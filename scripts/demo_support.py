@@ -203,13 +203,13 @@ def docs_count(url: str, parent_id: str, claimed: str = "") -> None:
     try:
         payload = json.loads(out)
     except json.JSONDecodeError:
-        print(f"    GROUND TRUTH — could not read the record back: {out[:100]}")
+        print(f"    GROUND TRUTH. Could not read the record back: {out[:100]}")
         return
     if "documents" not in payload:
-        print(f"    GROUND TRUTH — record refused the read: {payload.get('detail', payload)}")
+        print(f"    GROUND TRUTH. Record refused the read: {payload.get('detail', payload)}")
         return
     stored = len(payload["documents"])
-    print(f"    GROUND TRUTH — documents actually stored for this parent: {stored}")
+    print(f"    GROUND TRUTH. Documents actually stored for this parent: {stored}")
     if claimed:
         agrees = (claimed == "ingested" and stored > 0) or (claimed != "ingested" and stored == 0)
         verdict = "consistent" if agrees else "CONTRADICTED — the agent claimed more than it did"

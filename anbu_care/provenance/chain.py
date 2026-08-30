@@ -139,7 +139,7 @@ def verify_chain(receipts: Iterable[Receipt]) -> VerificationResult:
         if receipt.compute_hash() != receipt.hash:
             return VerificationResult(
                 ok=False, length=len(ordered), broken_at=receipt.seq,
-                reason="payload does not hash to the recorded hash — content was altered",
+                reason="payload does not hash to the recorded hash: content was altered",
             )
         if not verify(receipt.public_key, body, receipt.signature):
             return VerificationResult(
