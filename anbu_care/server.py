@@ -1216,6 +1216,44 @@ def appointment_evidence_view(case_id: str, appointment_id: str,
 
 
 @app.get("/api/cases/{case_id}/claim-form")
+def claim_form_link(case_id: str,
+                    _session: str = Depends(require_case_access)) -> dict[str, Any]:
+    """A short-lived signed link to the filled Part A for this admission.
+
+    CREDENTIALED, and that is the point rather than an oversight. The form
+    states a diagnosis, so it is the one document in this system that would
+    most obviously leak if the verify endpoint's openness were applied
+    carelessly. Verification proves the chain without revealing what it says;
+    this reveals, so it is gated exactly like the record it was filled from.
+
+    Returns a link rather than the bytes, the same shape as the booking
+    evidence route beside it, so the dashboard can offer it without the
+    browser having to carry a credential through a redirect.
+    """
+    from anbu_care.comms import storage
+    from anbu_care.tpa.on_discharge import FORM_PREFIX
+
+    case = service.load_case(case_id)
+    packet_id = getattr(case, "packet_id", "") if case else ""
+    if not packet_id:
+        raise HTTPException(
+            status_code=404,
+            detail="no claim has been filed for this admission yet, so there "
+                   "is no form. A claim is filed when the discharge summary "
+                   "arrives.")
+
+    signed = storage.signed_url(f"{FORM_PREFIX}/{case_id}/{packet_id}.pdf")
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return {"url": signed.url, "expires_in_seconds": signed.expires_in_seconds,
+            "packet_id": packet_id,
+            "note": ("Part A, filled from the record when the discharge summary "
+                     "arrived. Fields this system does not hold print as 'not on "
+                     "record' rather than a plausible value. It is unsigned, and "
+                     "Anbu Care has not sent it to any insurer.")}
+
+
+@app.get("/api/cases/{case_id}/claim-form/view")
 def claim_form_view(case_id: str,
                     _session: str = Depends(require_case_access)) -> Response:
     """Open the filled Part A for this admission.

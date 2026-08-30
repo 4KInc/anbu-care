@@ -724,7 +724,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1221 tests, no GCP or model access needed
+make test             # 1223 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -928,7 +928,7 @@ scripts/
   build_architecture_svg.py  the architecture diagram, hand-authored rather than laid out
   make_architecture_pdf.py   the two-page PDF, and the README's PNG, from that one SVG
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1221 tests, no GCP or model access needed
+tests/                  1223 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself
@@ -979,7 +979,8 @@ Beyond ADK's own agent API:
 | `GET /api/cases/{id}/appointments/{id}/evidence` | A signed link to the centre's own page. `?stage=sent` for the form as it was filled. **Credentialed** — the page carries her name and a number |
 | `GET /api/cases/{id}/appointments/{id}/evidence/view` | The same, as a redirect, so a WhatsApp message can carry the proof beside the claim |
 | `GET /api/cases/{id}/attempts/{n}/evidence/view` | The page of a centre that REFUSED, by its position in this case's own escalation receipt. The object is never named by the caller |
-| `GET /api/cases/{id}/claim-form` | The filled Part A for this admission, as a PDF. **Credentialed** — it states a diagnosis, which is exactly why it is the one document that never rides on a message |
+| `GET /api/cases/{id}/claim-form` | A short-lived signed link to the filled Part A for this admission. **Credentialed** — it states a diagnosis, which is exactly why it is the one document that never rides on a message |
+| `GET /api/cases/{id}/claim-form/view` | The same, as a redirect, so the form can be opened in one tap |
 | `GET /api/preflight` | The state that silently ruins a recording, in one round trip. **Credentialed** |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
 | `POST /api/parents/{id}/payment-mandate` | Authorise **standing**, ahead of any admission. Every case opened while it is live adopts it and they share the total cap |

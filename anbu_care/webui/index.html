@@ -978,6 +978,26 @@ function dxOption(x, i){
 // The one piece of evidence on this record that Anbu Care did not write.
 // Fetched on demand rather than rendered inline: the link is short-lived by
 // design, and minting one for a card nobody opened would waste it.
+// The claim form is CREDENTIALED, unlike the verify endpoint, because it states
+// a diagnosis. So it is fetched with the session rather than linked directly,
+// and the tab is opened from the redirect the server mints.
+async function openClaimForm(btn){
+  const slot = document.getElementById("claim-form-slot");
+  if(!slot) return;
+  if(btn) btn.disabled = true;
+  slot.innerHTML = `<p class="mute" style="margin:10px 0 0">Fetching it…</p>`;
+  const r = await api(`/api/cases/${encodeURIComponent(S.caseId)}/claim-form`, {auth:true});
+  if(btn) btn.disabled = false;
+  if(!r || !r.url){
+    slot.innerHTML = `<p class="mute" style="margin:10px 0 0">${esc(
+      (r && r.detail) || "No claim form is on this admission yet. One is filled "
+      + "when the discharge summary arrives.")}</p>`;
+    return;
+  }
+  slot.innerHTML = `<p class="mute" style="margin:10px 0 0">${esc(r.note||"")}</p>`;
+  window.open(r.url, "_blank", "noopener");
+}
+
 async function showBookingEvidence(id, stage){
   const slot = document.getElementById(`ev-${id}`);
   if(!slot) return;
@@ -1750,6 +1770,8 @@ function vClaim(){
   if(!S.trail) return vOpenOrWait();
   if(S.trail.__denied) return denied(S.trail.detail,"The claim status");
   const adjs=kinds("claim.adjudicated"), sub=last("claim.submitted");
+  // Only offer the form where the chain says one was actually rendered.
+  const filed = last("claim.filed_on_discharge")?.payload?.claim_form;
   const bills = vPayments() + vBills();
   if(!adjs.length && !sub) return `${synthOnce()}
     ${title("Bills and claim","What was billed, and what the policy is estimated to cover.")}
@@ -1774,6 +1796,12 @@ function vClaim(){
       ? row(esc(sub.payload.sla_kind), esc(new Date(sub.payload.sla_deadline).toLocaleString()))
       : row("Clock", unknown("no SLA clock recorded"))}
   </div>
+  ${filed ? `<div class="card"><h2 class="mini">Claim form</h2>
+    <p class="mute" style="font-size:13.5px;margin:-2px 0 10px">Part A, filled from
+      the record when the discharge summary arrived. It is unsigned, and Anbu Care
+      has not sent it to any insurer.</p>
+    <button class="btn" onclick="openClaimForm(this)">Open the filled form</button>
+    <div id="claim-form-slot"></div></div>` : ""}
   <div class="sec">Adjudication history</div>
   <div class="tl">
     ${adjs.map((r,i)=>{

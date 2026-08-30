@@ -244,3 +244,37 @@ def test_the_form_is_never_an_attachable_artifact():
 
     assert "claim_form" not in artifacts.ATTACHABLE
     assert "claim-form" not in artifacts.ATTACHABLE
+
+
+# --- reaching the form ------------------------------------------------------
+
+def test_the_form_route_refuses_without_a_credential(case, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from anbu_care.server import app
+
+    pid, cid = case
+    _policy(pid)
+    _bill(monkeypatch, cid, pid)
+    on_discharge.file_on_discharge(case_id=cid, parent_id=pid, payload=DISCHARGE)
+
+    r = TestClient(app).get(f"/api/cases/{cid}/claim-form")
+    assert r.status_code == 401
+
+
+def test_an_admission_with_no_claim_says_so_rather_than_erroring(case):
+    # A case that never had a discharge summary has no form, and the 404 tells
+    # a reader when one would exist rather than just failing.
+    from fastapi.testclient import TestClient
+
+    from anbu_care.server import app
+    from anbu_care.webauth import require_case_access
+
+    _, cid = case
+    app.dependency_overrides[require_case_access] = lambda: "test"
+    try:
+        r = TestClient(app).get(f"/api/cases/{cid}/claim-form")
+        assert r.status_code == 404
+        assert "discharge summary arrives" in r.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()

@@ -57,6 +57,11 @@ def _content_paths(parent_id: str, case_id: str) -> list[str]:
         f"/api/cases/{case_id}",
         f"/api/cases/{case_id}/trail",
         f"/api/cases/{case_id}/brief",
+        # The filled Part A states a diagnosis, which makes it the document
+        # most likely to be waved through on the argument that a claim form is
+        # paperwork rather than clinical detail. It is not.
+        f"/api/cases/{case_id}/claim-form",
+        f"/api/cases/{case_id}/claim-form/view",
     ]
 
 
@@ -108,10 +113,19 @@ def test_no_lab_value_leaks_in_an_unauthenticated_response(client, seeded):
 
 
 def test_a_valid_credential_opens_the_content_endpoints(client, seeded):
+    """What the credential buys is passing the gate, not finding something.
+
+    Some of these are conditional on the case having reached a stage: the
+    seeded case has no discharge summary, so it has no claim form, and the
+    honest answer there is 404. The thing under test is that none of them
+    answers 401, because that is the gate refusing.
+    """
     parent_id, case_id = seeded
     headers = {"Authorization": f"Bearer {DEMO_TOKEN}"}
     for path in _content_paths(parent_id, case_id):
-        assert client.get(path, headers=headers).status_code == 200, path
+        status = client.get(path, headers=headers).status_code
+        assert status != 401, f"{path} refused a valid credential"
+        assert status in (200, 404), f"{path} answered {status}"
 
 
 def test_the_record_is_readable_only_with_the_credential(client, seeded):
