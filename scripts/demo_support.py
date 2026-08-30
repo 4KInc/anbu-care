@@ -250,7 +250,7 @@ def claim_flow(case_id: str, parent_id: str) -> None:
     print("\n    [2] Resolving the query — the document is located on the record and attached.")
     print("        (Replayed here at the tool layer so every take is identical. The")
     print("         insurer-liaison agent performs exactly these calls itself — see")
-    print("         docs/DEMO_SCRIPT.md for the live agent-driven trace.)")
+    print("         `make demo` for the full spine with no model in the loop.)")
     doc = onboarding_tools.ingest_document(
         parent_id, kind="discharge_summary", source_filename="discharge_22aug2026.pdf",
         summary="Admitted 19 Aug 2026, cardiac ICU, discharged 22 Aug 2026.",

@@ -25,3 +25,7 @@ service-account*.json
 # remember to add itself.
 docs/content/
 docs/takes/
+docs/DEMO_SCRIPT.md
+docs/DEMO_SCRIPT_4MIN.md
+docs/proposals/recording-window-plan.md
+docs/proposals/consolidated-build-plan.md

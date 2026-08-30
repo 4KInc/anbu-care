@@ -141,7 +141,7 @@ anbu_care/tools/insurer_tools.py    submit_claim calls adjudicate();
 anbu_care/agents/insurer_liaison.py +QUERY/PARTIAL reaction instructions
 anbu_care/server.py                 seed realistic sub-limits on the demo policy
 scripts/demo_run.sh                 new beat
-docs/DEMO_SCRIPT.md                 new beat + label placement
+the demo script                     new beat + label placement
 DISCLOSURE.md                       framing note (below)
 ```
 
