@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 
 from anbu_care import service
 from anbu_care.comms import consent as consent_purposes
+from anbu_care.memory import lessons
 from anbu_care.provenance.store import PARENT_SUBJECT
 from anbu_care.recovery import window as win
 
@@ -65,6 +66,11 @@ def send_due(parent_id: str, now: datetime | None = None) -> dict | None:
         return None
     first = profile.name.split()[0] if profile.name else "there"
 
+    # Read before the send so the receipt can say what was known at the time
+    # rather than what is known now. Costs one lookup on a path nobody is
+    # waiting on: this runs from the scheduler, not from her handset.
+    known_reply_mode = lessons.recall_reply_mode(parent_id)
+
     from anbu_care.tools import whatsapp_tools
 
     prompt_id = service.new_id("rp")
@@ -93,6 +99,11 @@ def send_due(parent_id: str, now: datetime | None = None) -> dict | None:
             "of_days": due.window.days,
             "on": due.on.isoformat(),
             "to_language": getattr(profile, "language", "en"),
+            # What we knew about her before this admission opened, read back
+            # out of the one store that outlives a case. None means we have
+            # genuinely never heard from her, which is the honest answer for a
+            # first admission and is not the same as "she types".
+            "known_reply_mode": known_reply_mode,
             "delivered": delivered,
             "gate_reason": sent.get("reason"),
             "rendering": sent.get("rendering"),

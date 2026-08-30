@@ -31,6 +31,7 @@ testpaths = ["tests"]
 markers = [
     "real_extraction: exercise the real extract_symptoms, with the client stubbed",
     "real_translation: exercise the real translate.render, with the client stubbed",
+    "memory_bank: needs a real Agent Engine Memory Bank in ANBU_MEMORY_BANK",
 ]
 
 [tool.ruff]

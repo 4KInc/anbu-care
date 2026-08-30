@@ -49,6 +49,11 @@ class Settings:
     tpa_mode: str = field(default_factory=lambda: os.getenv("ANBU_TPA_MODE", "simulated"))
     tpa_endpoint: str | None = field(default_factory=lambda: os.getenv("ANBU_TPA_ENDPOINT") or None)
 
+    # The one store that outlives a case. A full Agent Engine resource name,
+    # projects/<p>/locations/<l>/reasoningEngines/<id>. Absent, lessons are not
+    # written and not read, and every check-in falls back to the profile.
+    memory_bank: str | None = field(default_factory=lambda: os.getenv("ANBU_MEMORY_BANK") or None)
+
     @property
     def use_memory_store(self) -> bool:
         return self.store_backend.lower() == "memory"

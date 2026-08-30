@@ -54,7 +54,7 @@ flowchart TB
     FS[("<b>Firestore</b><br/>single-table PK/SK<br/><b>hash-chained receipts</b>")]
     GCS[("Cloud Storage<br/><i>photographs, private</i>")]
     PS[["Pub/Sub<br/><i>intake · case · claim</i>"]]
-    MB[("Memory Bank<br/><i>cross-session</i>")]
+    MB[("Memory Bank<br/><i>lessons that outlive a case</i>")]
   end
 
   VERIFY["<b>GET /api/cases/:id/verify</b><br/>public, no credential<br/><i>anyone can check the chain, including you</i>"]

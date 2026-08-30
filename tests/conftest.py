@@ -13,6 +13,20 @@ os.environ["ANBU_DEMO_ROLE_TAGS"] = "off"
 # the policy, and the suite must keep testing that nothing reaches a seventy-one
 # year old before nine in the morning.
 os.environ["ANBU_RECOVERY_HOUR"] = "9"
+# The suite must not reach Google Cloud, and a developer's .env is loaded before
+# this runs. So the bank is emptied here rather than inherited: every hermetic
+# memory test stays on the unconfigured path and the one live cross-session
+# test skips, whatever happens to be in .env. Asking for the live test is a
+# separate, deliberate act:
+#
+#   ANBU_MEMORY_BANK_LIVE=projects/.../reasoningEngines/... pytest -m memory_bank
+#
+# A second name rather than the real one, so a Memory Bank can never end up in
+# a test run because somebody's shell already had it exported.
+# Set empty rather than deleted: python-dotenv loads the developer's .env when
+# anbu_care is first imported, and it will fill a name that is absent but
+# will not override one that is already present.
+os.environ["ANBU_MEMORY_BANK"] = os.environ.get("ANBU_MEMORY_BANK_LIVE", "")
 os.environ.setdefault("ANBU_SIGNING_KEY_B64", "")
 
 import pytest

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 
 from anbu_care import service
+from anbu_care.memory import lessons
 from anbu_care.provenance.store import PARENT_SUBJECT, get_store
 from anbu_care.schemas import WellbeingEntry
 
@@ -38,6 +39,17 @@ def record(parent_id: str, source: str, text: str, channel: str = "whatsapp",
     the verify endpoint. The hash still proves the stored entry was not altered
     afterwards, which is the property the chain is there for.
     """
+    # WHAT SURVIVES THE CASE. The entry and its receipt belong to this
+    # admission and end with it. That she answers by voice rather than by
+    # typing is true of her, not of the admission, so it is the one thing here
+    # worth carrying to the next one. Only her own messages teach it: a son
+    # typing on her behalf says nothing about what she can do.
+    if source == SELF_REPORTED:
+        lessons.remember_in_background(
+            lessons.remember_reply_mode, parent_id,
+            lessons.VOICE if source_kind == "voice" else lessons.TEXT,
+        )
+
     entry = WellbeingEntry(
         entry_id=service.new_id("wb"),
         parent_id=parent_id,

@@ -40,6 +40,7 @@ from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
 from anbu_care.diagnostics import places as diagnostics_places
 from anbu_care.kb.hospitals import KB_META, load_hospitals
+from anbu_care.memory import lessons
 from anbu_care.money import group, inr
 from anbu_care.provenance.signing import load_signer
 from anbu_care.recovery import checkin as recovery_checkin
@@ -269,7 +270,7 @@ def healthz() -> dict[str, Any]:
         "store_backend": settings().store_backend,
         "tpa_mode": settings().tpa_mode,
         "whatsapp_mode": settings().whatsapp_mode,
-        "memory_bank": "configured" if MEMORY_SERVICE_URI else "in-memory (not persistent)",
+        "memory_bank": lessons.describe(),
         "signing_key": "ephemeral — set ANBU_SIGNING_KEY_B64" if signer.ephemeral else "configured",
     }
 
