@@ -1300,6 +1300,8 @@ Then deploy a new revision — running instances do not pick up IAM changes.
 
 ## Writeup material
 
+- [`docs/content/devpost-submission.md`](docs/content/devpost-submission.md) — **every Devpost field, answered**
+- [`docs/content/devto-article.md`](docs/content/devto-article.md) — the dev.to article, ready to publish
 - [`docs/content/build-log-post.md`](docs/content/build-log-post.md) — build-log post draft
 - [`docs/content/social-post.md`](docs/content/social-post.md) — social drafts
 - [`DISCLOSURE.md`](DISCLOSURE.md) — prior-work and simulated-adjudicator disclosure
