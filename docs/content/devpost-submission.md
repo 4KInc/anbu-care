@@ -206,23 +206,35 @@ gallery size.
 
 **Which Google AI Models did you use?**
 
+**255 characters maximum, single line**, confirmed by the form rejecting a
+longer paste. This is 249:
+
 ```
-Gemini 3.5 Flash (five-agent fleet via ADK on Vertex AI: document vision over discharge summaries, lab reports, ECGs, prescriptions and bills; single-call Tamil voice-note transcription; translation; policy-clause matching). Gemini 2.5 Flash Lite (detecting which language she actually writes in, so the next admission's first check-in is not in the language somebody chose for her on a form)
+Gemini 3.5 Flash (five-agent ADK fleet on Vertex AI: document vision over bills, lab reports and discharge summaries; Tamil voice-note transcription; translation; policy-clause matching). Gemini 2.5 Flash Lite (detecting the language she writes in).
 ```
 
-> **Why two, and why that one.** Everything else runs on 3.5 Flash, which reads
-> a discharge summary and hears Tamil out of a voice note. The detector asks one
-> question with a two-letter answer, on a path that already owes her a reply
-> inside fifteen seconds, and spending a frontier model on a one-token
-> classification is the wrong trade. The reason is architectural rather than a
-> model count, and a test asserts the detector does not silently fall back to
-> `settings().model`.
+> **Two models, five call sites, nothing else.** 3.5 Flash runs the agent fleet,
+> document vision, Tamil transcription and translation. 2.5 Flash Lite does one
+> job: deciding which language she actually writes in.
 >
-> **Gemma is still not in the build**, and is claimed nowhere. Re-probed on 30
-> Aug through the same client the app uses: `gemini-3.5-flash` and
+> **Why the second one is smaller.** That question has a two-letter answer, on a
+> path that already owes her a reply inside fifteen seconds, and spending a
+> frontier model on a one-token classification is the wrong trade. It is an
+> architecture reason rather than a model count, and a test asserts the detector
+> cannot silently fall back to `settings().model`. The full reasoning is in the
+> *How we built it* story, so it is not lost by shortening this field.
+>
+> **What is deliberately NOT claimed.** Agent Engine Memory Bank can do semantic
+> recall, which would put an embedding model on this list. Ours does not: recall
+> is an exact scope lookup, because Memory Bank matches scopes exactly and a
+> keyed lookup fits the rule that guards are code rather than similarity. So
+> `text-embedding-005` would be a plausible third entry that we never invoke,
+> and a judge who greps the repo for it finds nothing.
+>
+> **Gemma is not in the build** and is claimed nowhere. Re-probed on 30 Aug
+> through the client the app uses: `gemini-3.5-flash` and
 > `gemini-2.5-flash-lite` both answer, `gemma-3-27b-it` and `gemma-3-12b-it`
-> both return 404. Serving it would mean a GPU-backed endpoint billed by the
-> hour for a component that by design could never change a decision.
+> both return 404.
 
 **Architecture diagram: ready.** Upload `docs/architecture.png`, rendered from
 `docs/architecture.mmd`. Five numbered bands, with the deterministic guard layer
