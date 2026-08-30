@@ -721,7 +721,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1189 tests, no GCP or model access needed
+make test             # 1191 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -921,7 +921,7 @@ scripts/
   preflight.py          the state that silently ruins a take (`make preflight`)
   clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1189 tests, no GCP or model access needed
+tests/                  1191 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself

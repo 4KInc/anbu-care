@@ -328,7 +328,7 @@ code, and then the interesting failures become impossible rather than unlikely.
 
 ### Try to break it
 
-**1,189 tests**, all green, none needing GCP or a model to run.
+**1,191 tests**, all green, none needing GCP or a model to run.
 
 ```bash
 URL=https://anbu-care-37j4eofpwq-el.a.run.app
@@ -353,7 +353,7 @@ Dashboard: `/app`. Health, including which of the above is running:
 - [ ] The line *"Created for the All Things Agentic Hackathon"* is present, near
       the top.
 - [ ] **#AllThingsAgenticHackathon** is on the post.
-- [ ] `make test` — confirm the count still reads 1,189 and update if not.
+- [ ] `make test` — confirm the count still reads 1,191 and update if not.
 - [ ] `curl -s $URL/api/healthz` — confirm `tpa_mode`, `whatsapp_mode` and
       `memory_bank` still match the "what isn't real" section.
 - [ ] Repo link resolves and `DISCLOSURE.md` is reachable from it.

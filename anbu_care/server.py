@@ -3409,19 +3409,24 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     # Two arriving a second apart, both starting "Anbu Care:", both linking the
     # same tab, both about one photograph, read as duplication — and carried
     # five different figures about one piece of paper between them.
-    payment_line = _consider_payment(case_id, parent_id, bill, estimate)
+    from anbu_care.payments import share as payment_share
+
+    share = payment_share.decide(case_id=case_id, bill=bill, estimate=estimate)
+    payment_line = _consider_payment(case_id, parent_id, bill, estimate, share)
 
     tell("bill_recorded", {
         "parent_name": first_name,
         "line_count": str(len(bill.line_items)),
         "this_bill": f"{group(bill.payable_total_inr)}",
         "adjustment_line": adjustment,
-        "settlement_lines": _settlement_lines(bill, estimate),
+        "settlement_lines": ("" if share.is_residual
+                             else _settlement_lines(bill, estimate)),
         "payment_line": payment_line,
     }, "billing", consent.BILLING_UPDATES)
 
 
-def _consider_payment(case_id: str, parent_id: str, bill, estimate=None) -> str:
+def _consider_payment(case_id: str, parent_id: str, bill, estimate=None,
+                      share=None) -> str:
     """Hand a payable bill to the enforcer, and return what to tell the family.
 
     Returns a paragraph for the bill message rather than sending one of its
@@ -3441,7 +3446,8 @@ def _consider_payment(case_id: str, parent_id: str, bill, estimate=None) -> str:
     # pay the insurer's part out of the family's money. The coverage estimate
     # is already computed for the message this returns into; it is now also
     # what decides the figure.
-    share = payment_share.decide(case_id=case_id, bill=bill, estimate=estimate)
+    share = share or payment_share.decide(case_id=case_id, bill=bill,
+                                          estimate=estimate)
     payable = share.amount_inr
     if payable <= 0:
         return ""   # the insurer is expected to cover all of it
@@ -3569,11 +3575,9 @@ def _owed_now(bill, amount_inr: int, share=None) -> str:
                      "its limit, so the hospital may still ask for more."
                      if share.estimate_is_provisional else "")
         return (f"The bill comes to {inr(bill.payable_total_inr)}. Around "
-                f"{inr(share.covered_inr)} of it is expected to be settled by "
-                f"your insurer with the hospital directly under cashless, so "
-                f"{inr(amount_inr)} is the part that is yours. That split is "
-                f"Anbu Care's estimate from your policy, not the insurer's "
-                f"decision.{maybe_low}\n")
+                f"{inr(share.covered_inr)} of it is settled by your insurer "
+                f"with the hospital directly under cashless, so "
+                f"{inr(amount_inr)} is the part that is yours.{maybe_low}\n")
 
     total = bill.payable_total_inr
     advance = total - amount_inr if total and total > amount_inr else 0

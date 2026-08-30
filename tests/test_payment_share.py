@@ -185,3 +185,97 @@ def test_a_pre_auth_lookup_that_fails_falls_back_to_the_full_balance(case,
                                estimate=_Estimate(17_567, 9_733))
     assert got.basis == payment_share.FULL
     assert got.amount_inr == 27_300
+
+
+# --- the message the family actually reads -----------------------------------
+
+def _rendered_bill_message(monkeypatch, case_id, parent_id, *, cashless):
+    """Run the real reporting path and return the one body it produced."""
+    import json
+
+    from anbu_care import server
+    from anbu_care.bills import extract as bill_vision
+    from anbu_care.comms import storage as gcs
+    from anbu_care.comms.storage import StoredArtifact
+    from anbu_care.docvision import read as docvision_read
+    from anbu_care.payments.mandate import grant
+    from anbu_care.tools import whatsapp_tools
+
+    lines = [("Cardiac ward bed charges", "ward", 9_500),
+             ("Nursing charges", "nursing", 1_200),
+             ("Holter monitoring - 24 hour", "investigation", 4_200),
+             ("Ward pharmacy - cardiac drugs", "pharmacy", 12_400)]
+    monkeypatch.setenv("ANBU_BILL_VISION_MODE", "gemini")
+    monkeypatch.setattr(bill_vision, "_call_model", lambda image, mime: json.dumps({
+        "vendor": "Sacred Heart Hospital", "payee_vpa": None,
+        "bill_date": "2026-08-22", "stated_total_inr": 27_300,
+        "balance_due_inr": 27_300, "is_interim": True, "unreadable": False,
+        "unreadable_reason": None,
+        "line_items": [{"label": l, "item": k, "amount_inr": a} for l, k, a in lines]}))
+    monkeypatch.setattr(docvision_read, "read",
+                        lambda image, mime_type="image/jpeg": docvision_read.Reading(
+                            ok=True, kind="bill", engine="stub", detail="stub"))
+    monkeypatch.setattr(gcs, "store", lambda filename, data, content_type="":
+                        StoredArtifact(stored=True, url="https://signed/x",
+                                       object_name=f"a/{filename}", detail="",
+                                       expires_in_seconds=900))
+    onboarding_tools.record_family_contact(
+        parent_id, name="Arun", relationship="son", whatsapp_e164="+14155550142",
+        timezone_name="America/Los_Angeles", is_primary=True,
+        consent_purposes=["billing_updates", "status_updates", "outbound_notify"])
+    grant(parent_id=parent_id, case_id=case_id, payee_vpa="sacredheart@okhdfcbank",
+          payee_label="Sacred Heart Hospital", per_bill_cap_inr=50_000,
+          total_cap_inr=400_000, hours=48, granted_by="Arun")
+    if cashless:
+        _preauth(case_id, parent_id, "authorized")
+
+    sent = []
+    monkeypatch.setattr(whatsapp_tools, "_deliver",
+                        lambda to_e164, body, template_name, media_url=None,
+                        audience="", recipient_name="": sent.append(body) or {
+                            "delivered": True, "detail": "stub", "mode": "stub",
+                            "reference": "stub", "template": template_name})
+    server._read_bill_and_report(case_id, parent_id, b"\xff\xd8\xff" + b"x" * 9000,
+                                 "image/jpeg")
+    assert sent, "no message was produced for the bill"
+    return sent[-1]
+
+
+def test_the_cashless_split_is_stated_once_not_twice(case, monkeypatch):
+    """The regression this caught on the way in.
+
+    `_owed_now` names the split and `_settlement_lines` named it again, in the
+    future tense - so one message carried both figures twice and the estimate
+    caveat three times. Worse than noise: "once the insurer settles" tells a
+    family to wait for money that is being settled with the hospital now.
+    """
+    pid, cid = case
+    body = _rendered_bill_message(monkeypatch, cid, pid, cashless=True)
+
+    import re
+
+    assert "settled by your insurer with the hospital directly" in body
+    assert "Once the insurer settles" not in body, \
+        "the reimbursement wording survived into a cashless message"
+
+    # Both figures are read back OUT of the sentence that states them, so this
+    # asserts uniqueness rather than a number that moves whenever the coverage
+    # rules or the fixture's line items do.
+    said = re.search(r"Around INR ([\d,]+) of it is settled .*? so INR "
+                     r"([\d,]+) is the part that is yours", body)
+    assert said, body
+    covered, yours = said.group(1), said.group(2)
+    assert covered != yours
+    assert body.count(covered) == 1, f"{covered} is stated twice:\n{body}"
+    assert body.count(yours) == 1, f"{yours} is stated twice:\n{body}"
+    assert body.count("is the part that is yours") == 1, body
+    assert body.count("not the insurer's decision") == 1, body
+
+
+def test_a_reimbursement_message_is_unchanged(case, monkeypatch):
+    pid, cid = case
+    body = _rendered_bill_message(monkeypatch, cid, pid, cashless=False)
+
+    assert "The hospital wants INR 27,300 of it now." in body
+    assert "Once the insurer settles" in body
+    assert "settled by your insurer with the hospital directly" not in body
