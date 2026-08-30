@@ -15,8 +15,11 @@ is drawn as its own layer because that separation **is** the architecture:
 Gemini contributes terms and transcripts and never a verdict, every action
 passes through code the model cannot reach or widen, and one receipt per action
 lands on a chain anyone can verify without a credential. Source:
-[`docs/architecture.mmd`](docs/architecture.mmd) · rendered
-[SVG](docs/architecture.svg) · [PNG](docs/architecture.png).
+[`docs/diagram/architecture-diagram.svg`](docs/diagram/architecture-diagram.svg),
+built by [`scripts/build_architecture_svg.py`](scripts/build_architecture_svg.py) ·
+[two-page PDF](docs/diagram/AnbuCare-Architecture.pdf) · [PNG](docs/architecture.png).
+Hand-authored rather than auto-laid-out, because a layout engine drew a refusal,
+an autonomous tick and a human decision as the same arrow.
 
 ### 🟢 Live demo — no login required
 

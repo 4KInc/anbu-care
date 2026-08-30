@@ -255,8 +255,8 @@ each refusal enforced in code with a test that fails if the guard is removed.
 Rebuild after any change to the diagram:
 
 ```bash
-npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.svg -b white
-./.venv/bin/python scripts/make_architecture_pdf.py
+./.venv/bin/python scripts/build_architecture_svg.py   # the diagram
+./.venv/bin/python scripts/make_architecture_pdf.py    # the PDF, and the README's PNG
 ```
 
 **Startup Prize fields: DECIDE.** Only if you are entering as Blockintel Inc,
@@ -347,7 +347,8 @@ thread is recommended. Post **one** and paste the URL.
 
 ## Before you hit submit
 
-- [ ] Architecture diagram uploaded from `docs/architecture.png`. The form
+- [ ] Architecture diagram uploaded from
+      `docs/diagram/AnbuCare-Architecture.pdf`. The form
       rejects a blank file.
 - [ ] Video recorded from `DEMO_SCRIPT_4MIN.md`, public rather than unlisted
 - [ ] `make booking-mode MODE=live` before recording; it is currently dry

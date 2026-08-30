@@ -12,9 +12,12 @@ whole argument this project makes about itself.
 
     ./.venv/bin/python scripts/make_architecture_pdf.py
 
-Regenerate docs/architecture.svg first if the diagram changed:
+Rebuild the diagram first if it changed:
 
-    npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.svg -b white
+    ./.venv/bin/python scripts/build_architecture_svg.py
+
+Also re-renders docs/architecture.png, the one the README shows, from the same
+SVG. One source, so the README and the submission cannot drift apart.
 """
 
 from __future__ import annotations
@@ -25,7 +28,8 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SVG = ROOT / "docs" / "architecture.svg"
+SVG = ROOT / "docs" / "diagram" / "architecture-diagram.svg"
+PNG = ROOT / "docs" / "architecture.png"
 HTML = ROOT / "docs" / "diagram" / "architecture.html"
 PDF = ROOT / "docs" / "diagram" / "AnbuCare-Architecture.pdf"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -34,29 +38,29 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 # capability list: a pillar without a check is a pillar somebody has to take on
 # trust, which is the opposite of what this project is arguing.
 MANAGED = [
-    ("Cloud Run", "Agent API, Twilio webhook, dashboard. A second service runs "
-     "the headless browser: Chromium will not fit beside the API.",
+    ("Cloud Run", ("Agent API, Twilio webhook, dashboard. A second service runs "
+     "the headless browser: Chromium will not fit beside the API."),
      "gcloud run services list --region asia-south1"),
-    ("Firestore", "Case state and the hash-chained receipt ledger, single-table "
-     "PK/SK.",
+    ("Firestore", ("Case state and the hash-chained receipt ledger, single-table "
+     "PK/SK."),
      "curl -s $URL/api/cases/case-da1c2cb6db/verify"),
-    ("Cloud Scheduler", "The recovery tick and the claims SLA tick. Cloud Run "
-     "holds no timer, which is what makes the regulatory clocks real.",
+    ("Cloud Scheduler", ("The recovery tick and the claims SLA tick. Cloud Run "
+     "holds no timer, which is what makes the regulatory clocks real."),
      "gcloud scheduler jobs list --location asia-south1"),
     ("Pub/Sub", "Intake, case and claim events across a multi-day admission.",
      "gcloud pubsub topics list"),
-    ("Cloud Storage", "Photographs, booking screenshots, claim forms. Private, "
-     "reached only through signed URLs that expire.",
+    ("Cloud Storage", ("Photographs, booking screenshots, claim forms. Private, "
+     "reached only through signed URLs that expire."),
      "curl -o /dev/null -w '%{http_code}' $URL/api/parents/<id>   -> 401"),
-    ("Vertex AI", "Gemini 3.5 Flash for the agent fleet, document vision, Tamil "
+    ("Vertex AI", ("Gemini 3.5 Flash for the agent fleet, document vision, Tamil "
      "transcription and translation. Gemini 2.5 Flash Lite for one question with "
-     "a two-letter answer.",
+     "a two-letter answer."),
      "curl -s $URL/api/healthz"),
-    ("Agent Engine Memory Bank", "The one store that outlives a case. Recall is "
-     "an exact scope lookup, never a similarity search.",
+    ("Agent Engine Memory Bank", ("The one store that outlives a case. Recall is "
+     "an exact scope lookup, never a similarity search."),
      "ANBU_MEMORY_BANK_LIVE=... pytest -m memory_bank"),
-    ("Google Places", "Every hospital and diagnostic centre carries a place_id "
-     "and a verification date, so distance is real.",
+    ("Google Places", ("Every hospital and diagnostic centre carries a place_id "
+     "and a verification date, so distance is real."),
      "Shown on every triage call, with the seed date"),
 ]
 
@@ -64,31 +68,31 @@ MANAGED = [
 # do is checkable in a way that a system defined by its features is not.
 REFUSALS = [
     ("Severity is never argued down",
-     "“She says it’s probably just gas” still returns HIGH. The "
+     ("“She says it’s probably just gas” still returns HIGH. The "
      "table that decides severity is code, and never reads that sentence as "
-     "permission."),
+     "permission.")),
     ("Clinical detail never leaves over WhatsApp",
-     "The gate classifies the content, not the caller’s claim about it. "
-     "Bypass the agent and call send() directly: still blocked."),
+     ("The gate classifies the content, not the caller’s claim about it. "
+     "Bypass the agent and call send() directly: still blocked.")),
     ("It will not attribute a result it cannot place",
-     "Two tests outstanding and one report arriving closes neither. Deciding "
-     "which would be a model choosing which clinical order was carried out."),
+     ("Two tests outstanding and one report arriving closes neither. Deciding "
+     "which would be a model choosing which clinical order was carried out.")),
     ("It will not pay the insurer’s share",
-     "Under cashless the insurer settles with the hospital, so only the family’s "
-     "residual is paid. INR 27,300 on the paper, INR 9,733 owed."),
+     ("Under cashless the insurer settles with the hospital, so only the family’s "
+     "residual is paid. INR 27,300 on the paper, INR 9,733 owed.")),
     ("It will not claim an action it did not take",
-     "A booking is recorded as requested, never confirmed, because an "
-     "unauthenticated callback form cannot truthfully produce more."),
+     ("A booking is recorded as requested, never confirmed, because an "
+     "unauthenticated callback form cannot truthfully produce more.")),
     ("It will not put a sentence in memory",
-     "Each lesson has its own function composing its own sentence from a "
+     ("Each lesson has its own function composing its own sentence from a "
      "validated value. A caller cannot store a symptom because a caller cannot "
-     "store prose."),
+     "store prose.")),
     ("It will not guess on a form somebody signs",
-     "The Part A claim form prints “not on record” rather than a "
-     "plausible value, and is left unsigned."),
+     ("The Part A claim form prints “not on record” rather than a "
+     "plausible value, and is left unsigned.")),
     ("It does not watch anyone",
-     "No sensors, no monitoring. An episode begins because a signal arrives, "
-     "and the receipt says so. Tests reject the word “detect” in that path."),
+     ("No sensors, no monitoring. An episode begins because a signal arrives, "
+     "and the receipt says so. Tests reject the word “detect” in that path.")),
 ]
 
 
@@ -139,20 +143,17 @@ def build_html() -> str:
   .refusals td.c0 {{ width: 38%; color: #7d2f1c; }}
   .foot {{ margin-top: 7mm; font-size: 8.5pt; color: #5b6a72; }}
   .foot b {{ color: #14211f; }}
+  /* Page 1 is the diagram and nothing else: it already carries its own
+     title, subtitle and provenance line, and an HTML header on top of it
+     pushed the whole thing onto a second page. */
+  .page.diagram {{ display: flex; align-items: center; min-height: 262mm; }}
   svg {{ width: 100%; height: auto; display: block; }}
   /* The mermaid frontmatter title repeats the heading directly above it, and
      carries an em dash the rest of these documents no longer use. */
   .flowchartTitleText {{ display: none; }}
 </style>
 
-<div class="page">
-  <h1>Anbu Care</h1>
-  <div class="rule"></div>
-  <p class="thesis"><b>Agents propose, guards decide, the chain records.</b>
-  Band 4 is drawn as its own layer on purpose, and the request spine runs
-  straight through it. Everything in that band is deterministic code the model
-  cannot reach, argue with, or widen. That separation is the architecture: a
-  diagram that mixed the two would be describing a different system.</p>
+<div class="page diagram">
   {svg_body()}
 </div>
 
@@ -187,7 +188,7 @@ def build_html() -> str:
 
 def main() -> int:
     if not SVG.exists():
-        print(f"missing {SVG}; render it from architecture.mmd first", file=sys.stderr)
+        print(f"missing {SVG}; run build_architecture_svg.py first", file=sys.stderr)
         return 1
     if not pathlib.Path(CHROME).exists():
         print(f"no Chrome at {CHROME}", file=sys.stderr)
@@ -204,6 +205,19 @@ def main() -> int:
         print("Chrome produced no file", file=sys.stderr)
         return 1
     print(f"  {PDF.relative_to(ROOT)}  {PDF.stat().st_size / 1024:.0f} KB")
+
+    # The README's image, from the same SVG, so the two cannot disagree.
+    shot = ROOT / "docs" / "diagram" / "_png.html"
+    shot.write_text(f'<!doctype html><meta charset=utf-8>'
+                    f'<style>body{{margin:0}}img{{width:2040px;display:block}}</style>'
+                    f'<img src="{SVG.as_uri()}">')
+    subprocess.run(
+        [CHROME, "--headless", "--disable-gpu", "--hide-scrollbars",
+         f"--screenshot={PNG}", "--window-size=2040,1245",
+         "--force-device-scale-factor=2", shot.as_uri()],
+        check=True, capture_output=True, timeout=120)
+    shot.unlink(missing_ok=True)
+    print(f"  {PNG.relative_to(ROOT)}  {PNG.stat().st_size / 1024:.0f} KB")
     return 0
 
 
