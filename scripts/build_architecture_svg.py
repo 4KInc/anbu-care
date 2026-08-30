@@ -24,16 +24,22 @@ OUT = ROOT / "docs" / "diagram" / "architecture-diagram.svg"
 
 W, H = 2040, 1245
 
-INK = "#14211f"
-MUTE = "#5b6a72"
-LINE = "#8d9ba1"
-TEAL = "#0e4f52"
-RUST = "#a8442a"
-FILL = "#f2f4f4"
-EDGE = "#c9d2d4"
-GUARD_FILL = "#fdf1ee"
-GUARD_EDGE = "#c4735c"
-PROOF_FILL = "#e2efed"
+# THE DASHBOARD'S PALETTE, not a near miss of it. These are lifted from the
+# custom properties in anbu_care/webui/index.html, so the diagram, the icon and
+# the product a judge opens are the same teal rather than three adjacent ones.
+# The first draft of this file used #0e4f52 and a warm ivory, which nobody
+# notices alone and everybody notices side by side.
+INK = "#0b1c30"          # --ink
+MUTE = "#4d5c6e"         # --ink-soft
+LINE = "#7d8b9c"         # --ink-mute
+TEAL = "#0d7d70"         # --teal, the permitted / verified colour
+TEAL_INK = "#065f56"     # --teal-ink
+RUST = "#c2313b"         # --red, and it is only ever a refusal here
+FILL = "#f6f7fb"         # --surface
+EDGE = "#e3e8f0"         # --line
+GUARD_FILL = "#fdecec"   # --red-bg
+GUARD_EDGE = "#c2313b"   # --red
+PROOF_FILL = "#e2f6f2"   # --teal-bg
 
 
 def esc(t: str) -> str:
@@ -170,7 +176,7 @@ def build() -> str:
     for i, (t, sub) in enumerate(guards):
         bx = gx0 + i * (gw + ggap)
         p.append(f'<rect x="{bx}" y="782" width="{gw}" height="62" rx="3" '
-                 f'fill="#ffffff" stroke="{GUARD_EDGE}" stroke-width="1.2"/>')
+                 f'fill="#ffffff" stroke="{GUARD_EDGE}" stroke-width="1.1"/>')
         p.append(label(bx + gw / 2, 806, t, size=12.5, fill=INK, weight="700"))
         p.append(label(bx + gw / 2, 826, sub, size=11.5, fill=MUTE, italic=True))
 
@@ -179,7 +185,7 @@ def build() -> str:
     p.append(box(60, 900, 300, 86, num="", title="refused, and receipted",
                  lines=["*a block is evidence the",
                         "*boundary held"],
-                 fill="#fdf1ee", edge=GUARD_EDGE))
+                 fill=GUARD_FILL, edge=GUARD_EDGE))
 
     # ---- 6 state ---------------------------------------------------------
     p.append(path(f"M {CX} 868 L {CX} 906", width=2.6, stroke=TEAL))
@@ -221,7 +227,7 @@ def build() -> str:
                  lines=["public, no credential",
                         "*anyone can check the chain,",
                         "*including you"],
-                 fill=PROOF_FILL, edge=TEAL, weight=2))
+                 fill=PROOF_FILL, edge=TEAL_INK, weight=2))
     p.append(path("M 1610 971 C 1700 971 1836 1000 1836 1074", stroke=TEAL, width=2))
 
     # human decision

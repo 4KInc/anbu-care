@@ -5,28 +5,28 @@
   @page { size: 420mm 297mm; margin: 14mm 16mm; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; color: #14211f; background: #fff;
+    margin: 0; color: #0b1c30; background: #fff;
     font: 400 10.5pt/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   .page { page-break-after: always; }
   .page:last-child { page-break-after: auto; }
   h1 { font-size: 21pt; margin: 0 0 2mm; letter-spacing: -.01em; }
-  .thesis { font-size: 11.5pt; color: #3d4a52; margin: 0 0 5mm; max-width: 250mm; }
-  .rule { height: 2.4pt; background: #0e4f52; width: 46mm; margin: 0 0 6mm; }
+  .thesis { font-size: 11.5pt; color: #4d5c6e; margin: 0 0 5mm; max-width: 250mm; }
+  .rule { height: 2.4pt; background: #0d7d70; width: 46mm; margin: 0 0 6mm; }
   h2 { font-size: 13pt; margin: 0 0 3mm; letter-spacing: -.005em; }
-  .sub { font-size: 9.5pt; color: #5b6a72; margin: 0 0 4mm; max-width: 175mm; }
+  .sub { font-size: 9.5pt; color: #4d5c6e; margin: 0 0 4mm; max-width: 175mm; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; }
   table { width: 100%; border-collapse: collapse; }
-  td { padding: 2.4mm 3mm 2.4mm 0; border-top: .5pt solid #dfe5e6; vertical-align: top;
+  td { padding: 2.4mm 3mm 2.4mm 0; border-top: .5pt solid #e3e8f0; vertical-align: top;
         font-size: 9pt; line-height: 1.4; }
-  tr:first-child td { border-top: .9pt solid #0e4f52; }
-  td.c0 { font-weight: 700; width: 33%; color: #0b2b2c; }
+  tr:first-child td { border-top: .9pt solid #0d7d70; }
+  td.c0 { font-weight: 700; width: 33%; color: #065f56; }
   td.c2 { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 7.6pt;
-           color: #3d4a63; width: 34%; word-break: break-word; }
-  .refusals td.c0 { width: 38%; color: #7d2f1c; }
-  .foot { margin-top: 7mm; font-size: 8.5pt; color: #5b6a72; }
-  .foot b { color: #14211f; }
+           color: #4d5c6e; width: 34%; word-break: break-word; }
+  .refusals td.c0 { width: 38%; color: #93000a; }
+  .foot { margin-top: 7mm; font-size: 8.5pt; color: #4d5c6e; }
+  .foot b { color: #0b1c30; }
   /* Page 1 is the diagram and nothing else: it already carries its own
      title, subtitle and provenance line, and an HTML header on top of it
      pushed the whole thing onto a second page. */
@@ -38,130 +38,130 @@
 </style>
 
 <div class="page diagram">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2040 1245" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8d9ba1"/></marker></defs><rect width="2040" height="1245" fill="#ffffff"/><text x="60" y="62" text-anchor="start" font-size="34" fill="#14211f" font-weight="700">Anbu Care</text>
-<text x="60" y="96" text-anchor="start" font-size="16" fill="#0e4f52" font-weight="700">Taskmaster  ·  eldercare coordination for families who live somewhere else</text>
-<text x="60" y="124" text-anchor="start" font-size="14" fill="#5b6a72" font-weight="400">One Tamil voice note at 3am. Her son is told, the neighbour gets a bedside link, cashless cover is filed against her policy and a 1-hour regulatory clock starts. Nobody pressed anything.</text>
-<text x="60" y="148" text-anchor="start" font-size="12.5" fill="#8d9ba1" font-weight="400">5 agents on Google ADK  ·  Gemini 3.5 Flash and 2.5 Flash Lite on Vertex AI  ·  Cloud Run, asia-south1  ·  1,221 tests  ·  verified live 30 Aug 2026</text>
-<line x1="60" y1="172" x2="1980" y2="172" stroke="#c9d2d4" stroke-width="1"/>
-<text x="60" y="196" text-anchor="start" font-size="12" fill="#5b6a72" font-weight="700">FULL SYSTEM</text>
-<rect x="690" y="216" width="660" height="92" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1020.0" y="252.5" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">1 ·</tspan>  INBOUND</text>
-<text x="1020.0" y="269.5" text-anchor="middle" font-size="13" fill="#5b6a72">her Tamil voice note  ·  a photographed bill, report or discharge summary</text>
-<text x="1020.0" y="286.5" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">the bedside handset, bound to one case for 60 minutes</text>
-<rect x="1640" y="216" width="340" height="92" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1810.0" y="252.5" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f">Cloud Scheduler</text>
-<text x="1810.0" y="269.5" text-anchor="middle" font-size="13" fill="#5b6a72">recovery tick  ·  claims SLA tick</text>
-<text x="1810.0" y="286.5" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">Cloud Run holds no timer</text>
-<path d="M 1640 262 C 1520 262 1480 300 1400 336" fill="none" stroke="#0e4f52" stroke-width="2.2" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="1560" y="316" text-anchor="middle" font-size="12" fill="#0e4f52" font-weight="400">unprompted, every minute</text>
-<path d="M 1020 308 L 1020 336" fill="none" stroke="#8d9ba1" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<rect x="730" y="336" width="580" height="76" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1020.0" y="373.0" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">2 ·</tspan>  Cloud Run  ·  anbu-care</text>
-<text x="1020.0" y="390.0" text-anchor="middle" font-size="13" fill="#5b6a72">ADK API  ·  Twilio webhook  ·  family dashboard</text>
-<rect x="60" y="452" width="330" height="108" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="225.0" y="488.0" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f">Gemini on Vertex AI</text>
-<text x="225.0" y="505.0" text-anchor="middle" font-size="13" fill="#5b6a72">3.5 Flash  ·  vision, Tamil, translation</text>
-<text x="225.0" y="522.0" text-anchor="middle" font-size="13" fill="#5b6a72">2.5 Flash Lite  ·  which language she writes in</text>
-<text x="225.0" y="539.0" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">proposes, never decides</text>
-<path d="M 390 490 C 500 490 560 470 640 458" fill="none" stroke="#8d9ba1" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="520" y="478" text-anchor="middle" font-size="12" fill="#5b6a72" font-weight="400">asks</text>
-<path d="M 640 528 C 560 540 500 545 390 545" fill="none" stroke="#8d9ba1" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="530" y="566" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400">terms and transcripts,</text>
-<text x="530" y="581" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400">never verdicts</text>
-<path d="M 1020 412 L 1020 440" fill="none" stroke="#8d9ba1" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<rect x="780" y="440" width="480" height="68" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1020.0" y="481.5" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">3 ·</tspan>  Coordinator  ·  root_agent</text>
-<path d="M 1020 508 L 1020 552" fill="none" stroke="#8d9ba1" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="1082" y="536" text-anchor="middle" font-size="12" fill="#5b6a72" font-weight="400">delegate</text>
-<rect x="640" y="552" width="760" height="104" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1020.0" y="576" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">4 ·</tspan>  Five sub-agents, isolated tool scopes</text>
-<rect x="659.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="728.0" y="626" text-anchor="middle" font-size="11.5" fill="#14211f" font-weight="400">Onboarding / KB</text>
-<rect x="805.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="874.0" y="626" text-anchor="middle" font-size="11.5" fill="#14211f" font-weight="400">Triage</text>
-<rect x="951.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="1020.0" y="626" text-anchor="middle" font-size="11.5" fill="#14211f" font-weight="400">Evidence / STEP_UP</text>
-<rect x="1097.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="1166.0" y="626" text-anchor="middle" font-size="11.5" fill="#14211f" font-weight="400">Insurer liaison</text>
-<rect x="1243.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="1312.0" y="626" text-anchor="middle" font-size="11.5" fill="#14211f" font-weight="400">WhatsApp comms</text>
-<path d="M 1020 656 L 1020 700" fill="none" stroke="#0e4f52" stroke-width="2.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="1188" y="684" text-anchor="middle" font-size="12.5" fill="#0e4f52" font-weight="700">every action, without exception</text>
-<rect x="150" y="700" width="1740" height="168" rx="3" fill="#fdf1ee" stroke="#c4735c" stroke-width="2.2"/>
-<text x="1020.0" y="725" text-anchor="middle" font-size="16" font-weight="700" fill="#14211f"><tspan font-weight="700">5 ·</tspan>  DETERMINISTIC GUARD LAYER  ·  code, not prompts</text>
-<text x="1020.0" y="742" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">the one layer no agent can reach past, argue with, or widen</text>
-<rect x="186.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c4735c" stroke-width="1.2"/>
-<text x="320.0" y="806" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">RED_FLAGS table</text>
-<text x="320.0" y="826" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">severity decided here</text>
-<rect x="466.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c4735c" stroke-width="1.2"/>
-<text x="600.0" y="806" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Comms gate</text>
-<text x="600.0" y="826" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">clinical content, 24h window</text>
-<rect x="746.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c4735c" stroke-width="1.2"/>
-<text x="880.0" y="806" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Consent, per purpose</text>
-<text x="880.0" y="826" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">read live, every send</text>
-<rect x="1026.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c4735c" stroke-width="1.2"/>
-<text x="1160.0" y="806" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Payment enforcer</text>
-<text x="1160.0" y="826" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">9 guards  ·  pays her share only</text>
-<rect x="1306.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c4735c" stroke-width="1.2"/>
-<text x="1440.0" y="806" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Booking enforcer</text>
-<text x="1440.0" y="826" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">12 guards  ·  must be cancellable</text>
-<rect x="1586.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c4735c" stroke-width="1.2"/>
-<text x="1720.0" y="806" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Claim and result guards</text>
-<text x="1720.0" y="826" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">one claim, one order, or neither</text>
-<path d="M 150 812 C 90 812 74 856 74 900" fill="none" stroke="#a8442a" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow)" stroke-linecap="round"/>
-<rect x="60" y="900" width="300" height="86" rx="3" fill="#fdf1ee" stroke="#c4735c" stroke-width="1.0"/>
-<text x="210.0" y="933.5" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f">refused, and receipted</text>
-<text x="210.0" y="950.5" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">a block is evidence the</text>
-<text x="210.0" y="967.5" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">boundary held</text>
-<path d="M 1020 868 L 1020 906" fill="none" stroke="#0e4f52" stroke-width="2.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="1152" y="892" text-anchor="middle" font-size="12.5" fill="#0e4f52" font-weight="400">one receipt per action</text>
-<rect x="430" y="906" width="1180" height="130" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1020.0" y="930" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">6 ·</tspan>  State and evidence</text>
-<rect x="463.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="597.0" y="978" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Firestore</text>
-<text x="597.0" y="995" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">single-table PK/SK</text>
-<text x="597.0" y="1011" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">hash-chained receipts</text>
-<rect x="745.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="879.0" y="978" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Cloud Storage</text>
-<text x="879.0" y="995" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">photographs, screenshots</text>
-<text x="879.0" y="1011" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">private, signed URLs</text>
-<rect x="1027.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="1161.0" y="978" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Pub/Sub</text>
-<text x="1161.0" y="995" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">intake · case · claim</text>
-<text x="1161.0" y="1011" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">multi-day admission</text>
-<rect x="1309.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#c9d2d4"/>
-<text x="1443.0" y="978" text-anchor="middle" font-size="12.5" fill="#14211f" font-weight="700">Memory Bank</text>
-<text x="1443.0" y="995" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">Vertex Agent Engine</text>
-<text x="1443.0" y="1011" text-anchor="middle" font-size="11" fill="#5b6a72" font-weight="400" font-style="italic">lessons that outlive a case</text>
-<path d="M 1020 1036 L 1020 1074" fill="none" stroke="#8d9ba1" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<rect x="590" y="1074" width="860" height="96" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="1020.0" y="1112.5" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">7 ·</tspan>  OUTBOUND  ·  only what the gate permitted</text>
-<text x="1020.0" y="1129.5" text-anchor="middle" font-size="13" fill="#5b6a72">the family alert  ·  the care-circle notice  ·  her daily check-in, in Tamil</text>
-<text x="1020.0" y="1146.5" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">the treating team's scoped link  ·  a filled claim form, unsigned</text>
-<rect x="60" y="1074" width="330" height="96" rx="3" fill="#f2f4f4" stroke="#c9d2d4" stroke-width="1.0"/>
-<text x="225.0" y="1104.0" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f">anbu-care-booker</text>
-<text x="225.0" y="1121.0" text-anchor="middle" font-size="13" fill="#5b6a72">a real headless browser on</text>
-<text x="225.0" y="1138.0" text-anchor="middle" font-size="13" fill="#5b6a72">a real clinic's booking form</text>
-<text x="225.0" y="1155.0" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">deployed apart: Chromium will not fit</text>
-<path d="M 490 1122 L 585 1122" fill="none" stroke="#8d9ba1" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
-<text x="538" y="1112" text-anchor="middle" font-size="11.5" fill="#5b6a72" font-weight="400">submits</text>
-<rect x="1690" y="1074" width="290" height="96" rx="3" fill="#e2efed" stroke="#0e4f52" stroke-width="2"/>
-<text x="1835.0" y="1104.0" text-anchor="middle" font-size="15" font-weight="700" fill="#14211f"><tspan font-weight="700">8 ·</tspan>  GET /verify</text>
-<text x="1835.0" y="1121.0" text-anchor="middle" font-size="13" fill="#5b6a72">public, no credential</text>
-<text x="1835.0" y="1138.0" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">anyone can check the chain,</text>
-<text x="1835.0" y="1155.0" text-anchor="middle" font-size="13" fill="#5b6a72" font-style="italic">including you</text>
-<path d="M 1610 971 C 1700 971 1836 1000 1836 1074" fill="none" stroke="#0e4f52" stroke-width="2" marker-end="url(#arrow)" stroke-linecap="round"/>
-<path d="M 1270 1170 C 1270 1200 1140 1206 1060 1206" fill="none" stroke="#5b6a72" stroke-width="1.6" stroke-dasharray="6 5" stroke-linecap="round"/>
-<text x="1320" y="1196" text-anchor="start" font-size="11.5" fill="#5b6a72" font-weight="400" font-style="italic">a person opens the payment link, and signs the claim form</text>
-<line x1="60" y1="1221" x2="94" y2="1221" stroke="#a8442a" stroke-width="2.4" stroke-dasharray="4 4"/>
-<text x="104" y="1225" text-anchor="start" font-size="12" fill="#14211f" font-weight="700">Refusal path</text>
-<text x="196.8" y="1225" text-anchor="start" font-size="12" fill="#5b6a72" font-weight="400">blocked, refused, or withheld</text>
-<line x1="421.7" y1="1221" x2="455.7" y2="1221" stroke="#0e4f52" stroke-width="2.4"/>
-<text x="465.7" y="1225" text-anchor="start" font-size="12" fill="#14211f" font-weight="700">Autonomous loop</text>
-<text x="579.2" y="1225" text-anchor="start" font-size="12" fill="#5b6a72" font-weight="400">runs unwatched, nobody asked</text>
-<line x1="798.0" y1="1221" x2="832.0" y2="1221" stroke="#5b6a72" stroke-width="2.4" stroke-dasharray="6 5"/>
-<text x="842.0" y="1225" text-anchor="start" font-size="12" fill="#14211f" font-weight="700">Human decision required</text>
-<text x="1010.7" y="1225" text-anchor="start" font-size="12" fill="#5b6a72" font-weight="400">the two things it will not do alone</text></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2040 1245" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7d8b9c"/></marker></defs><rect width="2040" height="1245" fill="#ffffff"/><text x="60" y="62" text-anchor="start" font-size="34" fill="#0b1c30" font-weight="700">Anbu Care</text>
+<text x="60" y="96" text-anchor="start" font-size="16" fill="#0d7d70" font-weight="700">Taskmaster  ·  eldercare coordination for families who live somewhere else</text>
+<text x="60" y="124" text-anchor="start" font-size="14" fill="#4d5c6e" font-weight="400">One Tamil voice note at 3am. Her son is told, the neighbour gets a bedside link, cashless cover is filed against her policy and a 1-hour regulatory clock starts. Nobody pressed anything.</text>
+<text x="60" y="148" text-anchor="start" font-size="12.5" fill="#7d8b9c" font-weight="400">5 agents on Google ADK  ·  Gemini 3.5 Flash and 2.5 Flash Lite on Vertex AI  ·  Cloud Run, asia-south1  ·  1,221 tests  ·  verified live 30 Aug 2026</text>
+<line x1="60" y1="172" x2="1980" y2="172" stroke="#e3e8f0" stroke-width="1"/>
+<text x="60" y="196" text-anchor="start" font-size="12" fill="#4d5c6e" font-weight="700">FULL SYSTEM</text>
+<rect x="690" y="216" width="660" height="92" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1020.0" y="252.5" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">1 ·</tspan>  INBOUND</text>
+<text x="1020.0" y="269.5" text-anchor="middle" font-size="13" fill="#4d5c6e">her Tamil voice note  ·  a photographed bill, report or discharge summary</text>
+<text x="1020.0" y="286.5" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">the bedside handset, bound to one case for 60 minutes</text>
+<rect x="1640" y="216" width="340" height="92" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1810.0" y="252.5" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30">Cloud Scheduler</text>
+<text x="1810.0" y="269.5" text-anchor="middle" font-size="13" fill="#4d5c6e">recovery tick  ·  claims SLA tick</text>
+<text x="1810.0" y="286.5" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">Cloud Run holds no timer</text>
+<path d="M 1640 262 C 1520 262 1480 300 1400 336" fill="none" stroke="#0d7d70" stroke-width="2.2" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="1560" y="316" text-anchor="middle" font-size="12" fill="#0d7d70" font-weight="400">unprompted, every minute</text>
+<path d="M 1020 308 L 1020 336" fill="none" stroke="#7d8b9c" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<rect x="730" y="336" width="580" height="76" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1020.0" y="373.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">2 ·</tspan>  Cloud Run  ·  anbu-care</text>
+<text x="1020.0" y="390.0" text-anchor="middle" font-size="13" fill="#4d5c6e">ADK API  ·  Twilio webhook  ·  family dashboard</text>
+<rect x="60" y="452" width="330" height="108" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="225.0" y="488.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30">Gemini on Vertex AI</text>
+<text x="225.0" y="505.0" text-anchor="middle" font-size="13" fill="#4d5c6e">3.5 Flash  ·  vision, Tamil, translation</text>
+<text x="225.0" y="522.0" text-anchor="middle" font-size="13" fill="#4d5c6e">2.5 Flash Lite  ·  which language she writes in</text>
+<text x="225.0" y="539.0" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">proposes, never decides</text>
+<path d="M 390 490 C 500 490 560 470 640 458" fill="none" stroke="#7d8b9c" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="520" y="478" text-anchor="middle" font-size="12" fill="#4d5c6e" font-weight="400">asks</text>
+<path d="M 640 528 C 560 540 500 545 390 545" fill="none" stroke="#7d8b9c" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="530" y="566" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400">terms and transcripts,</text>
+<text x="530" y="581" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400">never verdicts</text>
+<path d="M 1020 412 L 1020 440" fill="none" stroke="#7d8b9c" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<rect x="780" y="440" width="480" height="68" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1020.0" y="481.5" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">3 ·</tspan>  Coordinator  ·  root_agent</text>
+<path d="M 1020 508 L 1020 552" fill="none" stroke="#7d8b9c" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="1082" y="536" text-anchor="middle" font-size="12" fill="#4d5c6e" font-weight="400">delegate</text>
+<rect x="640" y="552" width="760" height="104" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1020.0" y="576" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">4 ·</tspan>  Five sub-agents, isolated tool scopes</text>
+<rect x="659.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="728.0" y="626" text-anchor="middle" font-size="11.5" fill="#0b1c30" font-weight="400">Onboarding / KB</text>
+<rect x="805.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="874.0" y="626" text-anchor="middle" font-size="11.5" fill="#0b1c30" font-weight="400">Triage</text>
+<rect x="951.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="1020.0" y="626" text-anchor="middle" font-size="11.5" fill="#0b1c30" font-weight="400">Evidence / STEP_UP</text>
+<rect x="1097.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="1166.0" y="626" text-anchor="middle" font-size="11.5" fill="#0b1c30" font-weight="400">Insurer liaison</text>
+<rect x="1243.0" y="604" width="138" height="34" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="1312.0" y="626" text-anchor="middle" font-size="11.5" fill="#0b1c30" font-weight="400">WhatsApp comms</text>
+<path d="M 1020 656 L 1020 700" fill="none" stroke="#0d7d70" stroke-width="2.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="1188" y="684" text-anchor="middle" font-size="12.5" fill="#0d7d70" font-weight="700">every action, without exception</text>
+<rect x="150" y="700" width="1740" height="168" rx="3" fill="#fdecec" stroke="#c2313b" stroke-width="2.2"/>
+<text x="1020.0" y="725" text-anchor="middle" font-size="16" font-weight="700" fill="#0b1c30"><tspan font-weight="700">5 ·</tspan>  DETERMINISTIC GUARD LAYER  ·  code, not prompts</text>
+<text x="1020.0" y="742" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">the one layer no agent can reach past, argue with, or widen</text>
+<rect x="186.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c2313b" stroke-width="1.1"/>
+<text x="320.0" y="806" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">RED_FLAGS table</text>
+<text x="320.0" y="826" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">severity decided here</text>
+<rect x="466.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c2313b" stroke-width="1.1"/>
+<text x="600.0" y="806" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Comms gate</text>
+<text x="600.0" y="826" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">clinical content, 24h window</text>
+<rect x="746.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c2313b" stroke-width="1.1"/>
+<text x="880.0" y="806" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Consent, per purpose</text>
+<text x="880.0" y="826" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">read live, every send</text>
+<rect x="1026.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c2313b" stroke-width="1.1"/>
+<text x="1160.0" y="806" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Payment enforcer</text>
+<text x="1160.0" y="826" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">9 guards  ·  pays her share only</text>
+<rect x="1306.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c2313b" stroke-width="1.1"/>
+<text x="1440.0" y="806" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Booking enforcer</text>
+<text x="1440.0" y="826" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">12 guards  ·  must be cancellable</text>
+<rect x="1586.0" y="782" width="268" height="62" rx="3" fill="#ffffff" stroke="#c2313b" stroke-width="1.1"/>
+<text x="1720.0" y="806" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Claim and result guards</text>
+<text x="1720.0" y="826" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">one claim, one order, or neither</text>
+<path d="M 150 812 C 90 812 74 856 74 900" fill="none" stroke="#c2313b" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow)" stroke-linecap="round"/>
+<rect x="60" y="900" width="300" height="86" rx="3" fill="#fdecec" stroke="#c2313b" stroke-width="1.0"/>
+<text x="210.0" y="933.5" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30">refused, and receipted</text>
+<text x="210.0" y="950.5" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">a block is evidence the</text>
+<text x="210.0" y="967.5" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">boundary held</text>
+<path d="M 1020 868 L 1020 906" fill="none" stroke="#0d7d70" stroke-width="2.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="1152" y="892" text-anchor="middle" font-size="12.5" fill="#0d7d70" font-weight="400">one receipt per action</text>
+<rect x="430" y="906" width="1180" height="130" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1020.0" y="930" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">6 ·</tspan>  State and evidence</text>
+<rect x="463.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="597.0" y="978" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Firestore</text>
+<text x="597.0" y="995" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">single-table PK/SK</text>
+<text x="597.0" y="1011" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">hash-chained receipts</text>
+<rect x="745.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="879.0" y="978" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Cloud Storage</text>
+<text x="879.0" y="995" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">photographs, screenshots</text>
+<text x="879.0" y="1011" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">private, signed URLs</text>
+<rect x="1027.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="1161.0" y="978" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Pub/Sub</text>
+<text x="1161.0" y="995" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">intake · case · claim</text>
+<text x="1161.0" y="1011" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">multi-day admission</text>
+<rect x="1309.0" y="956" width="268" height="66" rx="3" fill="#ffffff" stroke="#e3e8f0"/>
+<text x="1443.0" y="978" text-anchor="middle" font-size="12.5" fill="#0b1c30" font-weight="700">Memory Bank</text>
+<text x="1443.0" y="995" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">Vertex Agent Engine</text>
+<text x="1443.0" y="1011" text-anchor="middle" font-size="11" fill="#4d5c6e" font-weight="400" font-style="italic">lessons that outlive a case</text>
+<path d="M 1020 1036 L 1020 1074" fill="none" stroke="#7d8b9c" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<rect x="590" y="1074" width="860" height="96" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="1020.0" y="1112.5" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">7 ·</tspan>  OUTBOUND  ·  only what the gate permitted</text>
+<text x="1020.0" y="1129.5" text-anchor="middle" font-size="13" fill="#4d5c6e">the family alert  ·  the care-circle notice  ·  her daily check-in, in Tamil</text>
+<text x="1020.0" y="1146.5" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">the treating team's scoped link  ·  a filled claim form, unsigned</text>
+<rect x="60" y="1074" width="330" height="96" rx="3" fill="#f6f7fb" stroke="#e3e8f0" stroke-width="1.0"/>
+<text x="225.0" y="1104.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30">anbu-care-booker</text>
+<text x="225.0" y="1121.0" text-anchor="middle" font-size="13" fill="#4d5c6e">a real headless browser on</text>
+<text x="225.0" y="1138.0" text-anchor="middle" font-size="13" fill="#4d5c6e">a real clinic's booking form</text>
+<text x="225.0" y="1155.0" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">deployed apart: Chromium will not fit</text>
+<path d="M 490 1122 L 585 1122" fill="none" stroke="#7d8b9c" stroke-width="1.6" marker-end="url(#arrow)" stroke-linecap="round"/>
+<text x="538" y="1112" text-anchor="middle" font-size="11.5" fill="#4d5c6e" font-weight="400">submits</text>
+<rect x="1690" y="1074" width="290" height="96" rx="3" fill="#e2f6f2" stroke="#065f56" stroke-width="2"/>
+<text x="1835.0" y="1104.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0b1c30"><tspan font-weight="700">8 ·</tspan>  GET /verify</text>
+<text x="1835.0" y="1121.0" text-anchor="middle" font-size="13" fill="#4d5c6e">public, no credential</text>
+<text x="1835.0" y="1138.0" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">anyone can check the chain,</text>
+<text x="1835.0" y="1155.0" text-anchor="middle" font-size="13" fill="#4d5c6e" font-style="italic">including you</text>
+<path d="M 1610 971 C 1700 971 1836 1000 1836 1074" fill="none" stroke="#0d7d70" stroke-width="2" marker-end="url(#arrow)" stroke-linecap="round"/>
+<path d="M 1270 1170 C 1270 1200 1140 1206 1060 1206" fill="none" stroke="#4d5c6e" stroke-width="1.6" stroke-dasharray="6 5" stroke-linecap="round"/>
+<text x="1320" y="1196" text-anchor="start" font-size="11.5" fill="#4d5c6e" font-weight="400" font-style="italic">a person opens the payment link, and signs the claim form</text>
+<line x1="60" y1="1221" x2="94" y2="1221" stroke="#c2313b" stroke-width="2.4" stroke-dasharray="4 4"/>
+<text x="104" y="1225" text-anchor="start" font-size="12" fill="#0b1c30" font-weight="700">Refusal path</text>
+<text x="196.8" y="1225" text-anchor="start" font-size="12" fill="#4d5c6e" font-weight="400">blocked, refused, or withheld</text>
+<line x1="421.7" y1="1221" x2="455.7" y2="1221" stroke="#0d7d70" stroke-width="2.4"/>
+<text x="465.7" y="1225" text-anchor="start" font-size="12" fill="#0b1c30" font-weight="700">Autonomous loop</text>
+<text x="579.2" y="1225" text-anchor="start" font-size="12" fill="#4d5c6e" font-weight="400">runs unwatched, nobody asked</text>
+<line x1="798.0" y1="1221" x2="832.0" y2="1221" stroke="#4d5c6e" stroke-width="2.4" stroke-dasharray="6 5"/>
+<text x="842.0" y="1225" text-anchor="start" font-size="12" fill="#0b1c30" font-weight="700">Human decision required</text>
+<text x="1010.7" y="1225" text-anchor="start" font-size="12" fill="#4d5c6e" font-weight="400">the two things it will not do alone</text></svg>
 </div>
 
 <div class="page">

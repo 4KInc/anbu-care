@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Build the architecture PDF the Devpost form asks for.
 
+Colours are the dashboard's own custom properties, so this page, the diagram
+on page one and the product a judge opens are the same teal.
+
 The form takes a PNG, and a PNG of a 3,564-pixel-wide diagram is a picture of
 some text. A judge opens it, cannot read the guard band, and moves on. PDF keeps
 the mermaid output as vectors, so the fifth band is legible at any zoom.
@@ -121,28 +124,28 @@ def build_html() -> str:
   @page {{ size: 420mm 297mm; margin: 14mm 16mm; }}
   * {{ box-sizing: border-box; }}
   body {{
-    margin: 0; color: #14211f; background: #fff;
+    margin: 0; color: #0b1c30; background: #fff;
     font: 400 10.5pt/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }}
   .page {{ page-break-after: always; }}
   .page:last-child {{ page-break-after: auto; }}
   h1 {{ font-size: 21pt; margin: 0 0 2mm; letter-spacing: -.01em; }}
-  .thesis {{ font-size: 11.5pt; color: #3d4a52; margin: 0 0 5mm; max-width: 250mm; }}
-  .rule {{ height: 2.4pt; background: #0e4f52; width: 46mm; margin: 0 0 6mm; }}
+  .thesis {{ font-size: 11.5pt; color: #4d5c6e; margin: 0 0 5mm; max-width: 250mm; }}
+  .rule {{ height: 2.4pt; background: #0d7d70; width: 46mm; margin: 0 0 6mm; }}
   h2 {{ font-size: 13pt; margin: 0 0 3mm; letter-spacing: -.005em; }}
-  .sub {{ font-size: 9.5pt; color: #5b6a72; margin: 0 0 4mm; max-width: 175mm; }}
+  .sub {{ font-size: 9.5pt; color: #4d5c6e; margin: 0 0 4mm; max-width: 175mm; }}
   .cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; }}
   table {{ width: 100%; border-collapse: collapse; }}
-  td {{ padding: 2.4mm 3mm 2.4mm 0; border-top: .5pt solid #dfe5e6; vertical-align: top;
+  td {{ padding: 2.4mm 3mm 2.4mm 0; border-top: .5pt solid #e3e8f0; vertical-align: top;
         font-size: 9pt; line-height: 1.4; }}
-  tr:first-child td {{ border-top: .9pt solid #0e4f52; }}
-  td.c0 {{ font-weight: 700; width: 33%; color: #0b2b2c; }}
+  tr:first-child td {{ border-top: .9pt solid #0d7d70; }}
+  td.c0 {{ font-weight: 700; width: 33%; color: #065f56; }}
   td.c2 {{ font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 7.6pt;
-           color: #3d4a63; width: 34%; word-break: break-word; }}
-  .refusals td.c0 {{ width: 38%; color: #7d2f1c; }}
-  .foot {{ margin-top: 7mm; font-size: 8.5pt; color: #5b6a72; }}
-  .foot b {{ color: #14211f; }}
+           color: #4d5c6e; width: 34%; word-break: break-word; }}
+  .refusals td.c0 {{ width: 38%; color: #93000a; }}
+  .foot {{ margin-top: 7mm; font-size: 8.5pt; color: #4d5c6e; }}
+  .foot b {{ color: #0b1c30; }}
   /* Page 1 is the diagram and nothing else: it already carries its own
      title, subtitle and provenance line, and an HTML header on top of it
      pushed the whole thing onto a second page. */
