@@ -1,4 +1,4 @@
-# Devpost submission — every field, ready to paste
+# Devpost submission: every field, ready to paste
 
 **Submission:** https://devpost.com/submit-to/30845-all-things-agentic-hackathon/manage/submissions/1149218-anbucare
 **Deadline:** 31 August 2026.
@@ -16,9 +16,9 @@ else is filled and checkable.
 AnbuCare
 ```
 
-### Elevator pitch  *(200 char max — this is 191)*
+### Elevator pitch  *(200 char max; this is 188)*
 ```
-My mother is 71 and lives in Thoothukudi. I don't. Anbu Care coordinates her care at 3am — triage, insurance, bookings, payments — with the guardrails in code, where no prompt can reach them.
+My mother is 71 and lives in Thoothukudi. I don't. Anbu Care coordinates her care at 3am: triage, insurance, bookings, payments, with the guardrails in code where no prompt can reach them.
 ```
 
 ### Thumbnail **[YOU]**
@@ -41,7 +41,7 @@ My parents live in Thoothukudi. I don't. Every NRI I know has the same 3 a.m.
 fear: something happens, and by the time you hear about it, the decisions that
 mattered have already been made by whoever was standing there.
 
-The existing answer is a person — a family friend, a paid proxy, a sibling
+The existing answer is a person: a family friend, a paid proxy, a sibling
 WhatsApp thread. Sahaayak, Samarth Care, Care247, Policybazaar's NRI Care
 Program: every one of them is a human-coordinator model. I wanted to know
 whether an agent could take that role, and what would have to be true before I
@@ -65,7 +65,7 @@ about fifteen seconds:
 That clock is not decoration. The IRDAI Master Circular on Health Insurance
 Business (IRDAI/HLT/CIR/PRO/84/5/2024, 29 May 2024) gives an insurer one hour to
 decide a complete cashless request. When it lapses the family is told what they
-are owed — and told in the same breath that Anbu Care has filed nothing, can
+are owed, and told in the same breath that Anbu Care has filed nothing, can
 compel nobody, and is not claiming this will be won.
 
 From there it keeps going without being asked:
@@ -81,8 +81,8 @@ From there it keeps going without being asked:
   money. On our day-four bill that is ₹27,300 on the paper where ₹9,733 is owed.
 - **The claim files itself on discharge.** A photographed discharge summary
   assembles the packet, submits it, starts the real 30-day clock, and renders a
-  filled Part A claim form — a PDF a person could sign and send.
-- **An arriving lab report closes the test it belongs to** — and closes neither
+  filled Part A claim form, a PDF a person could sign and send.
+- **An arriving lab report closes the test it belongs to**, and closes neither
   when two are outstanding, because attributing it means reading it to decide
   which, and that is a model choosing which clinical order was carried out.
 - **It checks on her for a fortnight after discharge**, once a day, in Tamil.
@@ -92,8 +92,8 @@ previous one, and **anyone can verify the chain without a credential.**
 
 ## How we built it
 
-Five agents on **Gemini 3.5 Flash** and **Google's Agent Development Kit** —
-onboarding, triage, evidence, insurer liaison, WhatsApp comms — under a
+Five agents on **Gemini 3.5 Flash** and **Google's Agent Development Kit**:
+onboarding, triage, evidence, insurer liaison, WhatsApp comms, all under a
 coordinator, each with an isolated tool scope. Underneath them is a
 deterministic layer no agent can reach past. **The model proposes; that layer
 decides, and it is the only thing that can write.**
@@ -104,7 +104,7 @@ decides, and it is the only thing that can write.**
 - **Firestore** holds case state and the hash-chained receipt ledger in a
   single-table PK/SK design.
 - **Cloud Scheduler** drives the recovery check-ins and the claims SLA tick,
-  because Cloud Run holds no timer — that is what makes the regulatory clock
+  because Cloud Run holds no timer. That is what makes the regulatory clock
   real rather than a `setTimeout` in a demo.
 - **Pub/Sub** carries intake, case and claim events for multi-day tracking.
 - **Cloud Storage** keeps every photograph and screenshot, privately.
@@ -119,15 +119,15 @@ decides, and it is the only thing that can write.**
 successfully read your mother's lab report and ingested it into her health
 record." Documents actually stored: **zero**. For a system whose entire pitch is
 a verifiable record, that is the one bug that discredits everything else. The
-fix was not better prompt wording — the demo now prints the stored count read
+fix was not better prompt wording. The demo now prints the stored count read
 back from the service, next to what the agent claimed, and says `CONTRADICTED`
 on screen if they disagree.
 
 **A guard that could never fire.** The document reader emits the kind
 `lab_report`; the record stores it as `blood_report`. A new guard compared
 against the stored word. Nothing raises. No error appears anywhere. The guard
-simply never matches and the loop silently closes nothing, forever — and
-eighteen unit tests passed, because they all called the function directly and
+simply never matches and the loop silently closes nothing, forever. Eighteen
+unit tests passed anyway, because they all called the function directly and
 handed it the right word themselves. The fix was not the one-word change; it was
 writing two tests that go through the real ingestion path and **confirming they
 fail first.**
@@ -143,12 +143,12 @@ send.
 handed the enforcer the balance printed on the bill, and nine guards checked the
 destination and the caps without one of them asking whether the insurer was
 already paying the hospital directly. The system knew better *in the same
-function, three lines apart* — one line paid the balance, the next rendered the
+function, three lines apart*: one line paid the balance, the next rendered the
 coverage split saying most of it was covered.
 
 **Gemma, which is not in the build.** I wanted a small model normalising messy
 intake text. It is not available as a managed endpoint on Vertex for this
-project — all three variants 404 on `generateContent` — and serving it would
+project (all three variants 404 on `generateContent`), and serving it would
 have meant a GPU-backed deployment billed by the hour for a component that by
 design could never change a decision. It is future work, the precheck evidence
 is in the repo, and it is not claimed anywhere as built.
@@ -162,7 +162,7 @@ is in the repo, and it is not claimed anywhere as built.
   as permission.
 - Clinical detail cannot leave over WhatsApp. The gate classifies the *content*,
   not the caller's claim about it. Then I bypass the agent entirely and call the
-  send function directly — **still blocked.** That second half is the whole
+  send function directly. **Still blocked.** That second half is the whole
   claim: an agent that is merely *told* not to leak a lab value is not a control.
 - **Public where it proves, private where it reveals.** Verification is open to
   everyone and needs no credential, because it proves the record was not altered
@@ -190,7 +190,7 @@ guard, I break it on purpose first and check that something goes red.
 
 ## What's next for AnbuCare
 
-The staleness nudge — nothing yet reminds anybody that a booking request has
+The staleness nudge: nothing yet reminds anybody that a booking request has
 gone unanswered. Real cancellation through a centre's own system, so `cancel`
 stops being a record-only act. Per-analyte reference change values instead of a
 flat 10% band. And Gemma as an intake normaliser, if it ever ships as a managed
@@ -198,7 +198,7 @@ endpoint.
 
 ---
 
-### Built with  *(tags — paste comma-separated)*
+### Built with  *(tags, paste comma-separated)*
 ```
 python, google-adk, gemini, gemini-3.5-flash, vertex-ai, agent-engine, memory-bank, cloud-run, firestore, pub-sub, cloud-storage, cloud-scheduler, google-places, fastapi, pydantic, uvicorn, docker, twilio, whatsapp, playwright, razorpay, ed25519, cryptography, fpdf2, segno
 ```
@@ -230,7 +230,7 @@ Leave blank unless you are entering **Startup Excellence**, which needs an
 incorporated organisation and a corporate email. **[YOU]**
 
 ### Submitter Type **[YOU]**
-`Individuals` — unless you are submitting on behalf of BlockIntel AI, in which
+`Individuals`, unless you are submitting on behalf of BlockIntel AI, in which
 case `Organization`, and that is also what the Startup Prize requires.
 
 ### Submitter country of residence **[YOU]**
@@ -256,7 +256,7 @@ the submission period.
 ```
 https://github.com/4KInc/anbu-care
 ```
-Public — verified returning 200 on 30 Aug 2026, so no need to share it with
+Public, verified returning 200 on 30 Aug 2026, so no need to share it with
 testing@devpost.com.
 
 ### Did you add Reproducible Testing instructions to your README?
@@ -272,7 +272,7 @@ tests with **no GCP or model access needed.**
 https://anbu-care-37j4eofpwq-el.a.run.app
 ```
 
-### Testing instructions *(judges only — paste this)*
+### Testing instructions *(judges only, paste this)*
 ```
 No credentials needed for the two things worth checking.
 
@@ -338,11 +338,11 @@ docs/architecture.png
 ```
 Rendered from `docs/architecture.mmd`. Five numbered bands, with the
 deterministic guard layer drawn as its own layer and the request spine running
-straight through it — that separation *is* the architecture.
+straight through it. That separation *is* the architecture.
 
 ### Which Google AI Models did you use?
 ```
-Gemini 3.5 Flash (gemini-3.5-flash) via Vertex AI — document vision over
+Gemini 3.5 Flash (gemini-3.5-flash) via Vertex AI. Document vision over
 discharge summaries, lab reports, ECGs, prescriptions and bills; single-call
 transcription of Tamil voice notes; translation; policy-clause matching.
 ```
@@ -352,12 +352,12 @@ build: it is unavailable as a managed endpoint on this project's Vertex AI
 `generateContent`). Precheck evidence is in the repo. Claiming it would be the
 one thing this project cannot afford.
 
-### OPTIONAL for Bonus Points — link to a piece of content **[YOU]**
+### OPTIONAL for Bonus Points: link to a piece of content **[YOU]**
 Publish `docs/content/devto-article.md` on dev.to, **public not unlisted**, then
 paste the URL. It carries the required "created for the All Things Agentic
 Hackathon" line.
 
-### OPTIONAL for Bonus Points — link to a social media post **[YOU]**
+### OPTIONAL for Bonus Points: link to a social media post **[YOU]**
 Publish **one** draft from `docs/content/social-post.md` (the X thread is
 recommended) and paste the URL. Carries `#AllThingsAgenticHackathon`.
 
@@ -366,7 +366,7 @@ recommended) and paste the URL. Carries `#AllThingsAgenticHackathon`.
 # Before you hit submit
 
 - [ ] Video uploaded and the link works in an incognito window.
-- [ ] Architecture diagram attached — the form rejects a blank file.
+- [ ] Architecture diagram attached. The form rejects a blank file.
 - [ ] dev.to article published **public**, URL pasted.
 - [ ] Social post published, URL pasted.
 - [ ] `curl -s $URL/api/healthz` still returns ok.
