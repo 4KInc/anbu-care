@@ -720,8 +720,12 @@ make demo             # the full spine, end to end, with no model in the loop
   app.py                two endpoints and a session parked on a one-time code
 scripts/demo_run.sh` drives the **deployed** service through the full demo
 narrative — fresh synthetic cases each run, a separate throwaway case for the
-tamper beat, and `--reset` to clean up. The beat sheet is
-[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+tamper beat, and `--reset` to clean up. Three beat sheets, longest to shortest:
+[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) (~5m45s),
+[`docs/takes/recovery-run-sheet.md`](docs/takes/recovery-run-sheet.md) (thirteen
+beats), and [`docs/DEMO_SCRIPT_4MIN.md`](docs/DEMO_SCRIPT_4MIN.md) — the
+four-minute cut that opens on the system acting unprompted rather than on the
+story.
 
 `make demo` runs `scripts/demo_spine.py`: onboarding, document ingestion, the
 triage decision, the WhatsApp gate, packet assembly, the STEP_UP gate,
@@ -1273,7 +1277,9 @@ Then deploy a new revision — running instances do not pick up IAM changes.
 - [`docs/content/social-post.md`](docs/content/social-post.md) — social drafts
 - [`DISCLOSURE.md`](DISCLOSURE.md) — prior-work and simulated-adjudicator disclosure
 - [`docs/CITATIONS.md`](docs/CITATIONS.md) — every market figure, and its verification status
-- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — the beat sheet
+- [`docs/DEMO_SCRIPT_4MIN.md`](docs/DEMO_SCRIPT_4MIN.md) — **the four-minute cut**, autonomy first
+- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — the long beat sheet, ~5m45s
+- [`docs/takes/recovery-run-sheet.md`](docs/takes/recovery-run-sheet.md) — thirteen beats, one continuous take
 - [`infra/DEPLOYED.md`](infra/DEPLOYED.md) — the live environment
 
 ## Disclosure
