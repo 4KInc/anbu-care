@@ -112,9 +112,11 @@ def decide(*, order, mandate, centre: dict, options: list[dict],
     # This lane's version of paying the same bill twice, except the injured
     # party is a clinic that never agreed to any of this. Keyed on the ORDER,
     # not the attempt, so a retry after a timeout cannot become a second slot.
+    # `resulted` counts as live: a test whose result is already on the record
+    # is the last thing that should be booked again.
     live = [a for a in existing
             if a.order_id == order.order_id
-            and a.status in {"requested", "confirmed"}
+            and a.status in {"requested", "confirmed", "resulted"}
             and a.cancelled_at is None]
     if live:
         return refuse("not_duplicate",

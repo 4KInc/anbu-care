@@ -540,6 +540,8 @@ function describe(r){
     case "booking.confirmed": return "The centre confirmed the appointment. Anbu Care did not decide she needs this test and did not pay for it.";
     case "booking.escalated": return `Nothing could be arranged after ${n(p.attempt_count)} centre${p.attempt_count===1?"":"s"}. A person needs to ring, and each one is listed with what stopped it.`;
     case "booking.cancelled": return "The appointment was withdrawn on this record. The centre is told by whoever rings them; Anbu Care has not contacted them.";
+    case "booking.resulted": return `A lab report arrived while this was the only test outstanding, so it is recorded as carried out${p.collected_on?`, dated ${p.collected_on}`:""}. That is evidence she was seen, not the centre confirming a slot, and no value in the report was read to decide it.`;
+    case "booking.result_not_attributed": return `A lab report arrived with ${n((p.open_appointments||[]).length)} tests outstanding, so which one it belongs to is not something this system can establish. Nothing was closed, and a person can attribute it.`;
     case "booking.otp_requested": return "The centre texted a one-time code to a phone, and the person with her was asked for it. The code itself is never recorded.";
     case "booking.otp_closed": return `The code request was closed (${p.outcome||"done"}) and cannot be answered again.`;
 
@@ -995,7 +997,13 @@ function apptCard(a){
   const requested = a.status === "requested";
   const done = a.status === "confirmed";
   const dead = a.status === "cancelled";
+  const resulted = a.status === "resulted";
+  // `resulted` says more than `confirmed` does, so it wins the pill: a centre
+  // confirming is a promise, and a report arriving is evidence she went. The
+  // fallback is the amber one, so a status nobody has taught this renderer
+  // understates rather than claims something that has not happened.
   const pill = dead ? `<span class="pill p-slate">cancelled</span>`
+    : resulted ? `<span class="pill p-teal">carried out &middot; result on file</span>`
     : done ? `<span class="pill p-teal">confirmed by the centre</span>`
     : `<span class="pill p-amber">requested, not yet confirmed</span>`;
   const cancel = a.cancel_phone || a.cancel_url || "";
@@ -1053,6 +1061,10 @@ function apptCard(a){
       ${requested?`This is a request. The centre has not confirmed a time, and
         nothing here says it has.`:""}
       ${done?`The centre confirmed this.`:""}
+      ${resulted?`A lab report arrived while this was the only test outstanding,
+        so it is recorded as carried out. That is evidence she was seen, not the
+        centre confirming a slot, and no value in the report was read to decide
+        it.`:""}
       Anbu Care did not decide she needs this test and did not pay for anything.
       ${cancel?`To change or cancel it, ring ${esc(cancel)}.`:""}
     </div>

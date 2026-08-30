@@ -413,6 +413,13 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         recovery_window = _open_recovery_window(
             parent_id, case_id, reading.payload, doc_id)
 
+    # A lab report is the other document that closes something. The booking
+    # lane submits a request and then has no way of ever learning she went, so
+    # a case can sit at "the centre has not answered" long after the blood was
+    # drawn. The report is the family telling us, without being asked to.
+    closed_test = _close_the_ordered_test(case_id, doc_id, reading.kind,
+                                          reading.payload)
+
     return {
         "document_id": doc_id, "kind": reading.kind, "summary": doc.summary,
         # Two summaries on purpose: one for the record, one that can survive the
@@ -421,7 +428,37 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         "observations": len(doc.observations), "applied": applied,
         "payload": reading.payload, "image_object": stored.object_name,
         "recovery_window": recovery_window,
+        "closed_test": closed_test,
     }
+
+
+def _close_the_ordered_test(case_id: str, doc_id: str, kind: str,
+                            payload: dict) -> dict | None:
+    """Let an arriving result close the test that was waiting for it.
+
+    Never raises into an ingest, for the same reason `_open_recovery_window`
+    does not: the photograph is already stored and read, the family has already
+    been told it arrived, and a booking-lane failure must not turn a document
+    that is safely on the record into one that was rejected.
+
+    Returns None when there was nothing to do, which is the ordinary case for
+    every document that is not a lab report.
+    """
+    from anbu_care.booking import result as booking_result
+
+    if kind != booking_result.CLOSES_A_TEST:
+        return None
+    try:
+        closure = booking_result.close_from_document(
+            case_id=case_id, document_id=doc_id, kind=kind, payload=payload)
+    except Exception:  # the document stays on the record whatever this does
+        logger.exception("could not close an ordered test from %s", doc_id)
+        return None
+    if closure.outcome in {"not_a_result", "no_case", "nothing_open"}:
+        return None
+    return {"outcome": closure.outcome, "detail": closure.detail,
+            "appointment_id": closure.appointment_id,
+            "order_id": closure.order_id}
 
 
 def _open_recovery_window(parent_id: str, case_id: str, payload: dict,

@@ -1043,6 +1043,10 @@ class Appointment(BaseModel):
       requested  a form was submitted and the centre has not answered. This is
                  what an unauthenticated callback form can truthfully produce.
       confirmed  the centre returned a slot or a reference.
+      resulted   a lab report arrived while this was the only test outstanding,
+                 so it was carried out. Weaker than the centre confirming and
+                 stronger than the silence it replaces, which is why it is its
+                 own status rather than a reuse of `confirmed`.
       escalated  every permitted attempt failed and a person is needed.
       cancelled  withdrawn.
 
@@ -1085,6 +1089,11 @@ class Appointment(BaseModel):
     why_this_centre: str = ""
     requested_at: datetime = Field(default_factory=utcnow)
     confirmed_at: datetime | None = None
+    # When a result arrived, and which document it was. Kept apart from
+    # `confirmed_at` because they record different things: one is a centre
+    # answering, the other is evidence she was actually seen.
+    resulted_at: datetime | None = None
+    resulted_by_document: str = ""
     cancelled_at: datetime | None = None
 
 

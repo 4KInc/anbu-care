@@ -708,7 +708,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1154 tests, no GCP or model access needed
+make test             # 1174 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -904,7 +904,7 @@ scripts/
   preflight.py          the state that silently ruins a take (`make preflight`)
   clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1154 tests, no GCP or model access needed
+tests/                  1174 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself
@@ -1219,15 +1219,21 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   Model Garden to a dedicated GPU-backed endpoint, billed per hour rather than
   per token. Deferred as infra cost out of proportion to a component that by
   design cannot change any decision.
-- **Nothing closes the loop after a booking.** An appointment is made, the
-  family is told, and then the lane stops: nothing moves `requested` to
-  `confirmed` for a callback-only centre, nothing reminds anybody, nothing
-  checks she went, and a lab report photographed later is filed as a document
-  with no link to the order that caused it. Worse, `cancel` marks our record and
-  says plainly it has not contacted the centre — so the moment somebody rings to
-  cancel, the record is wrong and nothing reconciles it. The honest fixes are a
-  staleness nudge, and letting the arriving result close the loop, since a
-  report can only exist if she went.
+- **The booking loop now closes on a result — PARTLY SHIPPED.** A photographed
+  lab report closes the test it can only belong to. When exactly one order is
+  outstanding on an admission, the arriving report moves it to `resulted`, a
+  status of its own: weaker than the centre confirming, stronger than the
+  silence it replaced, and honest about the difference. With two outstanding it
+  refuses to guess and receipts why, because attributing a report to one of two
+  orders means reading it to decide which, and that is a model choosing which
+  clinical order was carried out. A report predating the order is refused too.
+  See `anbu_care/booking/result.py`.
+
+  **Still open:** nothing moves `requested` to `confirmed` for a callback-only
+  centre, nothing reminds anybody a request has gone unanswered — the staleness
+  nudge — and `cancel` still marks only our record while saying plainly it has
+  not contacted the centre, so a family that rings to cancel leaves the record
+  wrong with nothing to reconcile it.
 - **Voice calls are decided but not placed.** An escalation rings the care
   circle as well as messaging them, and with no voice transport configured the
   call is recorded as `voice.not_placed` with the reason and the words it would
