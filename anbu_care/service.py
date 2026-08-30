@@ -130,9 +130,9 @@ def cases_adopting(standing_id: str, store: Store | None = None) -> list[str]:
     store = store or get_store()
     seen = []
     for row in store.query_sk_prefix_across("MANDATE#"):
-        if row.get("standing_id") == standing_id and row.get("case_id"):
-            if row["case_id"] not in seen:
-                seen.append(row["case_id"])
+        if (row.get("standing_id") == standing_id and row.get("case_id")
+                and row["case_id"] not in seen):
+            seen.append(row["case_id"])
     return seen
 
 

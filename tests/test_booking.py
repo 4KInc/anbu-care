@@ -17,9 +17,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from anbu_care import service
-from anbu_care.booking import channels, disclosure, enforcer
+from anbu_care.booking import channels, disclosure, enforcer, run
 from anbu_care.booking import mandate as mandates
-from anbu_care.booking import run
 from anbu_care.diagnostics import referral
 from anbu_care.schemas import Appointment, DiagnosticOrder
 from anbu_care.tools import onboarding_tools, triage_tools
@@ -765,7 +764,6 @@ def _with_a_neighbour(parent_id):
 def test_the_code_is_asked_of_the_neighbour_before_it_is_sent(case, monkeypatch):
     """She must be warned BEFORE the centre texts, or six digits arrive from a
     lab nobody told her to expect."""
-    from anbu_care.booking import otp
     from anbu_care.tools import whatsapp_tools
 
     parent_id, case_id = case
@@ -803,7 +801,7 @@ def test_a_code_is_only_read_as_one_while_a_request_is_outstanding(case):
     slept; "104" is a temperature."""
     from anbu_care.booking import otp
 
-    parent_id, case_id = case
+    parent_id, _case_id = case
     assert otp.live_for(parent_id) is None
     assert otp.looks_like_code("123456") == "123456"
     for not_a_code in ("she took 6 tablets", "temperature is 101 now",
@@ -1488,7 +1486,7 @@ def test_a_sent_message_says_what_it_was_about():
     page = pathlib.Path("anbu_care/webui/index.html").read_text()
     block = page[page.index("const SENT = {"):]
     block = block[:block.index("};")]
-    named = set(re.findall(r"^\s*([a-z_]+):", block, re.M))
+    named = set(re.findall(r"^\s*([a-z_]+):", block, re.MULTILINE))
     for template in ("urgent_family_alert", "clinician_handoff_link",
                      "booking_done", "booking_code_needed", "bill_recorded",
                      "payment_settled", "clinician_note_text"):

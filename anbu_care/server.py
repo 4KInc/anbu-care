@@ -1703,7 +1703,7 @@ def _tell_the_family_what_settled(reference: str, result: dict[str, Any]) -> Non
             template_params=params, message_class="billing",
             purpose_override=consent.BILLING_UPDATES,
         )
-    except Exception:  # noqa: BLE001 - the payment is settled either way
+    except Exception:  # the payment is settled either way
         logger.exception("could not tell the family a payment %s", status)
 
 
@@ -2229,7 +2229,7 @@ def _tried_to_book(case_id: str, order_id: str) -> bool:
         except BookingRefused as refused:
             logger.info("nothing booked for %s: %s", order_id, refused)
             return False
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("the booking lane failed for %s", order_id)
         return False
 

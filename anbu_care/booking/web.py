@@ -34,7 +34,6 @@ import urllib.error
 import urllib.request
 
 from anbu_care.booking.channels import (
-    READY,
     UNAVAILABLE,
     AttemptResult,
     Preparation,

@@ -157,9 +157,14 @@ def arrange(*, case_id: str, order_id: str) -> dict:
                               "Recorded before it runs so a crash cannot hide "
                               "it and a retry cannot double-book.")})
 
-        def note(outcome, detail, failed_check=None, evidence=""):
-            row = {"place_id": centre.get("place_id"), "name": centre.get("name"),
-                   "channel": driver.name, "outcome": outcome, "detail": detail}
+        # `centre` and `driver` are bound as defaults rather than closed over.
+        # Every call today happens inside this iteration, so the late binding
+        # is currently harmless, and it is one deferred call away from writing
+        # the last centre's name onto an earlier centre's attempt.
+        def note(outcome, detail, failed_check=None, evidence="",
+                 _centre=centre, _driver=driver):
+            row = {"place_id": _centre.get("place_id"), "name": _centre.get("name"),
+                   "channel": _driver.name, "outcome": outcome, "detail": detail}
             if failed_check:
                 row["failed_check"] = failed_check
             # A REFUSED attempt is as worth looking at as a successful one -
@@ -173,7 +178,7 @@ def arrange(*, case_id: str, order_id: str) -> dict:
         # PREPARE. Navigates, fills, reads - and submits nothing.
         try:
             prepared = driver.prepare(centre=centre, payload=this_payload)
-        except Exception as exc:  # noqa: BLE001 - a driver fault is an outcome
+        except Exception as exc:  # a driver fault is an outcome
             logger.exception("booking driver failed preparing %s", centre.get("name"))
             note(channel_registry.UNAVAILABLE,
                  f"the booking driver could not prepare this centre "
@@ -215,7 +220,7 @@ def arrange(*, case_id: str, order_id: str) -> dict:
                 centre=centre, payload=this_payload, prepared=prepared,
                 session_id=pending.session_id if pending else "",
                 otp_wait_seconds=OTP_WAIT_SECONDS if pending else 0)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("booking driver failed committing %s", centre.get("name"))
             note(channel_registry.UNAVAILABLE,
                  f"the booking driver could not complete this centre "
@@ -283,7 +288,7 @@ def _ask_for_a_code(case_id, order, centre, prepared):
                              "minutes": str(OTP_WAIT_SECONDS // 60)},
             message_class="logistics",
             purpose_override=consent.OUTBOUND_NOTIFY)
-    except Exception:  # noqa: BLE001 - the send has its own receipts
+    except Exception:  # the send has its own receipts
         logger.exception("could not ask the care circle for a code")
     return request
 
@@ -493,7 +498,7 @@ def _tell_them_it_is_arranged(appointment) -> None:
                               or "the centre",
                 },
                 message_class="logistics", purpose_override=purpose)
-        except Exception:  # noqa: BLE001 - the send has its own receipts
+        except Exception:  # the send has its own receipts
             logger.exception("could not say that a booking was made")
 
 

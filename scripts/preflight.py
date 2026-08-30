@@ -103,8 +103,8 @@ def main() -> int:
 
     if code != 200 or not body:
         lines.append((False, True, "preflight endpoint",
-                      f"HTTP {code} - is the token right, and is this revision "
-                      f"deployed?"))
+                      (f"HTTP {code} - is the token right, and is this revision "
+                       "deployed?")))
     else:
         for check in body.get("checks", []):
             lines.append((check["ok"], check.get("fatal", True),
