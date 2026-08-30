@@ -1,9 +1,8 @@
 # Demo script — 4:00, unedited, autonomy first
 
 The four-minute cut. It exists because the long script
-([`DEMO_SCRIPT.md`](DEMO_SCRIPT.md), ~5m45s) and the take run sheet
-([`takes/recovery-run-sheet.md`](takes/recovery-run-sheet.md), thirteen beats)
-both open on narrative and reach the machinery later. This one inverts that:
+([`DEMO_SCRIPT.md`](DEMO_SCRIPT.md), ~5m45s) opens on narrative and reaches the
+machinery later. This one inverts that:
 **the first thing on screen is the system doing something nobody asked it to
 do**, and the story is told over the top of it.
 

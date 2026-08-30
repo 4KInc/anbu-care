@@ -17,3 +17,10 @@ service-account*.json
 .anbu/
 *.log
 .DS_Store
+
+# Submission working files. Kept locally, never pushed: these are drafts and
+# run sheets for one person on one day, not part of what the repo is for, and
+# the repo's own README should not point a stranger at a beat sheet.
+docs/content/devpost-submission.md
+docs/content/devto-article.md
+docs/takes/recovery-run-sheet.md

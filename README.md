@@ -736,12 +736,10 @@ make demo             # the full spine, end to end, with no model in the loop
   app.py                two endpoints and a session parked on a one-time code
 scripts/demo_run.sh` drives the **deployed** service through the full demo
 narrative — fresh synthetic cases each run, a separate throwaway case for the
-tamper beat, and `--reset` to clean up. Three beat sheets, longest to shortest:
-[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) (~5m45s),
-[`docs/takes/recovery-run-sheet.md`](docs/takes/recovery-run-sheet.md) (thirteen
-beats), and [`docs/DEMO_SCRIPT_4MIN.md`](docs/DEMO_SCRIPT_4MIN.md) — the
-four-minute cut that opens on the system acting unprompted rather than on the
-story.
+tamper beat, and `--reset` to clean up. Two beat sheets:
+[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) (~5m45s) and
+[`docs/DEMO_SCRIPT_4MIN.md`](docs/DEMO_SCRIPT_4MIN.md), the four-minute cut that
+opens on the system acting unprompted rather than on the story.
 
 `make demo` runs `scripts/demo_spine.py`: onboarding, document ingestion, the
 triage decision, the WhatsApp gate, packet assembly, the STEP_UP gate,
@@ -773,7 +771,8 @@ Every mandatory requirement, and where it is actually load-bearing.
 
 | Requirement | Used for |
 |---|---|
-| **Gemini 3.5 (Vertex AI)** | Multimodal reasoning over discharge summaries, lab reports, ECG images and prescriptions; policy-clause matching; and single-call transcription of inbound WhatsApp voice notes. Deployed default is `gemini-3.5-flash`, configurable via `ANBU_MODEL` — any Gemini 3.5+ model satisfies the mandate. |
+| **Gemini 3.5 (Vertex AI)** | Multimodal reasoning over discharge summaries, lab reports, ECG images and prescriptions; policy-clause matching; and single-call transcription of inbound WhatsApp voice notes. Deployed default is `gemini-3.5-flash`, configurable via `ANBU_MODEL`: any Gemini 3.5+ model satisfies the mandate. |
+| **Gemini 2.5 Flash Lite (Vertex AI)** | The one call that deliberately does *not* use `ANBU_MODEL`. It decides which language she actually writes in, so the next admission's first check-in is not in the language somebody chose for her on a form. A question with a two-letter answer, on a path that already owes her a reply inside fifteen seconds, is the wrong place to spend a frontier model. The answer is checked against a closed list of eight languages before it is believed. |
 | **Google ADK** | Five sub-agents with isolated tool scopes under one coordinator. |
 | **Cloud Run** | Hosts the agent API, the Twilio webhook, and the dashboard. |
 | **Firestore** | Case state and the hash-chained receipt ledger, single-table PK/SK. |
@@ -902,7 +901,12 @@ anbu_care/
   bills/                bill vision, line items, sub-limit and co-pay arithmetic
   diagnostics/          live Places search, ranking, and reading an order from dictation
   payments/             standing and per-case mandates, the nine guards, the settlement rails
+                        and `share.py`, which pays her residual rather than the insurer's part
   booking/              holding an appointment: the mandate, twelve guards, the OTP relay
+                        and `result.py`, where an arriving report closes the test it belongs to
+  tpa/                  the adjudicator, the claim that files itself on discharge, and the
+                        Part A claim form a person could actually sign
+  memory/               the one store that outlives a case, and the two lessons allowed in it
   intake.py             photographs kept until they have actually been read
   docvision/            the other four document kinds: classify, extract, apply
   brief/                the arrival brief, composed from receipts and the record
@@ -923,6 +927,8 @@ scripts/
   collapse_demo_family.py  fold accumulated demo families back to the live one
   preflight.py          the state that silently ruins a take (`make preflight`)
   clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
+  build_architecture_svg.py  the architecture diagram, hand-authored rather than laid out
+  make_architecture_pdf.py   the two-page PDF, and the README's PNG, from that one SVG
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
 tests/                  1221 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
@@ -975,6 +981,7 @@ Beyond ADK's own agent API:
 | `GET /api/cases/{id}/appointments/{id}/evidence` | A signed link to the centre's own page. `?stage=sent` for the form as it was filled. **Credentialed** — the page carries her name and a number |
 | `GET /api/cases/{id}/appointments/{id}/evidence/view` | The same, as a redirect, so a WhatsApp message can carry the proof beside the claim |
 | `GET /api/cases/{id}/attempts/{n}/evidence/view` | The page of a centre that REFUSED, by its position in this case's own escalation receipt. The object is never named by the caller |
+| `GET /api/cases/{id}/claim-form` | The filled Part A for this admission, as a PDF. **Credentialed** — it states a diagnosis, which is exactly why it is the one document that never rides on a message |
 | `GET /api/preflight` | The state that silently ruins a recording, in one round trip. **Credentialed** |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
 | `POST /api/parents/{id}/payment-mandate` | Authorise **standing**, ahead of any admission. Every case opened while it is live adopts it and they share the total cap |
@@ -1303,15 +1310,12 @@ Then deploy a new revision — running instances do not pick up IAM changes.
 
 ## Writeup material
 
-- [`docs/content/devpost-submission.md`](docs/content/devpost-submission.md) — **every Devpost field, answered**
-- [`docs/content/devto-article.md`](docs/content/devto-article.md) — the dev.to article, ready to publish
 - [`docs/content/build-log-post.md`](docs/content/build-log-post.md) — build-log post draft
 - [`docs/content/social-post.md`](docs/content/social-post.md) — social drafts
 - [`DISCLOSURE.md`](DISCLOSURE.md) — prior-work and simulated-adjudicator disclosure
 - [`docs/CITATIONS.md`](docs/CITATIONS.md) — every market figure, and its verification status
 - [`docs/DEMO_SCRIPT_4MIN.md`](docs/DEMO_SCRIPT_4MIN.md) — **the four-minute cut**, autonomy first
 - [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — the long beat sheet, ~5m45s
-- [`docs/takes/recovery-run-sheet.md`](docs/takes/recovery-run-sheet.md) — thirteen beats, one continuous take
 - [`infra/DEPLOYED.md`](infra/DEPLOYED.md) — the live environment
 
 ## Disclosure
