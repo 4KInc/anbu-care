@@ -33,7 +33,7 @@ class PaymentRefused(Exception):
 def consider_bill(*, case_id: str, parent_id: str, bill_id: str,
                   amount_inr: int, extracted_payee: str | None = None,
                   extracted_vendor: str | None = None,
-                  now: datetime | None = None) -> dict:
+                  now: datetime | None = None, share=None) -> dict:
     """Decide what happens to one payable bill, and do it.
 
     Returns a dict describing the outcome either way. Never raises for a
@@ -51,14 +51,15 @@ def consider_bill(*, case_id: str, parent_id: str, bill_id: str,
     if not verdict.pay:
         return _escalate(case_id=case_id, parent_id=parent_id, bill_id=bill_id,
                          amount_inr=amount_inr, verdict=verdict,
-                         mandate=mandate)
+                         mandate=mandate, share=share)
 
     return _initiate(case_id=case_id, parent_id=parent_id, bill_id=bill_id,
-                     verdict=verdict, mandate=mandate, autonomous=True)
+                     verdict=verdict, mandate=mandate, autonomous=True,
+                     share=share)
 
 
 def _escalate(*, case_id: str, parent_id: str, bill_id: str, amount_inr: int,
-              verdict: Decision, mandate) -> dict:
+              verdict: Decision, mandate, share=None) -> dict:
     """Refused. Record which check stopped it, and hand it to a human."""
     service.append_receipt(
         case_id, kind="payment.escalated", actor="payment_enforcer",
@@ -69,6 +70,7 @@ def _escalate(*, case_id: str, parent_id: str, bill_id: str, amount_inr: int,
             "reason": verdict.reason[:400],
             "guards_passed": verdict.guards_passed,
             "mandate_id": mandate.mandate_id if mandate else None,
+            "share": share.receipt_payload() if share else None,
             "note": ("No money moved. The enforcer refused to pay this "
                      "automatically and it now needs a person to approve it."),
         })
@@ -85,7 +87,7 @@ def _escalate(*, case_id: str, parent_id: str, bill_id: str, amount_inr: int,
 
 
 def _initiate(*, case_id: str, parent_id: str, bill_id: str,
-              verdict: Decision, mandate, autonomous: bool) -> dict:
+              verdict: Decision, mandate, autonomous: bool, share=None) -> dict:
     """Every check passed. This is the one place settlement is called."""
     payment_id = service.new_id("pay")
     result = settlement.initiate(payment_id=payment_id,
@@ -132,6 +134,10 @@ def _initiate(*, case_id: str, parent_id: str, bill_id: str,
             "mandate_id": mandate.mandate_id,
             "guards_passed": verdict.guards_passed,
             "settlement": settlement.rail(),
+            # WHICH amount this is, and why. Without it the chain records a
+            # figure smaller than the bill with nothing saying the insurer is
+            # covering the difference, which reads as an underpayment.
+            "share": share.receipt_payload() if share else None,
             "confirmed": False,
             "note": ("Initiated, NOT settled. Every guard on the mandate "
                      "passed and the destination came from the mandate rather "

@@ -144,7 +144,7 @@ counter. Two workers appending concurrently would collide on `seq` — acceptabl
 at hackathon scale, and the fix (a Firestore transaction on the case document)
 is a known next step rather than an oversight.
 
-A `MemoryStore` implements the same interface, which is why 1174 tests run with no
+A `MemoryStore` implements the same interface, which is why 1189 tests run with no
 GCP access at all.
 
 ## Why the TPA is simulated, and says so

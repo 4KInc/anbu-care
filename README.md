@@ -238,6 +238,19 @@ This matters more than any feature list, so it comes first.
   disagreeing with the mandate, spend velocity, sitting just under a cap, or
   arriving in the last tenth of the window.
 
+  **It pays the family's share, not the hospital's whole balance.** Where a
+  cashless pre-authorisation is in force the insurer settles its part with the
+  hospital directly, so paying the printed balance would pay the insurer's
+  share out of the family's money and leave them to argue it back. On the
+  demo's day-four bill that is INR 27,300 where INR 9,733 is owed. The split
+  comes from the coverage estimate, is capped at the printed balance, and is
+  skipped entirely where the hospital has already posted the credit itself —
+  deducting twice would underpay by the whole covered amount. The receipt
+  carries which basis was used, and the family is told the residual is Anbu
+  Care's estimate rather than the insurer's decision. Without an authorised
+  pre-auth nothing changes: reimbursement means the family really does pay
+  first, and the printed balance is right.
+
   **The authority is granted before the admission exists.** Scoped to one
   admission it put the son back in the loop at the exact moment he cannot be in
   it: a case opens at 3am in Thoothukudi while he is asleep in Nashville, and
@@ -708,7 +721,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1174 tests, no GCP or model access needed
+make test             # 1189 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -908,7 +921,7 @@ scripts/
   preflight.py          the state that silently ruins a take (`make preflight`)
   clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1174 tests, no GCP or model access needed
+tests/                  1189 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself

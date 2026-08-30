@@ -879,6 +879,33 @@ def test_a_bill_already_on_file_can_be_put_to_the_enforcer(case, monkeypatch):
     assert len(service.list_payments(case_id)) == 1
 
 
+def _message_copy(source: str) -> str:
+    """The source with comments and docstrings stripped.
+
+    The settlement-point checks below count a word in `_consider_payment`, and
+    the thing they are protecting is the MESSAGE, not the file. Once the helper
+    grew comments explaining the cashless split, counting raw source started
+    failing on prose no family will ever read.
+    """
+    import io
+    import tokenize
+
+    out = []
+    prev_type = tokenize.INDENT
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type == tokenize.COMMENT:
+            continue
+        # A string that is the whole statement is a docstring, not copy.
+        if tok.type == tokenize.STRING and prev_type in (
+                tokenize.INDENT, tokenize.NEWLINE, tokenize.NL):
+            prev_type = tok.type
+            continue
+        out.append(tok.string)
+        if tok.type not in (tokenize.NL, tokenize.NEWLINE):
+            prev_type = tok.type
+    return " ".join(out)
+
+
 def test_considering_a_bill_carries_no_amount_or_payee(case):
     """The trigger cannot influence the decision. The amount comes from the
     stored bill and the destination from the mandate; nothing crosses the
@@ -891,12 +918,22 @@ def test_considering_a_bill_carries_no_amount_or_payee(case):
     assert "body" not in inspect.signature(server.consider_bill_for_payment).parameters
     assert "bill.balance_due_inr" in source
 
-    # Everything handed to the enforcer is read off the STORED bill. A caller
-    # can name which bill; it cannot say what the bill says.
+    # Everything handed to the enforcer is derived server-side: the payee and
+    # the vendor off the STORED bill, and the amount off a share this endpoint
+    # computes from that bill and the case's own pre-auth state. A caller can
+    # name which bill; it cannot say what the bill says or what is owed on it.
     call = source.split("return consider_bill(")[1]
-    for argument in ("amount_inr", "extracted_payee", "extracted_vendor"):
+    permitted = {"amount_inr": ("bill.", "share."),
+                 "extracted_payee": ("bill.",),
+                 "extracted_vendor": ("bill.",)}
+    for argument, prefixes in permitted.items():
         value = call.split(f"{argument}=")[1].split(",")[0]
-        assert value.startswith("bill."), f"{argument} did not come from the bill"
+        assert value.startswith(prefixes), (
+            f"{argument} came from {value!r}, which is neither the stored bill "
+            "nor a server-computed share")
+
+    # And the share itself is built here from the case, never handed in.
+    assert "payment_share.decide(case_id=case_id, bill=bill" in source
 
 
 def test_a_bill_with_no_balance_is_not_put_to_the_enforcer(case, monkeypatch):
@@ -1011,7 +1048,8 @@ def test_one_photograph_produces_one_message():
     # Said once, against the bill it is about, rather than twice in one message.
     owed = inspect.getsource(server._owed_now)
     assert "settled with them rather than kept by the" in owed
-    assert helper.count("insurer") <= 1, "the settlement point is repeated"
+    assert _message_copy(helper).count("insurer") <= 1, \
+        "the settlement point is repeated"
 
 
 def test_the_message_explains_what_a_paid_interim_amount_means():
@@ -1026,7 +1064,8 @@ def test_the_message_explains_what_a_paid_interim_amount_means():
     # Said once, against the bill it is about, rather than twice in one message.
     owed = inspect.getsource(server._owed_now)
     assert "settled with them rather than kept by the" in owed
-    assert helper.count("insurer") <= 1, "the settlement point is repeated"
+    assert _message_copy(helper).count("insurer") <= 1, \
+        "the settlement point is repeated"
 
     # And the immediate demand is named separately from the eventual estimate,
     # with the advance accounting for the gap between them.

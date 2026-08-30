@@ -1435,9 +1435,23 @@ def consider_bill_for_payment(case_id: str, bill_id: str,
                 "detail": "this bill has no balance outstanding, so there is "
                           "nothing to pay"}
 
+    # The same split the automatic path uses. A manual retry that paid the
+    # whole balance where the automatic one paid the family's share would put
+    # two different answers about one bill on the same chain.
+    from anbu_care.bills.coverage import estimate_for_case
+    from anbu_care.payments import share as payment_share
+
+    estimate = estimate_for_case(case_id, list_bills(case_id))
+    share = payment_share.decide(case_id=case_id, bill=bill, estimate=estimate)
+    if share.amount_inr <= 0:
+        return {"outcome": "nothing_due",
+                "detail": "the insurer is expected to cover all of this bill, "
+                          "so there is nothing for the family to pay"}
+
     case = service.load_case(case_id)
     return consider_bill(case_id=case_id, parent_id=case.parent_id,
-                         bill_id=bill_id, amount_inr=bill.balance_due_inr,
+                         bill_id=bill_id, amount_inr=share.amount_inr,
+                         share=share,
                          extracted_payee=bill.payee_vpa or bill.vendor,
                          extracted_vendor=bill.vendor)
 
@@ -3395,7 +3409,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     # Two arriving a second apart, both starting "Anbu Care:", both linking the
     # same tab, both about one photograph, read as duplication — and carried
     # five different figures about one piece of paper between them.
-    payment_line = _consider_payment(case_id, parent_id, bill)
+    payment_line = _consider_payment(case_id, parent_id, bill, estimate)
 
     tell("bill_recorded", {
         "parent_name": first_name,
@@ -3407,7 +3421,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
     }, "billing", consent.BILLING_UPDATES)
 
 
-def _consider_payment(case_id: str, parent_id: str, bill) -> str:
+def _consider_payment(case_id: str, parent_id: str, bill, estimate=None) -> str:
     """Hand a payable bill to the enforcer, and return what to tell the family.
 
     Returns a paragraph for the bill message rather than sending one of its
@@ -3417,15 +3431,25 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
     payee, as evidence that this is not the bill the authority was for.
     """
     from anbu_care.payments import consider_bill, money_view
+    from anbu_care.payments import share as payment_share
 
-    payable = bill.balance_due_inr
-    if not payable or payable <= 0:
+    if not bill.balance_due_inr or bill.balance_due_inr <= 0:
         return ""   # nothing outstanding on this bill; nothing to pay
+
+    # HOW MUCH OF IT IS THEIRS. Under a cashless authorisation the insurer
+    # settles its share with the hospital, so paying the printed balance would
+    # pay the insurer's part out of the family's money. The coverage estimate
+    # is already computed for the message this returns into; it is now also
+    # what decides the figure.
+    share = payment_share.decide(case_id=case_id, bill=bill, estimate=estimate)
+    payable = share.amount_inr
+    if payable <= 0:
+        return ""   # the insurer is expected to cover all of it
 
     try:
         outcome = consider_bill(
             case_id=case_id, parent_id=parent_id, bill_id=bill.bill_id,
-            amount_inr=payable,
+            amount_inr=payable, share=share,
             # The UPI ID off the paper where the bill printed one, falling back
             # to the hospital name. This is the string the payee guard compares
             # against the mandate — and it is checked, never followed. A bill
@@ -3444,7 +3468,7 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
         if outcome["failed_check"] == "mandate_present" and \
                 "no payment mandate" in outcome["reason"]:
             return ""
-        return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
+        return (f"\n{_owed_now(bill, outcome['amount_inr'], share)}"
                 f"It was NOT paid automatically: {outcome['reason'][:180]}. "
                 f"Nothing has moved, and it needs you.\n\n")
 
@@ -3470,12 +3494,12 @@ def _consider_payment(case_id: str, parent_id: str, bill) -> str:
     # "settled" on a live one are different claims and the family is entitled
     # to know which one they just read.
     if outcome.get("outcome") == "settled":
-        return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
+        return (f"\n{_owed_now(bill, outcome['amount_inr'], share)}"
                 f"It has been paid automatically, {bounded}. It is settled.\n"
                 f"{outcome.get('settlement_note', '')}\n"
                 f"{running}\n")
 
-    return (f"\n{_owed_now(bill, outcome['amount_inr'])}"
+    return (f"\n{_owed_now(bill, outcome['amount_inr'], share)}"
             f"It has been sent automatically, {bounded}. It is not confirmed as "
             f"settled yet.\n"
             f"{where}"
@@ -3528,7 +3552,7 @@ def _advance_paid(estimate) -> int:
     return total
 
 
-def _owed_now(bill, amount_inr: int) -> str:
+def _owed_now(bill, amount_inr: int, share=None) -> str:
     """What the hospital wants today, and why it is not the bill total.
 
     Reported as confusing: the message said what the family would end up paying
@@ -3537,6 +3561,20 @@ def _owed_now(bill, amount_inr: int) -> str:
     is not part of the other. This names the immediate one and accounts for the
     gap, which is the advance already paid.
     """
+    # UNDER CASHLESS the gap is not an advance, it is the insurer's share, and
+    # calling it "already paid" would tell a family money had left an account
+    # that never did. Named separately for that reason.
+    if share is not None and share.is_residual:
+        maybe_low = (" That estimate can come out low where a room went over "
+                     "its limit, so the hospital may still ask for more."
+                     if share.estimate_is_provisional else "")
+        return (f"The bill comes to {inr(bill.payable_total_inr)}. Around "
+                f"{inr(share.covered_inr)} of it is expected to be settled by "
+                f"your insurer with the hospital directly under cashless, so "
+                f"{inr(amount_inr)} is the part that is yours. That split is "
+                f"Anbu Care's estimate from your policy, not the insurer's "
+                f"decision.{maybe_low}\n")
+
     total = bill.payable_total_inr
     advance = total - amount_inr if total and total > amount_inr else 0
     lead = (f"The hospital wants {inr(amount_inr)} of it now, which is the "
