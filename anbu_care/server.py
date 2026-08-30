@@ -1215,6 +1215,38 @@ def appointment_evidence_view(case_id: str, appointment_id: str,
     return RedirectResponse(signed.url, status_code=302)
 
 
+@app.get("/api/cases/{case_id}/claim-form")
+def claim_form_view(case_id: str,
+                    _session: str = Depends(require_case_access)) -> Response:
+    """Open the filled Part A for this admission.
+
+    CREDENTIALED, and that is the point rather than an oversight. The form
+    states a diagnosis, so it is the one document in this system that would
+    most obviously leak if the verify endpoint's openness were applied
+    carelessly. Verification proves the chain without revealing what it says;
+    this reveals, so it is gated exactly like the record it was filled from.
+
+    The redirect is minted per request and dies in fifteen minutes, so the URL
+    that ends up in a browser history is this route, never the object.
+    """
+    from anbu_care.comms import storage
+    from anbu_care.tpa.on_discharge import FORM_PREFIX
+
+    case = service.load_case(case_id)
+    packet_id = getattr(case, "packet_id", "") if case else ""
+    if not packet_id:
+        raise HTTPException(
+            status_code=404,
+            detail="no claim has been filed for this admission yet, so there "
+                   "is no form. A claim is filed when the discharge summary "
+                   "arrives.")
+
+    signed = storage.signed_url(f"{FORM_PREFIX}/{case_id}/{packet_id}.pdf")
+    if not signed.stored or not signed.url:
+        raise HTTPException(status_code=503, detail=signed.detail)
+    return RedirectResponse(signed.url, status_code=302)
+
+
 @app.post("/api/cases/{case_id}/appointments/{appointment_id}/cancel")
 def cancel_appointment(case_id: str, appointment_id: str,
                        _session: str = Depends(require_family_session)) -> dict[str, Any]:

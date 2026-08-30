@@ -545,6 +545,8 @@ function describe(r){
     case "booking.otp_requested": return "The centre texted a one-time code to a phone, and the person with her was asked for it. The code itself is never recorded.";
     case "booking.otp_closed": return `The code request was closed (${p.outcome||"done"}) and cannot be answered again.`;
 
+    case "claim.filed_on_discharge": return `The discharge summary arrived and the reimbursement claim was assembled and submitted on its own, for ${p.total_claimed_inr?`INR ${Number(p.total_claimed_inr).toLocaleString("en-IN")}`:"the amounts billed"}. The counterparty is a SIMULATED adjudicator; the thirty-day clock is real. A Part A claim form was filled from the record and is unsigned - Anbu Care has not sent it to anyone.`;
+    case "claim.not_filed": return `A discharge summary arrived and no claim was filed: ${esc(p.detail||p.reason||"the lane declined")}. Recorded so a case with no claim on it is a decision rather than a gap.`;
     case "claim.packet_assembled": return "Claim packet assembled.";
     case "evidence.assessed": return `Evidence assessed: ${p.gate}.`;
     case "evidence.enriched": return "Evidence enriched before submission.";

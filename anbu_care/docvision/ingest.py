@@ -409,9 +409,14 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
     # handed. The date comes off the paper if the reader could read one; if not
     # the window counts from now and the receipt says which.
     recovery_window = None
+    claim_filed = None
     if reading.kind == "discharge_summary":
         recovery_window = _open_recovery_window(
             parent_id, case_id, reading.payload, doc_id)
+        # The same piece of paper that says she has gone home is the one that
+        # makes a reimbursement claim possible. It was the last lane here still
+        # waiting to be asked.
+        claim_filed = _file_the_claim(case_id, parent_id, reading.payload, doc_id)
 
     # A lab report is the other document that closes something. The booking
     # lane submits a request and then has no way of ever learning she went, so
@@ -429,7 +434,36 @@ def ingest_document_image(parent_id: str, image: bytes, mime_type: str = "image/
         "payload": reading.payload, "image_object": stored.object_name,
         "recovery_window": recovery_window,
         "closed_test": closed_test,
+        "claim_filed": claim_filed,
     }
+
+
+def _file_the_claim(case_id: str, parent_id: str, payload: dict,
+                    doc_id: str) -> dict | None:
+    """Start the reimbursement claim off the discharge summary.
+
+    Never raises into an ingest, for the same reason the recovery window does
+    not: the photograph is stored and read, the family has been told it
+    arrived, and a claim-lane failure must not turn a document safely on the
+    record into one that was rejected.
+    """
+    from anbu_care.tpa import on_discharge
+
+    try:
+        filing = on_discharge.file_on_discharge(
+            case_id=case_id, parent_id=parent_id, payload=payload,
+            document_id=doc_id)
+    except Exception:  # the document stays on the record whatever this does
+        logger.exception("could not file a claim from %s", doc_id)
+        return None
+    if filing.outcome in {"no_case", "already_filed"}:
+        return None
+    return {"outcome": filing.outcome, "detail": filing.detail,
+            "packet_id": filing.packet_id,
+            "submission_id": filing.submission_id,
+            "total_claimed_inr": filing.total_claimed_inr,
+            "sla_deadline": filing.sla_deadline,
+            "claim_form": filing.form_object}
 
 
 def _close_the_ordered_test(case_id: str, doc_id: str, kind: str,

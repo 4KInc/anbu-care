@@ -197,7 +197,7 @@ The tests reject the word "detect" in that path.
 **20/**
 Gemini 3.5 Flash · Google ADK · Cloud Run · Firestore · Pub/Sub · Vertex AI
 Memory Bank
-1,191 tests, none needing GCP or a model to run.
+1,203 tests, none needing GCP or a model to run.
 
 Try to break it 👇
 anbu-care-37j4eofpwq-el.a.run.app/app
@@ -280,7 +280,7 @@ hospital locations are verified against Google Places while capability remains a
 dated seed, and all demo data is synthetic.
 
 Built on Gemini 3.5 Flash, Google ADK, Cloud Run, Firestore, Pub/Sub and Vertex
-AI Memory Bank. 1,191 tests, none of which need cloud access to run.
+AI Memory Bank. 1,203 tests, none of which need cloud access to run.
 
 It's live and you can audit it without asking me:
 https://anbu-care-37j4eofpwq-el.a.run.app/app
@@ -310,7 +310,7 @@ anbu-care-37j4eofpwq-el.a.run.app/app
 - [ ] **Only one** of the three above is published.
 - [ ] It carries **#AllThingsAgenticHackathon**.
 - [ ] It carries the line *"Created for the All Things Agentic Hackathon"*.
-- [ ] `make test` — confirm the count still reads 1,191 and update if not.
+- [ ] `make test` — confirm the count still reads 1,203 and update if not.
 - [ ] `curl -s $URL/api/healthz` — confirm `tpa_mode`, `whatsapp_mode` and
       `memory_bank` still match the "what isn't real" lines.
 - [ ] Live URL still serving, and `/app` loads.

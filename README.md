@@ -721,7 +721,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1191 tests, no GCP or model access needed
+make test             # 1203 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -921,7 +921,7 @@ scripts/
   preflight.py          the state that silently ruins a take (`make preflight`)
   clear_rehearsal_debris.py  fold repeated photographs of one admission back to one
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1191 tests, no GCP or model access needed
+tests/                  1203 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself
@@ -1236,6 +1236,20 @@ Then deploy a new revision — running instances do not pick up IAM changes.
   Model Garden to a dedicated GPU-backed endpoint, billed per hour rather than
   per token. Deferred as infra cost out of proportion to a component that by
   design cannot change any decision.
+- **The reimbursement claim files itself on discharge.** The claim lane was the
+  last one here that still waited to be asked: everything around it had learned
+  to act, and the moment a family would most want movement was the one moment
+  somebody had to call a tool. A photographed discharge summary now assembles
+  the packet, submits it, starts the real 30-day clock, and renders a **filled
+  Part A claim form** — an actual PDF a person could sign and send, filled from
+  the policy captured at onboarding, the dates and hospital off the summary, and
+  the amounts off the photographed bills. Fields the system does not hold print
+  as `not on record` rather than being guessed, the form is unsigned, and Anbu
+  Care has sent it to nobody. It is credentialed like the record it came from,
+  never attached to a message, because it states a diagnosis. One claim per
+  admission, and no claim at all without a policy or a bill — each refusal
+  receipted with its reason. The counterparty remains a simulated adjudicator.
+  See `anbu_care/tpa/on_discharge.py` and `anbu_care/tpa/claim_form.py`.
 - **The booking loop now closes on a result — PARTLY SHIPPED.** A photographed
   lab report closes the test it can only belong to. When exactly one order is
   outstanding on an admission, the arriving report moves it to `resulted`, a
