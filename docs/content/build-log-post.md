@@ -203,7 +203,7 @@ work, and the precheck evidence is in the repo.
 
 ### Try to break it
 
-167 tests, all green, none of them needing GCP or a model to run.
+1144 tests, all green, none of them needing GCP or a model to run.
 
 ```bash
 URL=https://anbu-care-37j4eofpwq-el.a.run.app

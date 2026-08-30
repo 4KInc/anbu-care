@@ -2,6 +2,8 @@
 
 **Status:** proposal, no code written. Every stream below is gated.
 **Written:** 2026-08-22, against a clean tree at `7bd1b4f`.
+*Every figure below is as-of that date and is deliberately not updated: this is
+a record of what was proposed, not a description of the repo today.*
 **Deadline:** 31 Aug 2026, 5pm PDT. **Nine days, no demo video recorded yet.**
 **Scope:** five requested streams, reconciled into one sequence.
 **Guarantee layer** — `triage/severity.py`, `comms/policy.py`, `tpa/`,

@@ -2,6 +2,8 @@
 
 **Status:** proposal, no code written. Gated on approval.
 **Written:** 2026-08-22, against a clean tree at `7bd1b4f`, 399 tests passing.
+*Every figure below is as-of that date and is deliberately not updated: this is
+a record of what was proposed, not a description of the repo today.*
 **Deadline:** 31 Aug 2026, 5pm PDT. Nine days.
 **Scope:** dashboard presentation, hospital-KB provenance strings, arrival-brief
 empty-state rendering, and one new inbound field. The guarantee layer — triage,

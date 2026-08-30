@@ -110,7 +110,7 @@ The tests reject the word "detect" in that path.
 
 **13/**
 Gemini 3.5 Flash · Google ADK · Cloud Run · Firestore · Pub/Sub
-167 tests, none needing GCP or a model to run.
+1144 tests, none needing GCP or a model to run.
 
 Try to break it 👇
 anbu-care-37j4eofpwq-el.a.run.app/app
@@ -186,7 +186,7 @@ response is simulated, the hospital knowledge base is a dated snapshot, WhatsApp
 is sandboxed, and every figure is flagged until sourced.
 
 Built on Gemini 3.5 Flash, Google ADK, Cloud Run, Firestore and Pub/Sub.
-167 tests, none of which need cloud access to run.
+1144 tests, none of which need cloud access to run.
 
 It's live and you can audit it without asking me:
 https://anbu-care-37j4eofpwq-el.a.run.app/app
