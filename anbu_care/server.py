@@ -1993,8 +1993,15 @@ def preflight(_session: str = Depends(require_family_session)) -> dict[str, Any]
           f"gender={profile.gender or 'unset'} pincode={profile.pincode or 'unset'}",
           fatal=False)
 
+    # NAMED FOR THE STATE, not for the condition being asserted. This read
+    # "booker is dry" while the booker was live, which is the wrong sentence to
+    # skim ten minutes before a take: the reader concludes the booking beat
+    # will do nothing, when the truth is the opposite and a real clinic is
+    # about to be called. Still a warn rather than a failure, because LIVE is
+    # what a recording wants and DRY is what an ordinary day wants.
     dry, why = _booker_state()
-    check("booker is dry", dry is True, why, fatal=False)
+    check("booker" if dry is None else ("booker DRY" if dry else "booker LIVE"),
+          dry is True, why, fatal=False)
 
     return {"ok": all(c["ok"] for c in checks if c["fatal"]), "checks": checks}
 
