@@ -724,7 +724,7 @@ See [`docs/CITATIONS.md`](docs/CITATIONS.md) before repeating any of them.
 
 ```bash
 make install          # uv sync --extra dev
-make test             # 1233 tests, no GCP or model access needed
+make test             # 1258 tests, no GCP or model access needed
                       # (one more needs a Memory Bank and skips without it)
 make preflight        # the state that silently ruins a recording, in ~2s
 make demo             # the full spine, end to end, with no model in the loop
@@ -928,7 +928,7 @@ scripts/
   build_architecture_svg.py  the architecture diagram, hand-authored rather than laid out
   make_architecture_pdf.py   the two-page PDF, and the README's PNG, from that one SVG
   seed_breach.sh        an already-lapsed cashless clock, for demonstrating the breach
-tests/                  1233 tests, no GCP or model access needed
+tests/                  1258 tests, no GCP or model access needed
 infra/deploy_cloud_run.sh
 infra/deploy_booker.sh
 infra/schedule_recovery_tick.sh  the two ticks Cloud Run cannot hold itself
@@ -981,6 +981,7 @@ Beyond ADK's own agent API:
 | `GET /api/cases/{id}/attempts/{n}/evidence/view` | The page of a centre that REFUSED, by its position in this case's own escalation receipt. The object is never named by the caller |
 | `GET /api/cases/{id}/claim-form` | A short-lived signed link to the filled Part A for this admission. **Credentialed** — it states a diagnosis, which is exactly why it is the one document that never rides on a message |
 | `GET /api/cases/{id}/claim-form/view` | The same, as a redirect, so the form can be opened in one tap |
+| `POST /api/demo/seed?scratch=1` | A synthetic parent of your own, with no phone number on it. The default reuses the demo family, which is right for a demo and wrong for a stranger following the testing instructions |
 | `GET /api/preflight` | The state that silently ruins a recording, in one round trip. **Credentialed** |
 | `GET /api/cases/{id}/bills` | Photographed bills and the estimated policy split |
 | `POST /api/parents/{id}/payment-mandate` | Authorise **standing**, ahead of any admission. Every case opened while it is live adopts it and they share the total cap |
@@ -1031,6 +1032,31 @@ that a family or an insurer can check it without trusting us to run the check
 for them.
 
 ---
+
+## Try it from a phone
+
+**WhatsApp +1 239 453 5380 and send `START`.**
+
+You are given a synthetic family of your own, with your number holding three
+roles on it at once: hers, her son's, and a neighbour's. Every message back is
+captioned with which of the three it was for, because one handset is playing
+three parts. Then tell it she has chest pain, photograph a hospital bill, or
+photograph a discharge summary, and watch what each one sets off.
+
+**This is not the door being left open.** An unknown number still resolves to
+nobody, which is the claim this whole system rests on. What `START` does is hand
+you a different record, and legitimate roles on it. Nothing you do reaches the
+family in the demo, the parent and the policy are invented, and the record is
+yours for a day before the check-ins stop and your number is released.
+
+It is off by default (`ANBU_SANDBOX`), capped per day, and the first reply says
+plainly that nothing here is for real personal or health information. A public
+number printed in a public document should be all three of those things.
+
+An unknown number that sends anything else is told what this is, that its
+message was not stored, and where to look. Silence was the honest answer to a
+stranger and a poor one for the person it usually is: somebody who read this
+file and texted the number in it.
 
 ## Deploying
 

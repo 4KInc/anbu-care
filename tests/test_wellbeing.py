@@ -234,10 +234,25 @@ def test_a_consented_caregiver_is_named(client, parent):
 
 def test_an_unregistered_number_stores_nothing(client, parent):
     """A valid Twilio signature proves the request came from Twilio. It says
-    nothing about who sent the message, and Twilio relays anyone."""
+    nothing about who sent the message, and Twilio relays anyone.
+
+    A stranger now gets a reply saying what this is, so the status is 200
+    rather than 204. The invariant this test exists for is unchanged and is
+    asserted below: nothing was stored, and the reply carries nothing off
+    anybody's record.
+    """
     response = _signed(client, {"From": f"whatsapp:{STRANGER_NUMBER}", "Body": "hello"})
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert wellbeing_store.list_entries(parent) == []
+
+    body = response.text
+    assert "not stored" in body
+    # It must not leak the family it declined to talk about.
+    profile = service.load_profile(parent)
+    assert profile.name.split()[0] not in body
+    assert parent not in body
+    for contact in profile.family_contacts:
+        assert contact.name not in body
 
 
 def test_withdrawn_consent_stops_storage_immediately(client, parent):

@@ -181,7 +181,7 @@ def build_html() -> str:
   <p class="foot"><b>Verification is public.</b>
   <code>GET /api/cases/&lt;id&gt;/verify</code> needs no credential, because it
   proves the record was not altered without revealing what it says. Everything
-  that returns content is credentialed. <b>1,233 tests</b>, none needing GCP or
+  that returns content is credentialed. <b>1,258 tests</b>, none needing GCP or
   a model. <b>Simulated:</b> the insurer’s adjudicator, and payments run on a
   real Razorpay link in test mode. <b>Not simulated:</b> WhatsApp, the clinic
   booking, the regulatory clocks, hospital locations, and the receipt chain.</p>

@@ -34,7 +34,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
 from anbu_care import intake as intake_ledger
-from anbu_care import service
+from anbu_care import sandbox, service
 from anbu_care.care_circle import notify as care_notify
 from anbu_care.comms import consent, inbound
 from anbu_care.config import settings
@@ -318,15 +318,57 @@ def intake(request: IntakeRequest) -> dict[str, Any]:
     return result
 
 
+def _scratch_parent() -> dict[str, Any]:
+    """A synthetic parent nobody is filming, for anybody who wants to try it.
+
+    Deliberately has NO WhatsApp number. The demo family is found by handset,
+    so a scratch parent carrying one would either steal that lookup or need its
+    own, and neither belongs in something a stranger can create by hitting a
+    URL. Without a number it can be driven through the API, which is what the
+    testing instructions ask for, and it can never be messaged or messaged from.
+    """
+    created = onboarding_tools.create_parent_profile(
+        name="Synthetic Parent (scratch)",
+        age=71, city="Thoothukudi", lat=8.7642, lon=78.1400,
+        chronic_conditions=["Hypertension"], allergies=["Penicillin"],
+    )
+    parent_id = created["profile"]["parent_id"]
+    onboarding_tools.record_insurance_policy(
+        parent_id, insurer="Star Health", policy_number="SH-NRI-SCRATCH",
+        sum_insured_inr=500_000,
+        network_hospitals=["Sacred Heart Hospital"], cashless_eligible=True,
+    )
+    return {
+        "parent_id": parent_id,
+        "scratch": True,
+        "note": ("A synthetic parent of your own, with no phone number on it. "
+                 "Open cases against it with /api/intake and check them with "
+                 "/api/cases/{id}/verify. It is not the demo family and nothing "
+                 "you do to it appears on theirs."),
+    }
+
+
 @app.post("/api/demo/seed")
-def demo_seed() -> dict[str, Any]:
+def demo_seed(scratch: bool = False) -> dict[str, Any]:
     """Create the Thoothukudi demo family and return its parent_id.
 
     A freshly deployed service has no parent on record, which makes
     `/api/intake` unusable until someone completes an onboarding conversation.
     This is the shortcut the demo and any smoke test need — it uses the same
     onboarding tools the agent does, so nothing here is a special path.
+
+    `scratch=1` MINTS AN ISOLATED PARENT INSTEAD, and that is what a stranger
+    should be handed. The default reuses the family this handset belongs to,
+    which is right for a demo and wrong for anybody following the testing
+    instructions: every reader who ran the documented flow was opening a case
+    on the record being filmed, and enough of them at the wrong moment puts
+    somebody else's cases on camera. A scratch parent registers no phone
+    number, so it cannot receive a message, cannot be resolved from an inbound
+    one, and cannot repoint the index the demo family depends on.
     """
+    if scratch:
+        return _scratch_parent()
+
     # Reuse the family this handset already belongs to. Seeding used to mint a
     # new parent every time and repoint the number at it, so each re-seed left
     # the previous record orphaned and every case, receipt and document on it
@@ -585,10 +627,33 @@ async def wellbeing_inbound(request: Request, background: BackgroundTasks) -> Re
         return _handle_voice_note(sender, media)
 
     if sender is None or not body:
-        # Unknown number, withdrawn consent, or an empty message. Nothing is
-        # stored, and Twilio is told the webhook succeeded so it does not retry
-        # a message we will never accept.
+        # Unknown number, withdrawn consent, or an empty message. NOTHING IS
+        # STORED, and that does not change here: this number belongs to nobody
+        # on any record, and under DPDP a person who has given no
+        # purpose-specific consent has not agreed to have their message kept.
+        #
+        # What changes is that they hear back. Silence was the honest answer to
+        # a stranger and a poor one for the person it usually is: somebody who
+        # read the repo, texted the number in it, and got nothing. The reply
+        # says what this is, that the message was not kept, and where they can
+        # actually try it. It is a reply on the webhook rather than a new send,
+        # so it needs no template and opens no window we did not already have.
         logger.info("wellbeing inbound not stored: unregistered sender or empty body")
+        # ONLY A NUMBER NOBODY KNOWS. `resolve_sender` also returns None for a
+        # contact who withdrew consent, and they are not a stranger: telling
+        # them their number is on nobody's record would be false, and sending
+        # anything at all to somebody who opted out is worse than silence.
+        # Known-but-unconsented keeps the behaviour it had.
+        if body and not service.lookup_whatsapp_number(from_number):
+            # ASKED FOR, NEVER IMPOSED. A sandbox nobody requested is a message
+            # somebody did not consent to receive, so the keyword is the
+            # consent moment and an ordinary "hello" still just gets told what
+            # this is.
+            if sandbox.asked_for_one(body):
+                got = sandbox.provision(from_number)
+                logger.info("sandbox %s for an unknown number", got.status)
+                return _twiml(got.reply)
+            return _twiml(_UNKNOWN_SENDER_REPLY)
         return Response(status_code=204)
 
     # STOP is an instruction about the service, not a report about how she is.
@@ -744,11 +809,20 @@ def recovery_tick(
         else:
             sent.append(result)
 
+    # A sandbox family is only somebody's for a day. Released here rather than
+    # on its own schedule, because this is already the thing that runs every
+    # minute and a second scheduler job to expire a demo would be one more
+    # thing to notice had stopped.
+    released = sandbox.release_expired()
+    if released:
+        logger.info("released %d expired sandbox families", len(released))
+
     return {
         "status": "ok",
         "checked": len(parents),
         "sent": sent,
         "skipped": skipped,
+        "sandboxes_released": released,
         "note": ("Only what was due right now. A day with no tick has no check-in, "
                  "and none is sent later to make up for it."),
     }
@@ -3746,6 +3820,26 @@ def _reply_audience(sender: Any) -> tuple[str, str]:
                     else demo_labels.FAMILY)
         return audience, name
     return "", ""
+
+
+# What a number nobody knows is told. Written once, here, because it is the
+# only sentence in the system addressed to somebody who is not on any record,
+# and it has to be true of a product whose whole claim is that who you are
+# decides what you get.
+_UNKNOWN_SENDER_REPLY = (
+    "This is Anbu Care, a coordination agent for a family whose parent lives in "
+    "India. Your number is not on anyone's record here, so your message was not "
+    "stored and nothing was read from it. That is deliberate: every message this "
+    "system keeps belongs to somebody who agreed, for a named purpose.\n\n"
+    "You can still see it work, without a credential:\n"
+    "https://anbu-care-37j4eofpwq-el.a.run.app/app\n\n"
+    "And you can check that its record has not been altered, from a terminal, "
+    "with no login:\n"
+    "https://anbu-care-37j4eofpwq-el.a.run.app/api/cases/case-da1c2cb6db/verify\n\n"
+    "If you would rather drive it yourself, reply START and you will be given "
+    "a synthetic family of your own to try it on.\n\n"
+    "Please do not send personal or health information to this number."
+)
 
 
 def _twiml(message: str, audience: str = "", recipient_name: str = "") -> Response:
