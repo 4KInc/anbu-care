@@ -204,7 +204,12 @@ def logo() -> FileResponse:
 
     WhatsApp fetches a business profile photo from a URL it can reach without
     a credential, so this one route is deliberately open. It carries no case
-    content — it is a letter on a teal square.
+    content: a house with a pulse through it, on the product's own teal.
+
+    The WhatsApp sender profile points at THIS url rather than at an uploaded
+    copy, so changing the mark is a deploy rather than a console visit. Meta
+    caches it, though, so a change here needs the sender profile re-saved with
+    a new query string before a handset sees it.
     """
     return FileResponse(LOGO, media_type="image/png",
                         headers={"Cache-Control": "public, max-age=86400"})
