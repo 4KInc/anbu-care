@@ -6,6 +6,53 @@ behalf of their adult children abroad.
 
 Built for the **All Things Agentic Hackathon** (Google / Devpost), Taskmaster track.
 
+---
+
+## Try it, three ways, none of them needing a login
+
+**1. From your phone.** WhatsApp **+1 239 453 5380** and send `START`.
+
+You are given a synthetic family of your own, with your number holding three
+roles on it at once: hers, her son's, and a neighbour's. Every message back is
+captioned with which of the three it was for, because one handset is playing
+three parts. Then tell it she has chest pain, or photograph a hospital bill, and
+watch what each one sets off.
+
+This is not the door being left open. An unknown number still resolves to
+nobody, which is the claim this whole system rests on. `START` hands you a
+different record and legitimate roles on it: nothing you do reaches the family
+in the demo, the parent and the policy are invented, and it is yours for a day.
+An unknown number that sends anything else is told what this is, that its
+message was not stored, and where to look.
+
+**2. From a terminal.** A synthetic parent of your own, a case, and the signed
+chain, with no credential anywhere:
+
+```bash
+URL=https://anbu-care-37j4eofpwq-el.a.run.app
+PARENT=$(curl -sX POST "$URL/api/demo/seed?scratch=1" | jq -r .parent_id)
+CASE=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
+  -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"judge\"}" | jq -r .case_id)
+curl -s $URL/api/cases/$CASE/verify | jq
+```
+
+`?scratch=1` matters: without it the seed reuses the demo family, and every
+reader running this would open a case on the record being filmed.
+
+**3. Offline, with no Google Cloud project and no model access.**
+
+```bash
+make install && make test     # 1,259 tests
+make demo                     # the full spine, no LLM in the loop,
+                              # ending with a tamper the chain catches
+```
+
+**Dashboard:** [`/app`](https://anbu-care-37j4eofpwq-el.a.run.app/app) ·
+**health, naming what is simulated:**
+[`/api/healthz`](https://anbu-care-37j4eofpwq-el.a.run.app/api/healthz)
+
+---
+
 ### Architecture at a glance
 
 [![Anbu Care architecture](docs/architecture.png)](docs/architecture.png)
@@ -21,22 +68,12 @@ built by [`scripts/build_architecture_svg.py`](scripts/build_architecture_svg.py
 Hand-authored rather than auto-laid-out, because a layout engine drew a refusal,
 an autonomous tick and a human decision as the same arrow.
 
-### 🟢 Live demo — no login required
+### The two access models, both enforced server-side
 
-**https://anbu-care-37j4eofpwq-el.a.run.app**
-
-```bash
-URL=https://anbu-care-37j4eofpwq-el.a.run.app
-PARENT=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
-CASE=$(curl -sX POST $URL/api/intake -H 'content-type: application/json' \
-  -d "{\"parent_id\":\"$PARENT\",\"symptoms\":[\"chest pain\"],\"reported_by\":\"judge\"}" | jq -r .case_id)
-curl -s $URL/api/cases/$CASE/verify | jq        # verify the signed chain yourself
-```
-
-**Family dashboard:** [`/app`](https://anbu-care-37j4eofpwq-el.a.run.app/app) ·
+**Live:** https://anbu-care-37j4eofpwq-el.a.run.app ·
 **agent UI:** [`/dev-ui/`](https://anbu-care-37j4eofpwq-el.a.run.app/dev-ui/)
 
-Two access models, both enforced server-side — this contrast is deliberate:
+This contrast is the design, not a configuration detail:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' $URL/api/parents/{parent_id}     # 401 — clinical content
@@ -1017,7 +1054,10 @@ session. Two deliberate exceptions, and they are different in kind:
   rather than bypassing it. One case, sixty minutes, revocable, and every open
   writes a receipt the family can see.
 
-Smoke-testing a fresh deploy is three calls:
+Smoke-testing a fresh deploy is three calls. This one deliberately does NOT
+pass `?scratch=1`: a fresh deploy has no demo family and the point here is to
+create it. Anybody who is not setting up a deploy wants the scratch version
+at the top of this file, which touches nothing that is being filmed.
 
 ```bash
 PARENT=$(curl -sX POST $URL/api/demo/seed | jq -r .parent_id)
@@ -1032,31 +1072,6 @@ that a family or an insurer can check it without trusting us to run the check
 for them.
 
 ---
-
-## Try it from a phone
-
-**WhatsApp +1 239 453 5380 and send `START`.**
-
-You are given a synthetic family of your own, with your number holding three
-roles on it at once: hers, her son's, and a neighbour's. Every message back is
-captioned with which of the three it was for, because one handset is playing
-three parts. Then tell it she has chest pain, photograph a hospital bill, or
-photograph a discharge summary, and watch what each one sets off.
-
-**This is not the door being left open.** An unknown number still resolves to
-nobody, which is the claim this whole system rests on. What `START` does is hand
-you a different record, and legitimate roles on it. Nothing you do reaches the
-family in the demo, the parent and the policy are invented, and the record is
-yours for a day before the check-ins stop and your number is released.
-
-It is off by default (`ANBU_SANDBOX`), capped per day, and the first reply says
-plainly that nothing here is for real personal or health information. A public
-number printed in a public document should be all three of those things.
-
-An unknown number that sends anything else is told what this is, that its
-message was not stored, and where to look. Silence was the honest answer to a
-stranger and a poor one for the person it usually is: somebody who read this
-file and texted the number in it.
 
 ## Deploying
 
