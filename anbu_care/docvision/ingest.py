@@ -539,4 +539,13 @@ def _open_recovery_window(parent_id: str, case_id: str, payload: dict,
     except Exception:
         logger.exception("the first recovery check-in was not sent for %s", parent_id)
 
+    # RE-READ BEFORE CLAIMING IT. `send_due` evaluates every stop condition on
+    # the way past, so a window can be opened here and closed a line later:
+    # consent she never gave, or a discharge date whose fortnight has already
+    # run out. Returning the id regardless told the family "daily check-ins
+    # have started" about check-ins that had already ended, which is the one
+    # thing a message on this record may never do.
+    still_open = recovery.open_window_for(parent_id)
+    if still_open is None or still_open.window_id != opened.window_id:
+        return None
     return opened.window_id

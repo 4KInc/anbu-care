@@ -278,3 +278,78 @@ def test_an_admission_with_no_claim_says_so_rather_than_erroring(case):
         assert "discharge summary arrives" in r.json()["detail"]
     finally:
         app.dependency_overrides.clear()
+
+
+# --- what the family is actually told ---------------------------------------
+#
+# The claim used to file itself in silence: four receipts, a thirty-day clock
+# and a filled form, none of which reached the family unless somebody opened
+# the dashboard. The most autonomous thing here was the least visible.
+
+def test_the_message_says_what_the_document_set_off(case, monkeypatch):
+    from anbu_care import server
+
+    pid, cid = case
+    _policy(pid)
+    _bill(monkeypatch, cid, pid)
+    filing = on_discharge.file_on_discharge(case_id=cid, parent_id=pid,
+                                            payload=DISCHARGE, document_id="doc_1")
+
+    line = server._what_it_set_off({
+        "recovery_window": "rw_1", "payload": DISCHARGE,
+        "claim_filed": {"outcome": "filed",
+                        "sla_deadline": filing.sla_deadline},
+    })
+    assert "Daily check-ins have started" in line
+    assert "reimbursement claim has been filed" in line
+    assert "unsigned and has not been sent to any insurer" in line
+    # No amount, no diagnosis, no test name: this rides on a LOGISTICS template
+    # and must not be the line that trips the gate.
+    assert "INR" not in line
+    assert DISCHARGE["diagnosis"] not in line
+
+
+def test_no_window_means_no_sentence_about_check_ins(case):
+    from anbu_care import server
+
+    line = server._what_it_set_off({"recovery_window": None, "payload": DISCHARGE,
+                                    "claim_filed": {"outcome": "filed"}})
+    assert "check-ins" not in line
+    assert "reimbursement claim has been filed" in line
+
+
+@pytest.mark.parametrize("outcome", ["no_policy", "no_bills", "ambiguous",
+                                     "assembly_failed", "already_filed"])
+def test_a_claim_that_was_not_filed_is_not_announced(case, outcome):
+    # The payment lane's rule, applied here: no sentence about an action unless
+    # the action happened.
+    from anbu_care import server
+
+    line = server._what_it_set_off({"recovery_window": "rw_1", "payload": DISCHARGE,
+                                    "claim_filed": {"outcome": outcome}})
+    assert "claim" not in line.lower()
+    assert "check-ins" in line
+
+
+def test_a_document_that_started_nothing_adds_no_line(case):
+    from anbu_care import server
+
+    assert server._what_it_set_off({}) == ""
+
+
+def test_a_window_that_closed_on_the_way_past_is_never_announced(case, monkeypatch):
+    """The bug this caught on the way in.
+
+    `send_due` evaluates every stop condition as it runs, so a window can be
+    opened and closed one line later: consent she never gave, or a fortnight
+    that already ran out. Reporting the id regardless told a family that daily
+    check-ins had started about check-ins that had already ended.
+    """
+    from anbu_care.docvision import ingest as ingest_mod
+    from anbu_care.recovery import window as recovery
+
+    pid, cid = case
+    # No recovery consent on this profile, so send_due stops the window.
+    opened = ingest_mod._open_recovery_window(pid, cid, DISCHARGE, "doc_1")
+    assert opened is None, "a stopped window was reported as started"
+    assert recovery.open_window_for(pid) is None

@@ -273,7 +273,7 @@ def test_the_message_summary_never_names_a_clinical_finding(parent_id, monkeypat
 
     body = str(TEMPLATES["document_recorded"]["body"]).format(
         parent_name="Ashanthi", document_kind="lab report", summary=safe,
-        applied_line="", dashboard_url="https://example/app")
+        applied_line="", started_line="", dashboard_url="https://example/app")
     assert classify_message(body)[0] is not MessageClass.CLINICAL
     assert gate_message(body, "logistics", template_name="document_recorded").allowed
 
@@ -306,7 +306,8 @@ def test_every_document_kind_produces_a_sendable_message(parent_id):
         summary = message_summary_for(kind, payload)
         body = str(TEMPLATES["document_recorded"]["body"]).format(
             parent_name="Ashanthi", document_kind=kind.replace("_", " "),
-            summary=summary, applied_line="", dashboard_url="https://example/app")
+            summary=summary, applied_line="", started_line="",
+            dashboard_url="https://example/app")
         verdict = gate_message(body, "logistics", template_name="document_recorded")
         assert verdict.allowed, f"{kind} would be blocked: {summary}"
         # And the diagnosis in particular must not ride along.

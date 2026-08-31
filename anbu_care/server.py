@@ -3421,6 +3421,7 @@ def _read_bill_and_report(case_id: str, parent_id: str, image: bytes, mime_type:
             "document_kind": result["kind"].replace("_", " "),
             "summary": result["message_summary"][:300],
             "applied_line": (f"{result['applied']}.\n" if result.get("applied") else ""),
+            "started_line": _what_it_set_off(result),
         }, "logistics", consent.STATUS_UPDATES)
 
         # If the gate still refuses it, the family must not be left in silence.
@@ -3626,6 +3627,47 @@ def _advance_paid(estimate) -> int:
         if due is not None and bill.payable_total_inr > due:
             total += bill.payable_total_inr - due
     return total
+
+
+def _what_it_set_off(result: dict) -> str:
+    """The lanes a document started, said in the message rather than only shown.
+
+    A discharge summary opens a fortnight of check-ins and files a
+    reimbursement claim, and until this existed both happened in silence: four
+    receipts, a thirty-day clock and a filled claim form, none of which the
+    family heard about unless somebody went to the dashboard. The most
+    autonomous thing this system does was also the least visible.
+
+    Composed from what the lanes REPORTED DOING, never from having called them.
+    A window that did not open and a claim that was refused both produce
+    nothing here, which is the same discipline the payment line follows: no
+    sentence about an action unless the action happened.
+
+    It names no amount, no diagnosis and no test. The gate would refuse a
+    clinical body on this template like any other, and this must not be the
+    line that trips it.
+    """
+    lines: list[str] = []
+
+    window = result.get("recovery_window")
+    if window:
+        payload = result.get("payload") or {}
+        on = str(payload.get("discharged_on") or "").strip()
+        lines.append(
+            "Daily check-ins have started, for a fortnight from the discharge "
+            f"date on the document{f' ({on})' if on else ''}. She can stop them "
+            "any time by replying STOP.")
+
+    claim = result.get("claim_filed") or {}
+    if claim.get("outcome") == "filed":
+        due = str(claim.get("sla_deadline") or "")[:10]
+        lines.append(
+            "The reimbursement claim has been filed and a claim form filled from "
+            f"the record{f', with a decision owed by {due}' if due else ''}. The "
+            "form is unsigned and has not been sent to any insurer; it is on the "
+            "claim page for you to check.")
+
+    return ("\n".join(lines) + "\n") if lines else ""
 
 
 def _owed_now(bill, amount_inr: int, share=None) -> str:

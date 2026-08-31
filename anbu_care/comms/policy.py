@@ -174,10 +174,19 @@ TEMPLATES: dict[str, dict[str, object]] = {
         "body": "Anbu Care: that {document_kind} is on {parent_name}'s record.\n"
                 "{summary}\n"
                 "{applied_line}"
+                "{started_line}"
                 "It is a reading of a photograph, and the photograph is kept. "
                 "Check it here: {dashboard_url}",
         "view": "record",
-        "params": ["parent_name", "document_kind", "summary", "applied_line"],
+        # `started_line` is what the document SET OFF, as against `applied_line`,
+        # which is what it changed on the record. A discharge summary is the one
+        # kind that does both, and the things it starts were previously visible
+        # only to somebody who went looking at the dashboard: a fortnight of
+        # check-ins, and a reimbursement claim. Composed in code from what
+        # actually happened, never from what was attempted, and it names no
+        # amount and no diagnosis so the gate has nothing to refuse.
+        "params": ["parent_name", "document_kind", "summary", "applied_line",
+                   "started_line"],
     },
     # A document that could not be read. Distinct from the bill wording,
     # because calling a lab report a bill and asking for "the amounts by hand"

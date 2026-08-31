@@ -177,6 +177,7 @@ def test_every_template_renders_and_passes_its_own_gate():
         "document_kind": "discharge summary",
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
+        "started_line": "",
         "day": "3",
     }
     for name, spec in TEMPLATES.items():
@@ -340,6 +341,7 @@ def test_a_rendered_template_still_passes_the_gate():
         "document_kind": "discharge summary",
         "summary": "Discharge summary (2026-08-19 to 2026-08-22).",
         "applied_line": "",
+        "started_line": "",
         "day": "3",
     }
     for name, spec in TEMPLATES.items():
