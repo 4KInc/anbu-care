@@ -478,7 +478,17 @@ def demo_seed(scratch: bool = False) -> dict[str, Any]:
         language=os.getenv("ANBU_DEMO_CIRCLE_LANGUAGE") or "ta",
         is_primary=False,
         role="care_circle",
-        consent_purposes=[consent.OUTBOUND_NOTIFY],
+        # OUTBOUND_NOTIFY lets her be told; INBOUND_WELLBEING lets her answer.
+        # She is the person actually in the room, and the care-circle bridge is
+        # the whole argument that the son does not have to be awake: a
+        # neighbour who can be notified and cannot photograph the bill is not a
+        # bridge. Seeding used to grant only the first, so every seed silently
+        # revoked her ability to send in and preflight then failed on a state
+        # its own seed had just produced.
+        #
+        # Still NOT billing_updates. Helping is not being entitled to look, and
+        # the check beside this one asserts that.
+        consent_purposes=[consent.OUTBOUND_NOTIFY, consent.INBOUND_WELLBEING],
     )
 
     # Her own handset, and the language she actually reads. Until recovery
@@ -1935,6 +1945,41 @@ def preflight(_session: str = Depends(require_family_session)) -> dict[str, Any]
           f"{booking.mandate_id}: {booking.max_distance_km:.0f} km, "
           f"{booking.prefer}, {booking.max_attempts} attempts"
           if booking else "none granted", fatal=False)
+
+    # THE TWO BEATS THAT NOW DO SOMETHING DIFFERENT, and both fail QUIETLY.
+    #
+    # The bill beat pays only the family's residual, and the discharge summary
+    # beat files a claim. Neither errors when its precondition is missing: the
+    # bill lane correctly pays the whole balance where no cashless cover
+    # exists, and the check-ins line is correctly omitted where she never
+    # consented. Both are right, both are the boring version, and both are
+    # discovered on camera unless something asserts them first.
+    policy = getattr(profile, "policy", None)
+    check("cashless cover on her policy", bool(getattr(policy, "cashless_eligible", False)),
+          "the bill beat pays only her residual because the insurer settles the "
+          "rest directly; without cashless it correctly pays the WHOLE balance "
+          "and the beat shows nothing"
+          if not getattr(policy, "cashless_eligible", False) else
+          f"{getattr(policy, 'insurer', '?')} {getattr(policy, 'policy_number', '')}, "
+          f"so the bill beat will show the split")
+
+    checkins = consent_purposes.RECOVERY_CHECKINS in (
+        getattr(profile, "contact_consents", None) or {})
+    check("she agreed to be checked on", checkins,
+          "without it the discharge summary opens a window that closes on the "
+          "way past, and the message correctly says nothing about check-ins"
+          if not checkins else "recovery_checkins held on her own profile")
+
+    # The sandbox hands a family to any number that texts START. Her handset is
+    # registered, so it can never be treated as a stranger, but a public number
+    # left open after judging is worth being told about rather than forgetting.
+    sandbox_on = sandbox.enabled()
+    check("judge sandbox", True,
+          "ON, so an unknown number that texts START is given a synthetic "
+          "family. Her handset is registered and is never treated as a "
+          "stranger. Switch it off after judging: ANBU_SANDBOX=off"
+          if sandbox_on else "off, so an unknown number is only told what this is",
+          fatal=False)
 
     check("she agreed to be given out", consent_purposes.BOOKING_DISCLOSURE
           in (profile.disclosure_consents or {}),

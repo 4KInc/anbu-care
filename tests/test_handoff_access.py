@@ -610,7 +610,16 @@ def test_the_seeded_care_circle_is_not_the_son(monkeypatch):
 
 def test_the_neighbour_can_be_told_and_nothing_else(monkeypatch):
     """A neighbour who agreed to help is not a family member who agreed to
-    everything. She can be asked to go round; she cannot read the record."""
+    everything. She can be asked to go round, and she can answer; she cannot
+    read the record.
+
+    The assertion used to be an exact set of one purpose, which was stricter
+    than the sentence above and stricter than the product: the care circle is
+    the person actually in the room, and the demo has her photographing the
+    bill. A neighbour who can be notified and cannot send anything back is not
+    a bridge. What must stay true is the READ boundary, and that is what is
+    asserted now.
+    """
     from fastapi.testclient import TestClient
 
     from anbu_care import server
@@ -625,7 +634,12 @@ def test_the_neighbour_can_be_told_and_nothing_else(monkeypatch):
     meena = next(c for c in profile.family_contacts
                  if c.whatsapp_e164 == "+919000000101")
 
-    assert set(meena.consents) == {consent_purposes.OUTBOUND_NOTIFY}
+    # Told, and able to answer.
+    assert consent_purposes.OUTBOUND_NOTIFY in meena.consents
+    assert consent_purposes.INBOUND_WELLBEING in meena.consents
+    # And nothing that would let her read the record or the money.
+    assert "billing_updates" not in meena.consents
+    assert "status_updates" not in meena.consents
     assert meena.is_primary is False
     assert meena.role == "care_circle"
     assert not meena.email, "the neighbour can sign in and read the record"
