@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spare photographs of the same discharge summary, one per recording.
+"""Spare photographs of the same document, one per recording.
 
 Document dedupe is keyed on the parent and the IMAGE HASH, and a fresh case
 does not reset it, so the same file sent twice is refused as already recorded.
@@ -14,12 +14,24 @@ saved the way a phone saves. The words on it are identical, because it is the
 same document, and that is the point. What changes is only what changes when
 somebody picks a sheet up and photographs it again.
 
-    ./.venv/bin/python scripts/make_discharge_takes.py --count 10
+    ./.venv/bin/python scripts/make_document_takes.py --count 10
+    ./.venv/bin/python scripts/make_document_takes.py \
+        --source ~/Desktop/bill_interim_day_four.png --count 6
 
 Every output is checked against every other output AND against everything
 already sitting in the target directory, because a spare that collides with a
 take from last week is a spare that fails in exactly the situation it exists
 for.
+
+BILLS DEDUPE PER CASE and documents dedupe per PARENT, so one bill image
+replays across run-throughs while one discharge summary does not. Spares still
+matter for bills: photographing the same bill twice inside a single take is
+refused, correctly, and that refusal lands in the middle of the money beat.
+
+IMAGES ONLY, deliberately. The reader accepts jpeg, png, webp, heic and heif,
+and the inbound classifier accepts audio or image and refuses anything else
+rather than guessing. A PDF spare would be a file that fails at the door, which
+is worse than no spare at all.
 """
 
 from __future__ import annotations
